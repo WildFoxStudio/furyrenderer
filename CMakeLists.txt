@@ -26,8 +26,9 @@ add_library(${PROJECT_NAME} SHARED
 )
 
 add_subdirectory("thirdparty/volk")
+add_subdirectory("thirdparty/VulkanMemoryAllocator")
 
-target_link_libraries(${PROJECT_NAME} PRIVATE volk)
+target_link_libraries(${PROJECT_NAME} PRIVATE volk VulkanMemoryAllocator)
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY ${LIB_OUTPUT_DIR}
