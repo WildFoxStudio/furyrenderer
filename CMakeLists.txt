@@ -25,6 +25,10 @@ add_library(${PROJECT_NAME} SHARED
     "include/main.cpp"
 )
 
+add_subdirectory("thirdparty/volk")
+
+target_link_libraries(${PROJECT_NAME} PRIVATE volk)
+
 set_target_properties(${PROJECT_NAME} PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY ${LIB_OUTPUT_DIR}
     LIBRARY_OUTPUT_DIRECTORY ${LIB_OUTPUT_DIR}
