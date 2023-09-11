@@ -190,6 +190,65 @@ VulkanContext::VulkanContext(const DContextConfig* const config) : _warningOutpu
         {
             throw std::runtime_error("Could not create a vulkan instance");
         }
+
+    // Setup debugger
+    {}
+
+    { // Print version
+        auto FN_vkEnumerateInstanceVersion = PFN_vkEnumerateInstanceVersion(vkGetInstanceProcAddr(nullptr, "vkEnumerateInstanceVersion"));
+        if (vkEnumerateInstanceVersion == nullptr)
+            {
+                OutWarning("Failed to vkGetInstanceProcAddr for vkEnumerateInstanceVersion");
+            }
+        else
+            {
+                uint32_t       instanceVersion = VK_API_VERSION_1_0;
+                const VkResult result          = vkEnumerateInstanceVersion(&instanceVersion);
+                if (VKFAILED(result))
+                    {
+                        const std::string out = "Failed to vkEnumerateInstanceVersion because:" + std::string(VkErrorString(result));
+                        OutWarning(out);
+                    }
+                else
+                    {
+                        // Extract version info
+                        uint32_t major, minor, patch;
+                        major = VK_API_VERSION_MAJOR(instanceVersion);
+                        minor = VK_API_VERSION_MINOR(instanceVersion);
+                        patch = VK_API_VERSION_PATCH(instanceVersion);
+
+                        const std::string out = "Vulkan version:" + std::to_string(major) + "." + std::to_string(minor) + "." + std::to_string(patch);
+                        Log(out);
+                    }
+            }
+    }
+
+    // Query physical device
+    VkPhysicalDevice physicalDevice = _queryBestPhysicalDevice();
+
+    // Check validation layers and extensions support for the device
+    auto validDeviceValidationLayers = _getDeviceSupportedValidationLayers(physicalDevice, _validationLayers);
+    auto validDeviceExtensions       = _getDeviceSupportedExtensions(physicalDevice, _deviceExtensionNames);
+
+    // Create device
+    VkPhysicalDeviceFeatures deviceFeatures{};
+    deviceFeatures.samplerAnisotropy                      = VK_TRUE;
+    deviceFeatures.shaderSampledImageArrayDynamicIndexing = VK_TRUE;
+    deviceFeatures.fillModeNonSolid                       = VK_TRUE;
+
+    if (!Device.Create(Instance, physicalDevice, _deviceExtensionNames, deviceFeatures, _validationLayers))
+        {
+            throw std::runtime_error("Could not create a vulkan device");
+        }
+
+    // replacing global function pointers with functions retrieved with vkGetDeviceProcAddr
+    volkLoadDevice(Device.Device);
+}
+
+VulkanContext::~VulkanContext()
+{
+    Device.Deinit();
+    Instance.Deinit();
 }
 
 bool

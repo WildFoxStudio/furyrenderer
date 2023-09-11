@@ -16,6 +16,7 @@ class VulkanContext : public IContext
 {
   public:
     VulkanContext(const DContextConfig* const config);
+    ~VulkanContext();
 
     bool CreateSwapchain(const WindowData* windowData, const EPresentMode& presentMode, DSwapchain* swapchain) override;
     void DestroySwapchain(const DSwapchain swapchain) override;

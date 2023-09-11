@@ -332,6 +332,7 @@ struct RenderPassData
 class IContext
 {
   public:
+    virtual ~IContext(){};
     virtual bool CreateSwapchain(const WindowData* windowData, const EPresentMode& presentMode, DSwapchain* swapchain) = 0;
     virtual void DestroySwapchain(const DSwapchain swapchain)                                                          = 0;
 
