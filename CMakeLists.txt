@@ -13,11 +13,6 @@ else()
     add_compile_options(-Wall -Wextra -Wshadow -Wconversion -pedantic)
 endif()
 
-set(BIN_OUTPUT_DIR ${PROJECT_SOURCE_DIR}/bin)
-set(LIB_OUTPUT_DIR ${PROJECT_SOURCE_DIR}/lib)
-
-option(BUILD_TESTS "Build tests" ON)
-
 set(SRC_DIR "${PROJECT_SOURCE_DIR}/src")
 set(INCLUDE_DIR "${PROJECT_SOURCE_DIR}/include")
 
@@ -25,20 +20,52 @@ add_library(${PROJECT_NAME} SHARED
     "include/main.cpp"
 )
 
+set_target_properties(${PROJECT_NAME} PROPERTIES VERSION 1.0)
+
 add_subdirectory("thirdparty/volk")
 add_subdirectory("thirdparty/VulkanMemoryAllocator")
 
 target_link_libraries(${PROJECT_NAME} PRIVATE volk VulkanMemoryAllocator)
 
+# Set custom output directories - to have same behaviour accross different compilers
+# On linux with make it doesn't work, no debug or release folders
+set(OUTPUTDIR "${CMAKE_CURRENT_SOURCE_DIR}/binaries") 
+# First for the generic no-config case (e.g. with mingw)
+set( CMAKE_RUNTIME_OUTPUT_DIRECTORY ${OUTPUTDIR} )
+set( CMAKE_LIBRARY_OUTPUT_DIRECTORY ${OUTPUTDIR} )
+set( CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${OUTPUTDIR} )
+# Second, for multi-config builds (e.g. msvc)
+foreach( OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES} )
+    string( TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG )
+    set( CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${OUTPUTDIR} )
+    set( CMAKE_LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${OUTPUTDIR} )
+    set( CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${OUTPUTDIR} )
+endforeach( OUTPUTCONFIG CMAKE_CONFIGURATION_TYPES )
+
 set_target_properties(${PROJECT_NAME} PROPERTIES
-    ARCHIVE_OUTPUT_DIRECTORY ${LIB_OUTPUT_DIR}
-    LIBRARY_OUTPUT_DIRECTORY ${LIB_OUTPUT_DIR}
-    RUNTIME_OUTPUT_DIRECTORY ${BIN_OUTPUT_DIR}
+    ARCHIVE_OUTPUT_DIRECTORY ${OUTPUTDIR}
+    LIBRARY_OUTPUT_DIRECTORY ${OUTPUTDIR}
+    RUNTIME_OUTPUT_DIRECTORY ${OUTPUTDIR}
 )
 
-target_include_directories(${PROJECT_NAME} PUBLIC INCLUDE_DIR)
+target_include_directories(${PROJECT_NAME} PUBLIC ${INCLUDE_DIR} ${SRC_DIR})
 
 target_sources(${PROJECT_NAME} PRIVATE 
     "${INCLUDE_DIR}/main.cpp"
+    "${SRC_DIR}/Asserts.h"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice.h"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice.cpp"
     )
+
+
+
+install(TARGETS ${PROJECT_NAME}
+DESTINATION ${OUTPUTDIR}
+)
     
+option(BUILD_TESTS "Build tests" ON)
+option(BUILD_EXAMPLES "Build examples" ON)
+
+if(BUILD_EXAMPLES)
+    add_subdirectory("examples/HelloTriangle")
+endif()

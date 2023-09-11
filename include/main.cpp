@@ -1,9 +1,10 @@
 #include <iostream>
-#include "volk.h"
-#include "vk_mem_alloc.h"
+
+#include "backend/vulkan/VulkanDevice.h"
+#include "backend/vulkan/VulkanInstance.h"
 
 int main()
 {
-    volkInitialize();
+    Fox::RIVulkanInstance Instance;
     return 0;
 }

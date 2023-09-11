@@ -2,19 +2,16 @@
 
 #pragma once
 
-#include "Core/window/WindowBase.h"
-
-#define VK_NO_PROTOTYPES
-#if defined(FOX_WINDOWS)
-#include "Window/windows/Win32.h"
-#define VK_USE_PLATFORM_WIN32_KHR
-// #include <vulkan/vulkan_win32.h>
+#if defined(_WIN32) || defined(WIN32) || defined(_WIN64) || defined(WIN64)
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+#elif defined(__linux__)
+#include <X11/Xlib.h>
 #else
-#include "Window/linux/WindowSDL.h"
-#define VK_USE_PLATFORM_XLIB_KHR
-// s#include <vulkan/vulkan_xlib.h>
+#pragma error Platform not supported
 #endif
 
+#define VK_NO_PROTOTYPES
 // Building There are multiple ways to use volk in your project:
 //
 //   You can just add volk.c to your build system.Note that the usual preprocessor defines that enable
@@ -31,26 +28,40 @@
 
 namespace Fox
 {
-class RIVulkanInstance
-{
-  public:
-    bool Init(const char* applicationName, std::vector<const char*> validationLayers, std::vector<const char*> extensions);
-    void Deinit();
 
-    VkSurfaceKHR CreateSurfaceFromWindow(AWindow* window);
-    void         DestroySurface(VkSurfaceKHR surface);
+	struct WindowData
+	{
+#if defined(_WIN32) || defined(WIN32) || defined(_WIN64) || defined(WIN64)
+		HINSTANCE _instance{};
+		HWND _hwnd{};
+#elif defined(__linux__)
+		Display* _display;
+		Window _window;
+#else
+#pragma error "Platform not supported"
+#endif
+	};
+
+	class RIVulkanInstance
+	{
+	public:
+		bool Init(const char* applicationName, std::vector<const char*> validationLayers, std::vector<const char*> extensions);
+		void Deinit();
+
+		VkSurfaceKHR CreateSurfaceFromWindow(const WindowData& windowData);
+		void         DestroySurface(VkSurfaceKHR surface);
 
 #ifdef _DEBUG
-    bool CreateDebugUtilsMessenger(PFN_vkDebugUtilsMessengerCallbackEXT callback);
+		bool CreateDebugUtilsMessenger(PFN_vkDebugUtilsMessengerCallbackEXT callback);
 #endif
 
-    VkInstance Instance{}; /* Vulkan library handle */
+		VkInstance Instance{}; /* Vulkan library handle */
 #ifdef _DEBUG
-    VkDebugUtilsMessengerEXT _debugMessenger{};
+		VkDebugUtilsMessengerEXT _debugMessenger{};
 
-  private:
-    void _destroyDebugUtilsMessenger();
+	private:
+		void _destroyDebugUtilsMessenger();
 #endif
-};
+	};
 
 }
