@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include "Core/memory/AtomicCounter.h"
+#include "AtomicCounter.h"
 #include <vector>
 
 namespace Fox

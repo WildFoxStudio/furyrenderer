@@ -1,10 +1,3 @@
-#include <iostream>
+// Copyright RedFox Studio 2022
 
-#include "backend/vulkan/VulkanDevice.h"
-#include "backend/vulkan/VulkanInstance.h"
-
-int main()
-{
-    Fox::RIVulkanInstance Instance;
-    return 0;
-}
+#include "IContext.h"

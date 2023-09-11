@@ -1,4 +1,27 @@
-int main()
+// Copyright RedFox Studio 2022
+
+#include <iostream>
+
+#include "IContext.h"
+#include "backend/vulkan/VulkanContextFactory.h"
+
+#include <iostream>
+
+void
+Log(const char* msg)
 {
-	return 0;
+    std::cout << msg << std::endl;
+};
+
+int
+main()
+{
+
+    Fox::DContextConfig config;
+    config.logOutputFunction = &Log;
+
+    Fox::IContext* context = Fox::CreateVulkanContext(&config);
+
+    delete context;
+    return 0;
 }

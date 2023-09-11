@@ -1,0 +1,24 @@
+# Format Style Options - Created with Clang Power Tools
+---
+AlignAfterOpenBracket: DontAlign
+AlignConsecutiveAssignments: true
+AlignConsecutiveDeclarations: true
+AlignConsecutiveMacros: false
+AlignEscapedNewlines: DontAlign
+AlignOperands: false
+AlignTrailingComments: false
+AllowAllConstructorInitializersOnNextLine: true
+AllowShortLambdasOnASingleLine: All
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AlwaysBreakAfterReturnType: None
+BasedOnStyle: Mozilla
+BreakBeforeBraces: GNU
+BreakConstructorInitializersBeforeComma: true
+ColumnLimit: 200
+ConstructorInitializerAllOnOneLineOrOnePerLine: true
+ContinuationIndentWidth: 0
+IndentWidth: 4
+TabWidth: 8
+...

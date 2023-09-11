@@ -2,8 +2,10 @@
 
 #include "VulkanDevice2.h"
 
-#include "Core/utils/debug.h"
+#include "asserts.h"
 #include "UtilsVK.h"
+
+#include <algorithm>
 
 namespace Fox
 {
@@ -201,7 +203,7 @@ RIVulkanDevice2::Present(std::vector<std::pair<VkSwapchainKHR, uint32_t>> swapch
     presentInfo.pResults           = results.data();
 
     {
-        [[unused]] const VkResult result = vkQueuePresentKHR(MainQueue, &presentInfo);
+        [[maybe_unused]] const VkResult result = vkQueuePresentKHR(MainQueue, &presentInfo);
     }
     return results;
 }

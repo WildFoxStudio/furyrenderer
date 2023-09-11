@@ -2,7 +2,8 @@
 
 #include "VulkanDevice10.h"
 
-#include "Core/utils/debug.h"
+#include "asserts.h"
+
 #include "UtilsVK.h"
 
 namespace Fox

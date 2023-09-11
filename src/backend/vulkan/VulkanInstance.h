@@ -11,7 +11,18 @@
 #pragma error Platform not supported
 #endif
 
+#include "IContext.h"
+
+
 #define VK_NO_PROTOTYPES
+
+#if defined(_WIN32) || defined(WIN32) || defined(_WIN64) || defined(WIN64)
+#define VK_USE_PLATFORM_WIN32_KHR
+//#include <vulkan/vulkan_win32.h> // Include the Win32-specific extension header
+#elif defined(__linux__)
+#define VK_USE_PLATFORM_XLIB_KHR
+//#include <vulkan/vulkan_xlib.h>
+#endif
 // Building There are multiple ways to use volk in your project:
 //
 //   You can just add volk.c to your build system.Note that the usual preprocessor defines that enable
@@ -24,24 +35,13 @@
 //   , with the usage detailed below.
 #include <volk.h>
 
+
+
+
 #include <vector>
 
 namespace Fox
 {
-
-	struct WindowData
-	{
-#if defined(_WIN32) || defined(WIN32) || defined(_WIN64) || defined(WIN64)
-		HINSTANCE _instance{};
-		HWND _hwnd{};
-#elif defined(__linux__)
-		Display* _display;
-		Window _window;
-#else
-#pragma error "Platform not supported"
-#endif
-	};
-
 	class RIVulkanInstance
 	{
 	public:

@@ -16,11 +16,9 @@ endif()
 set(SRC_DIR "${PROJECT_SOURCE_DIR}/src")
 set(INCLUDE_DIR "${PROJECT_SOURCE_DIR}/include")
 
-add_library(${PROJECT_NAME} SHARED
-    "include/main.cpp"
+add_library(${PROJECT_NAME} STATIC
+   "include/main.cpp"
 )
-
-set_target_properties(${PROJECT_NAME} PROPERTIES VERSION 1.0)
 
 add_subdirectory("thirdparty/volk")
 add_subdirectory("thirdparty/VulkanMemoryAllocator")
@@ -52,20 +50,47 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${INCLUDE_DIR} ${SRC_DIR})
 
 target_sources(${PROJECT_NAME} PRIVATE 
     "${INCLUDE_DIR}/main.cpp"
+    "${INCLUDE_DIR}/IContext.h"
+    "${INCLUDE_DIR}/backend/vulkan/VulkanContextFactory.h"
+    "${SRC_DIR}/backend/vulkan/VulkanContextFactory.cpp"
     "${SRC_DIR}/Asserts.h"
+    "${SRC_DIR}/backend/vulkan/VulkanContext.h"
+    "${SRC_DIR}/backend/vulkan/VulkanContext.cpp"
+    "${SRC_DIR}/backend/vulkan/VulkanInstance.h"
+    "${SRC_DIR}/backend/vulkan/VulkanInstance.cpp"
     "${SRC_DIR}/backend/vulkan/VulkanDevice.h"
     "${SRC_DIR}/backend/vulkan/VulkanDevice.cpp"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice2.h"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice2.cpp"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice3.h"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice3.cpp"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice4.h"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice4.cpp"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice5.h"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice5.cpp"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice6.h"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice6.cpp"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice7.h"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice7.cpp"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice8.h"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice8.cpp"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice9.h"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice9.cpp"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice10.h"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice10.cpp"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice11.h"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice11.cpp"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice12.h"
+    "${SRC_DIR}/backend/vulkan/VulkanDevice12.cpp"
+
     )
 
 
-
-install(TARGETS ${PROJECT_NAME}
-DESTINATION ${OUTPUTDIR}
-)
     
 option(BUILD_TESTS "Build tests" ON)
 option(BUILD_EXAMPLES "Build examples" ON)
 
 if(BUILD_EXAMPLES)
+    set(LIB_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/include")
     add_subdirectory("examples/HelloTriangle")
 endif()

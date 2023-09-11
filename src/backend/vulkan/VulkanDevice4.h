@@ -2,7 +2,6 @@
 
 #pragma once
 
-#include "Core/window/WindowBase.h"
 #include "VulkanDevice3.h"
 
 #include <volk.h>
