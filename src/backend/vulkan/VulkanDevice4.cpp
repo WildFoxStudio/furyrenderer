@@ -29,7 +29,7 @@ RIVulkanDevice4::CreateBufferHostVisible(uint32_t size, VkBufferUsageFlags usage
     const VkResult result = vmaCreateBuffer(VmaAllocator, &bufferInfo, &allocInfo, &buf.Buffer, &buf.Allocation, nullptr);
     if (VKFAILED(result))
         {
-            throw std::runtime_error(VkErrorString(result));
+            throw std::runtime_error(VkUtils::VkErrorString(result));
         }
 
     _buffers.insert(buf);
@@ -55,7 +55,7 @@ RIVulkanDevice4::CreateBufferDeviceLocalTransferBit(uint32_t size, VkBufferUsage
     const VkResult result = vmaCreateBuffer(VmaAllocator, &bufferInfo, &allocInfo, &buf.Buffer, &buf.Allocation, nullptr);
     if (VKFAILED(result))
         {
-            throw std::runtime_error(VkErrorString(result));
+            throw std::runtime_error(VkUtils::VkErrorString(result));
         }
 
     _buffers.insert(buf);
@@ -77,7 +77,7 @@ RIVulkanDevice4::MapBuffer(const RIVulkanBuffer& buffer)
     const VkResult result = vmaMapMemory(VmaAllocator, buffer.Allocation, &gpuVirtualAddress);
     if (VKFAILED(result))
         {
-            throw std::runtime_error(VkErrorString(result));
+            throw std::runtime_error(VkUtils::VkErrorString(result));
         }
     return gpuVirtualAddress;
 }

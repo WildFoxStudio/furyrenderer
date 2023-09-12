@@ -57,7 +57,7 @@ RIVulkanDevice8::CreateDescriptorSetLayout(const std::vector<VkDescriptorSetLayo
     const VkResult        result = vkCreateDescriptorSetLayout(Device, &layoutCreateInfo, nullptr, &layout);
     if (VKFAILED(result))
         {
-            throw std::runtime_error(VkErrorString(result));
+            throw std::runtime_error(VkUtils::VkErrorString(result));
         }
 
     // cache it

@@ -26,7 +26,7 @@ RIVulkanDevice3::CreateVkSemaphore()
     const VkResult result = vkCreateSemaphore(Device, &semaphoreInfo, nullptr, &semaphore);
     if (VKFAILED(result))
         {
-            throw std::runtime_error(VkErrorString(result));
+            throw std::runtime_error(VkUtils::VkErrorString(result));
         }
     _semaphores.insert(semaphore);
 
@@ -51,7 +51,7 @@ RIVulkanDevice3::CreateFence(bool signaled)
     const VkResult result = vkCreateFence(Device, &fenceInfo, nullptr, &fence);
     if (VKFAILED(result))
         {
-            throw std::runtime_error(VkErrorString(result));
+            throw std::runtime_error(VkUtils::VkErrorString(result));
         }
 
     _fences.insert(fence);

@@ -27,7 +27,7 @@ RIDescriptorPoolManager::AllocateDescriptorSets(VkDescriptorSetLayout descriptor
     const VkResult   result = vkAllocateDescriptorSets(_device, &allocInfo, descriptorSet.data());
     if (VKFAILED(result))
         {
-            throw std::runtime_error(VkErrorString(result));
+            throw std::runtime_error(VkUtils::VkErrorString(result));
         }
     return descriptorSet;
 }
@@ -48,7 +48,7 @@ RIDescriptorPoolManager::CreateDescriptorSet(VkDescriptorSetLayout descriptorSet
             const VkResult  result = vkAllocateDescriptorSets(_device, &allocInfo, &descriptorSet);
             if (VKFAILED(result))
                 {
-                    throw std::runtime_error(VkErrorString(result));
+                    throw std::runtime_error(VkUtils::VkErrorString(result));
                 }
 
             _descriptorSets.emplace_back();
@@ -67,7 +67,7 @@ RIDescriptorPoolManager::CreateDescriptorSet(VkDescriptorSetLayout descriptorSet
             const VkResult  result = vkAllocateDescriptorSets(_device, &allocInfo, &recycled->DescriptorSet);
             if (VKFAILED(result))
                 {
-                    throw std::runtime_error(VkErrorString(result));
+                    throw std::runtime_error(VkUtils::VkErrorString(result));
                 }
 
             return recycled;
@@ -278,7 +278,7 @@ RIVulkanDevice11::CreateDescriptorPool(const std::vector<VkDescriptorPoolSize>& 
     const VkResult   result = vkCreateDescriptorPool(Device, &poolInfo, nullptr, &descriptorPool);
     if (VKFAILED(result))
         {
-            throw std::runtime_error(VkErrorString(result));
+            throw std::runtime_error(VkUtils::VkErrorString(result));
         }
 
     _descriptorPools.insert(descriptorPool);
@@ -309,7 +309,7 @@ RIVulkanDevice11::CreateDescriptorSet(VkDescriptorPool pool, VkDescriptorSetLayo
     const VkResult  result = vkAllocateDescriptorSets(Device, &allocInfo, &descriptorSet);
     if (VKFAILED(result))
         {
-            throw std::runtime_error(VkErrorString(result));
+            throw std::runtime_error(VkUtils::VkErrorString(result));
         }
     return descriptorSet;
 }

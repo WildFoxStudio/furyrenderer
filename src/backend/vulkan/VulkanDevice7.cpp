@@ -27,7 +27,7 @@ RIVulkanDevice7::CreateFramebuffer(const std::vector<VkImageView>& imageViews, u
     const VkResult result = vkCreateFramebuffer(Device, &framebufferInfo, nullptr, &framebuffer);
     if (VKFAILED(result))
         {
-            throw std::runtime_error(VkErrorString(result));
+            throw std::runtime_error(VkUtils::VkErrorString(result));
         }
 
     _framebuffers.insert(framebuffer);

@@ -76,6 +76,12 @@ class VulkanContext : public IContext
     void OutWarning(const std::string& error);
     void Log(const std::string& error);
 
+    void _initializeVolk();
+    void _initializeInstance();
+    void _initializeDebugger();
+    void _initializeVersion();
+    void _initializeDevice();
+
     std::vector<const char*> _getInstanceSupportedExtensions(const std::vector<const char*>& extentions);
     std::vector<const char*> _getInstanceSupportedValidationLayers(const std::vector<const char*>& validationLayers);
     VkPhysicalDevice         _queryBestPhysicalDevice();

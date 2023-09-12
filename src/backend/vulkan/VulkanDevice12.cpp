@@ -27,7 +27,7 @@ RICommandPool::Allocate()
     const VkResult  result = vkAllocateCommandBuffers(_device, &info, &cmd);
     if (VKFAILED(result))
         {
-            throw std::runtime_error(VkErrorString(result));
+            throw std::runtime_error(VkUtils::VkErrorString(result));
         }
 
     _cachedCmds.push_back(RICommandBuffer(cmd));
@@ -63,7 +63,7 @@ RIVulkanDevice12::CreateCommandPool()
         const VkResult result = vkCreateCommandPool(Device, &poolInfo, nullptr, &commandPool);
         if (VKFAILED(result))
             {
-                throw std::runtime_error(VkErrorString(result));
+                throw std::runtime_error(VkUtils::VkErrorString(result));
             }
     }
 
@@ -115,7 +115,7 @@ RIVulkanDevice12::SubmitToMainQueue(const std::vector<RICommandBuffer*>& cmds, c
     const VkResult result = vkQueueSubmit(MainQueue, 1, &submitInfo, fence);
     if (VKFAILED(result))
         {
-            throw std::runtime_error(VkErrorString(result));
+            throw std::runtime_error(VkUtils::VkErrorString(result));
         }
 }
 

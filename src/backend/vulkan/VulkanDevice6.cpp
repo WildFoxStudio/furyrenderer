@@ -38,7 +38,7 @@ RIVulkanDevice6::CreateSampler(VkFilter minFilter, VkFilter magFilter, VkSampler
         const VkResult result = vkCreateSampler(Device, &samplerInfo, nullptr, &sampler);
         if (VKFAILED(result))
             {
-                throw std::runtime_error(VkErrorString(result));
+                throw std::runtime_error(VkUtils::VkErrorString(result));
                 return nullptr;
             }
     }

@@ -253,7 +253,7 @@ VkPipeline RIVulkanDevice10::CreatePipeline(const VkGraphicsPipelineCreateInfo* 
     const VkResult result = vkCreateGraphicsPipelines(Device, VK_NULL_HANDLE, 1, info, nullptr, &pipeline);
     if (VKFAILED(result))
         {
-            throw std::runtime_error(VkErrorString(result));
+            throw std::runtime_error(VkUtils::VkErrorString(result));
         }
 
     _pipelines.insert(pipeline);

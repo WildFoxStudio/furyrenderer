@@ -40,7 +40,7 @@ RIVulkanDevice5::CreateImageDeviceLocal(uint32_t width, uint32_t height, uint32_
     const VkResult result = vmaCreateImage(VmaAllocator, &imageInfo, &allocInfo, &image.Image, &image.Allocation, nullptr);
     if (VKFAILED(result))
         {
-            throw std::runtime_error(VkErrorString(result));
+            throw std::runtime_error(VkUtils::VkErrorString(result));
         }
 
     image.Format     = format;
@@ -79,7 +79,7 @@ RIVulkanDevice5::CreateImageHostVisible(uint32_t width, uint32_t height, uint32_
     const VkResult result = vmaCreateImage(VmaAllocator, &imageInfo, &allocInfo, &image.Image, &image.Allocation, nullptr);
     if (VKFAILED(result))
         {
-            throw std::runtime_error(VkErrorString(result));
+            throw std::runtime_error(VkUtils::VkErrorString(result));
         }
 
     image.Format     = format;
@@ -119,7 +119,7 @@ RIVulkanDevice5::CreateImageView(VkFormat format, const RIVulkanImage& image, Vk
         const VkResult result = vkCreateImageView(Device, &viewInfo, nullptr, &imageView);
         if (VKFAILED(result))
             {
-                throw std::runtime_error(VkErrorString(result));
+                throw std::runtime_error(VkUtils::VkErrorString(result));
                 return nullptr;
             }
     }

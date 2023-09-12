@@ -20,7 +20,7 @@ RIVulkanDevice2::SurfaceSupportPresentationOnCurrentQueueFamily(VkSurfaceKHR sur
     const VkResult result = vkGetPhysicalDeviceSurfaceSupportKHR(PhysicalDevice, GetQueueFamilyIndex(), surface, &supportPresentation);
     if (VKFAILED(result))
         {
-            throw std::runtime_error(VkErrorString(result));
+            throw std::runtime_error(VkUtils::VkErrorString(result));
         }
     return supportPresentation == VK_TRUE ? true : false;
 }
@@ -39,7 +39,7 @@ RIVulkanDevice2::GetSurfaceFormats(VkSurfaceKHR surface)
                 const VkResult result = vkGetPhysicalDeviceSurfaceFormatsKHR(PhysicalDevice, surface, &formatCount, formats.data());
                 if (VKFAILED(result))
                     {
-                        throw std::runtime_error(VkErrorString(result));
+                        throw std::runtime_error(VkUtils::VkErrorString(result));
                     }
             }
     }
@@ -55,7 +55,7 @@ RIVulkanDevice2::GetSurfaceCapabilities(VkSurfaceKHR surface)
         const VkResult result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(PhysicalDevice, surface, &surfaceCapabilities);
         if (VKFAILED(result))
             {
-                throw std::runtime_error(VkErrorString(result));
+                throw std::runtime_error(VkUtils::VkErrorString(result));
             }
     }
 
@@ -76,7 +76,7 @@ RIVulkanDevice2::GetSurfacePresentModes(VkSurfaceKHR surface)
                 const VkResult result = vkGetPhysicalDeviceSurfacePresentModesKHR(PhysicalDevice, surface, &presentModeCount, presentModes.data());
                 if (VKFAILED(result))
                     {
-                        throw std::runtime_error(VkErrorString(result));
+                        throw std::runtime_error(VkUtils::VkErrorString(result));
                     }
             }
     }
@@ -117,7 +117,7 @@ RIVulkanDevice2::CreateSwapchainFromSurface(VkSurfaceKHR surface, VkSurfaceForma
     const VkResult result = vkCreateSwapchainKHR(Device, &swapchainInfo, NULL, &swapchain);
     if (VKFAILED(result))
         {
-            throw std::runtime_error(VkErrorString(result));
+            throw std::runtime_error(VkUtils::VkErrorString(result));
         }
 
     _swapchains.insert(swapchain);

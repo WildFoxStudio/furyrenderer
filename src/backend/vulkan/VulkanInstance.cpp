@@ -74,7 +74,7 @@ RIVulkanInstance::CreateSurfaceFromWindow(const WindowData& windowData)
         const VkResult result                  = vkCreateWin32SurfaceKHR(Instance, &createInfo, NULL, &surface);
         if (VKFAILED(result))
             {
-                throw std::runtime_error(VkErrorString(result));
+                throw std::runtime_error(VkUtils::VkErrorString(result));
             }
     }
 #elif defined(__linux__)
