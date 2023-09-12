@@ -333,7 +333,7 @@ class IContext
 {
   public:
     virtual ~IContext(){};
-    virtual bool CreateSwapchain(const WindowData* windowData, const EPresentMode& presentMode, DSwapchain* swapchain) = 0;
+    virtual bool CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat, DSwapchain* swapchain) = 0;
     virtual void DestroySwapchain(const DSwapchain swapchain)                                                          = 0;
 
     virtual DFramebuffer CreateSwapchainFramebuffer()                 = 0;

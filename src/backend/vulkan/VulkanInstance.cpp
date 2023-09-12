@@ -5,7 +5,6 @@
 #include "UtilsVK.h"
 #include "asserts.h"
 
-
 #define VOLK_IMPLEMENTATION // defined only once
 #include "volk.h"
 
@@ -59,10 +58,9 @@ RIVulkanInstance::Deinit()
     vkDestroyInstance(Instance, nullptr);
 }
 
-VkSurfaceKHR
-RIVulkanInstance::CreateSurfaceFromWindow(const WindowData& windowData)
+VkResult
+RIVulkanInstance::CreateSurfaceFromWindow(const WindowData& windowData, VkSurfaceKHR* surface)
 {
-    VkSurfaceKHR surface{};
 
 #if defined(_WIN32) || defined(WIN32) || defined(_WIN64) || defined(WIN64)
     {
@@ -71,10 +69,10 @@ RIVulkanInstance::CreateSurfaceFromWindow(const WindowData& windowData)
         createInfo.pNext                       = NULL;
         createInfo.hinstance                   = windowData._instance;
         createInfo.hwnd                        = windowData._hwnd;
-        const VkResult result                  = vkCreateWin32SurfaceKHR(Instance, &createInfo, NULL, &surface);
+        const VkResult result                  = vkCreateWin32SurfaceKHR(Instance, &createInfo, NULL, surface);
         if (VKFAILED(result))
             {
-                throw std::runtime_error(VkUtils::VkErrorString(result));
+                return result;
             }
     }
 #elif defined(__linux__)
@@ -87,17 +85,17 @@ RIVulkanInstance::CreateSurfaceFromWindow(const WindowData& windowData)
         createInfo.pNext                      = NULL;
         createInfo.dpy                        = windowData._display;
         createInfo.window                     = windowData._window;
-        const VkResult result                 = vkCreateXlibSurfaceKHR(_vkInstance, &createInfo, NULL, &surface);
+        const VkResult result                 = vkCreateXlibSurfaceKHR(_vkInstance, &createInfo, NULL, surface);
         if (VKFAILED(result))
             {
-                throw std::runtime_error(VkErrorString(result));
+                return result;
             }
     }
 #else
 #pragma Error "Platform is not supported!"
 #endif
 
-    return surface;
+    return VK_SUCCESS;
 }
 
 void

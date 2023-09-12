@@ -2,13 +2,15 @@
 
 #pragma once
 
+#include "asserts.h"
+
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <volk.h>
 
 #include <algorithm>
-#include <vector>
-#include <string>
 #include <iterator>
+#include <string>
+#include <vector>
 
 #define VKFAILED(result) ((result != VK_SUCCESS ? true : false))
 #define VKSUCCEDED(result) ((result == VK_SUCCESS ? true : false))
@@ -83,6 +85,167 @@ VkErrorString(enum VkResult result)
                 break;
         }
 };
+
+inline VkPresentModeKHR
+convertPresentMode(const Fox::EPresentMode mode)
+{
+
+    switch (mode)
+        {
+            case Fox::EPresentMode::IMMEDIATE_KHR:
+                return VkPresentModeKHR::VK_PRESENT_MODE_IMMEDIATE_KHR;
+            case Fox::EPresentMode::MAILBOX:
+                return VkPresentModeKHR::VK_PRESENT_MODE_MAILBOX_KHR;
+            case Fox::EPresentMode::FIFO:
+                return VkPresentModeKHR::VK_PRESENT_MODE_FIFO_KHR;
+            case Fox::EPresentMode::FIFO_RELAXED:
+                return VkPresentModeKHR::VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+        }
+    check(0);
+    return VkPresentModeKHR::VK_PRESENT_MODE_MAX_ENUM_KHR;
+};
+
+inline Fox::EFormat
+convertVkFormat(const VkFormat format)
+{
+    switch (format)
+        {
+            case VK_FORMAT_R8_UNORM:
+                return Fox::EFormat::R8_UNORM;
+            case VK_FORMAT_R8G8B8_UNORM:
+                return Fox::EFormat::R8G8B8_UNORM;
+            case VK_FORMAT_R8G8B8A8_UNORM:
+                return Fox::EFormat::R8G8B8A8_UNORM;
+            case VK_FORMAT_B8G8R8_UNORM:
+                return Fox::EFormat::B8G8R8_UNORM;
+            case VK_FORMAT_B8G8R8A8_UNORM:
+                return Fox::EFormat::B8G8R8A8_UNORM;
+        }
+
+    check(0);
+    return Fox::EFormat::R8_UNORM;
+};
+
+inline VkFormat
+convertFormat(const Fox::EFormat format)
+{
+    switch (format)
+        {
+            case Fox::EFormat::R8_UNORM:
+                return VK_FORMAT_R8_UNORM;
+            case Fox::EFormat::R8G8B8_UNORM:
+                return VK_FORMAT_R8G8B8_UNORM;
+            case Fox::EFormat::R8G8B8A8_UNORM:
+                return VK_FORMAT_R8G8B8A8_UNORM;
+            case Fox::EFormat::B8G8R8_UNORM:
+                return VK_FORMAT_B8G8R8_UNORM;
+            case Fox::EFormat::B8G8R8A8_UNORM:
+                return VK_FORMAT_B8G8R8A8_UNORM;
+        }
+
+    check(0);
+    return VK_FORMAT_UNDEFINED;
+};
+
+inline VkSampleCountFlagBits
+convertVkSampleCount(const Fox::ESampleBit sample)
+{
+
+    switch (sample)
+        {
+            case Fox::ESampleBit::COUNT_1_BIT:
+                return VK_SAMPLE_COUNT_1_BIT;
+            case Fox::ESampleBit::COUNT_2_BIT:
+                return VK_SAMPLE_COUNT_2_BIT;
+            case Fox::ESampleBit::COUNT_4_BIT:
+                return VK_SAMPLE_COUNT_4_BIT;
+            case Fox::ESampleBit::COUNT_8_BIT:
+                return VK_SAMPLE_COUNT_8_BIT;
+            case Fox::ESampleBit::COUNT_16_BIT:
+                return VK_SAMPLE_COUNT_16_BIT;
+            case Fox::ESampleBit::COUNT_32_BIT:
+                return VK_SAMPLE_COUNT_32_BIT;
+            case Fox::ESampleBit::COUNT_64_BIT:
+                return VK_SAMPLE_COUNT_64_BIT;
+        }
+
+    check(0);
+    return VK_SAMPLE_COUNT_1_BIT;
+}
+
+inline VkAttachmentLoadOp
+convertAttachmentLoadOp(const Fox::ERenderPassLoad load)
+{
+    switch (load)
+        {
+            case Fox::ERenderPassLoad::Clear:
+                return VK_ATTACHMENT_LOAD_OP_CLEAR;
+            case Fox::ERenderPassLoad::Load:
+                return VK_ATTACHMENT_LOAD_OP_LOAD;
+        }
+
+    check(0);
+    return VK_ATTACHMENT_LOAD_OP_CLEAR;
+}
+
+inline VkAttachmentStoreOp
+convertAttachmentStoreOp(const Fox::ERenderPassStore store)
+{
+    switch (store)
+        {
+            case Fox::ERenderPassStore::DontCare:
+                return VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            case Fox::ERenderPassStore::Store:
+                return VK_ATTACHMENT_STORE_OP_STORE;
+        }
+
+    check(0);
+    return VK_ATTACHMENT_STORE_OP_STORE;
+}
+
+inline bool
+isColorFormat(const VkFormat format)
+{
+    switch (format)
+        {
+            case VK_FORMAT_D16_UNORM:
+            case VK_FORMAT_X8_D24_UNORM_PACK32:
+            case VK_FORMAT_D32_SFLOAT:
+            case VK_FORMAT_S8_UINT:
+            case VK_FORMAT_D16_UNORM_S8_UINT:
+            case VK_FORMAT_D24_UNORM_S8_UINT:
+            case VK_FORMAT_D32_SFLOAT_S8_UINT:
+                return false;
+        }
+
+    return true;
+}
+
+inline VkImageLayout
+convertRenderPassLayout(const Fox::ERenderPassLayout layout, bool isColor = true)
+{
+    switch (layout)
+        {
+            case Fox::ERenderPassLayout::Undefined:
+                return VK_IMAGE_LAYOUT_UNDEFINED;
+            case Fox::ERenderPassLayout::AsAttachment:
+                if (isColor)
+                    {
+                        return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+                    }
+                else
+                    {
+                        return VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL;
+                    }
+            case Fox::ERenderPassLayout::ShaderReadOnly:
+                return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            case Fox::ERenderPassLayout::Present:
+                return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        }
+
+    check(0);
+    return VK_IMAGE_LAYOUT_UNDEFINED;
+}
 
 inline std::vector<const char*>
 convertLayerPropertiesToNames(const std::vector<VkLayerProperties>& layers)
@@ -240,5 +403,24 @@ filterExclusive(const std::vector<const char*> source, const std::vector<const c
 
     return inclusive;
 };
+
+inline VkImageLayout
+convertAttachmentReferenceLayout(const Fox::EAttachmentReference& att)
+{
+    switch (att)
+        {
+            case Fox::EAttachmentReference::COLOR_READ_ONLY:
+                return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            case Fox::EAttachmentReference::COLOR_ATTACHMENT:
+                return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            case Fox::EAttachmentReference::DEPTH_STENCIL_READ_ONLY:
+                return VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL;
+            case Fox::EAttachmentReference::DEPTH_STENCIL_ATTACHMENT:
+                return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        }
+
+    check(0);
+    return VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
+}
 
 }

@@ -2,8 +2,8 @@
 
 #include "VulkanDevice2.h"
 
-#include "asserts.h"
 #include "UtilsVK.h"
+#include "asserts.h"
 
 #include <algorithm>
 
@@ -83,8 +83,13 @@ RIVulkanDevice2::GetSurfacePresentModes(VkSurfaceKHR surface)
     return presentModes;
 }
 
-VkSwapchainKHR
-RIVulkanDevice2::CreateSwapchainFromSurface(VkSurfaceKHR surface, VkSurfaceFormatKHR& format, VkPresentModeKHR& presentMode, VkSurfaceCapabilitiesKHR& capabilities, VkSwapchainKHR oldSwapchain)
+VkResult
+RIVulkanDevice2::CreateSwapchainFromSurface(VkSurfaceKHR surface,
+const VkSurfaceFormatKHR&                                format,
+const VkPresentModeKHR&                                  presentMode,
+const VkSurfaceCapabilitiesKHR&                          capabilities,
+VkSwapchainKHR*                                          outSwapchain,
+VkSwapchainKHR                                           oldSwapchain)
 {
     uint32_t queueFamilyIndices[] = { (uint32_t)GetQueueFamilyIndex() };
     critical(capabilities.minImageCount >= MAX_IMAGE_COUNT);
@@ -101,28 +106,27 @@ RIVulkanDevice2::CreateSwapchainFromSurface(VkSurfaceKHR surface, VkSurfaceForma
     check(capabilities.currentExtent.width <= capabilities.maxImageExtent.width);
     check(capabilities.currentExtent.height <= capabilities.maxImageExtent.height);
 
-    swapchainInfo.imageExtent              = capabilities.currentExtent;
-    swapchainInfo.imageArrayLayers         = capabilities.maxImageArrayLayers;
-    swapchainInfo.imageUsage               = capabilities.supportedUsageFlags; // VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;;
-    swapchainInfo.imageSharingMode         = VK_SHARING_MODE_EXCLUSIVE;
-    swapchainInfo.queueFamilyIndexCount    = 1;
-    swapchainInfo.pQueueFamilyIndices      = queueFamilyIndices;
-    swapchainInfo.preTransform             = capabilities.currentTransform;
-    swapchainInfo.compositeAlpha           = VkCompositeAlphaFlagBitsKHR::VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    swapchainInfo.presentMode              = presentMode;
-    swapchainInfo.clipped                  = 0;
-    swapchainInfo.oldSwapchain             = oldSwapchain;
+    swapchainInfo.imageExtent           = capabilities.currentExtent;
+    swapchainInfo.imageArrayLayers      = capabilities.maxImageArrayLayers;
+    swapchainInfo.imageUsage            = capabilities.supportedUsageFlags; // VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;;
+    swapchainInfo.imageSharingMode      = VK_SHARING_MODE_EXCLUSIVE;
+    swapchainInfo.queueFamilyIndexCount = 1;
+    swapchainInfo.pQueueFamilyIndices   = queueFamilyIndices;
+    swapchainInfo.preTransform          = capabilities.currentTransform;
+    swapchainInfo.compositeAlpha        = VkCompositeAlphaFlagBitsKHR::VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    swapchainInfo.presentMode           = presentMode;
+    swapchainInfo.clipped               = 0;
+    swapchainInfo.oldSwapchain          = oldSwapchain;
 
-    VkSwapchainKHR swapchain{};
-    const VkResult result = vkCreateSwapchainKHR(Device, &swapchainInfo, NULL, &swapchain);
+    const VkResult result = vkCreateSwapchainKHR(Device, &swapchainInfo, NULL, outSwapchain);
     if (VKFAILED(result))
         {
             throw std::runtime_error(VkUtils::VkErrorString(result));
         }
 
-    _swapchains.insert(swapchain);
+    _swapchains.insert(*outSwapchain);
 
-    return swapchain;
+    return result;
 }
 
 void

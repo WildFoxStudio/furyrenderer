@@ -13,15 +13,14 @@
 
 #include "IContext.h"
 
-
 #define VK_NO_PROTOTYPES
 
 #if defined(_WIN32) || defined(WIN32) || defined(_WIN64) || defined(WIN64)
 #define VK_USE_PLATFORM_WIN32_KHR
-//#include <vulkan/vulkan_win32.h> // Include the Win32-specific extension header
+// #include <vulkan/vulkan_win32.h> // Include the Win32-specific extension header
 #elif defined(__linux__)
 #define VK_USE_PLATFORM_XLIB_KHR
-//#include <vulkan/vulkan_xlib.h>
+// #include <vulkan/vulkan_xlib.h>
 #endif
 // Building There are multiple ways to use volk in your project:
 //
@@ -35,33 +34,30 @@
 //   , with the usage detailed below.
 #include <volk.h>
 
-
-
-
 #include <vector>
 
 namespace Fox
 {
-	class RIVulkanInstance
-	{
-	public:
-		VkResult Init(const char* applicationName, std::vector<const char*> validationLayers, std::vector<const char*> extensions);
-		void Deinit();
+class RIVulkanInstance
+{
+  public:
+    VkResult Init(const char* applicationName, std::vector<const char*> validationLayers, std::vector<const char*> extensions);
+    void     Deinit();
 
-		VkSurfaceKHR CreateSurfaceFromWindow(const WindowData& windowData);
-		void         DestroySurface(VkSurfaceKHR surface);
+    VkResult CreateSurfaceFromWindow(const WindowData& windowData, VkSurfaceKHR* surface);
+    void     DestroySurface(VkSurfaceKHR surface);
 
 #ifdef _DEBUG
-		bool CreateDebugUtilsMessenger(PFN_vkDebugUtilsMessengerCallbackEXT callback);
+    bool CreateDebugUtilsMessenger(PFN_vkDebugUtilsMessengerCallbackEXT callback);
 #endif
 
-		VkInstance Instance{}; /* Vulkan library handle */
+    VkInstance Instance{}; /* Vulkan library handle */
 #ifdef _DEBUG
-		VkDebugUtilsMessengerEXT _debugMessenger{};
+    VkDebugUtilsMessengerEXT _debugMessenger{};
 
-	private:
-		void _destroyDebugUtilsMessenger();
+  private:
+    void _destroyDebugUtilsMessenger();
 #endif
-	};
+};
 
 }

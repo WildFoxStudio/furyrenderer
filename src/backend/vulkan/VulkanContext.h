@@ -7,18 +7,34 @@
 #include "VulkanDevice12.h"
 #include "VulkanInstance.h"
 
+#include <list>
 #include <vector>
 
 namespace Fox
 {
 
+struct DSwapchainVulkan : public DSwapchain_T
+{
+    VkSurfaceKHR               Surface;
+    VkSurfaceCapabilitiesKHR   Capabilities;
+    VkSurfaceFormatKHR         Format;
+    VkSwapchainKHR             Swaphchain{};
+    std::vector<VkImage>       Images;
+    std::vector<VkImageView>   ImageViews;
+    std::vector<VkFramebuffer> Framebuffers;
+    std::vector<VkSemaphore>   ImageAvailableSemaphore;
+    uint32_t                   CurrentImageIndex{};
+};
+
 class VulkanContext : public IContext
 {
+    inline static constexpr uint32_t NUM_OF_FRAMES_IN_FLIGHT{ 2 };
+
   public:
     VulkanContext(const DContextConfig* const config);
     ~VulkanContext();
 
-    bool CreateSwapchain(const WindowData* windowData, const EPresentMode& presentMode, DSwapchain* swapchain) override;
+    bool CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat, DSwapchain* swapchain) override;
     void DestroySwapchain(const DSwapchain swapchain) override;
 
     DFramebuffer CreateSwapchainFramebuffer() override;
@@ -38,6 +54,7 @@ class VulkanContext : public IContext
     void (*_warningOutput)(const char*);
     void (*_logOutput)(const char*);
 
+    std::list<DSwapchainVulkan> _swapchains;
 
     const std::vector<const char*> _validationLayers = {
         "VK_LAYER_KHRONOS_validation",
@@ -82,6 +99,7 @@ class VulkanContext : public IContext
     void _initializeVersion();
     void _initializeDevice();
 
+    VkRenderPass             _createRenderPass(const DRenderPassAttachments& attachments);
     std::vector<const char*> _getInstanceSupportedExtensions(const std::vector<const char*>& extentions);
     std::vector<const char*> _getInstanceSupportedValidationLayers(const std::vector<const char*>& validationLayers);
     VkPhysicalDevice         _queryBestPhysicalDevice();

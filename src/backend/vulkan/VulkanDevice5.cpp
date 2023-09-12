@@ -101,7 +101,7 @@ RIVulkanDevice5::DestroyImage(const RIVulkanImage& image)
 }
 
 VkImageView
-RIVulkanDevice5::CreateImageView(VkFormat format, const RIVulkanImage& image, VkImageAspectFlags aspect, uint32_t baseMipLevel, uint32_t mipmapCount)
+RIVulkanDevice5::CreateImageView_DEPRECATED(VkFormat format, const RIVulkanImage& image, VkImageAspectFlags aspect, uint32_t baseMipLevel, uint32_t mipmapCount)
 {
     VkImageView imageView{};
     {
@@ -128,6 +128,35 @@ RIVulkanDevice5::CreateImageView(VkFormat format, const RIVulkanImage& image, Vk
     _imageViews.insert(imageView);
 
     return imageView;
+}
+
+VkResult
+RIVulkanDevice5::CreateImageView(VkFormat format, VkImage image, VkImageAspectFlags aspect, uint32_t baseMipLevel, uint32_t mipmapCount, VkImageView* outImageView)
+{
+    {
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType                           = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image                           = image;
+        viewInfo.viewType                        = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format                          = format;
+        viewInfo.subresourceRange.aspectMask     = aspect;
+        viewInfo.subresourceRange.baseMipLevel   = baseMipLevel;
+        viewInfo.subresourceRange.levelCount     = mipmapCount;
+        viewInfo.subresourceRange.baseArrayLayer = 0; // first element of array
+        viewInfo.subresourceRange.layerCount     = VK_REMAINING_ARRAY_LAYERS; // till last array element
+
+        const VkResult result = vkCreateImageView(Device, &viewInfo, nullptr, outImageView);
+        if (VKFAILED(result))
+            {
+                // throw std::runtime_error(VkUtils::VkErrorString(result));
+                return result;
+            }
+    }
+    check(*outImageView);
+
+    _imageViews.insert(*outImageView);
+
+    return VK_SUCCESS;
 }
 
 void

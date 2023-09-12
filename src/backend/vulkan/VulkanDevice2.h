@@ -31,10 +31,11 @@ class RIVulkanDevice2 : public RIVulkanDevice
      * @param oldSwapchain The old swapchain if exists, nullptr otherwise
      * @return
      */
-    VkSwapchainKHR CreateSwapchainFromSurface(VkSurfaceKHR surface,
-    VkSurfaceFormatKHR&                                    format,
-    VkPresentModeKHR&                                      presentMode,
-    VkSurfaceCapabilitiesKHR&                              capabilities,
+    VkResult CreateSwapchainFromSurface(VkSurfaceKHR surface,
+    const VkSurfaceFormatKHR&                              format,
+    const VkPresentModeKHR&                                presentMode,
+    const VkSurfaceCapabilitiesKHR&                        capabilities,
+    VkSwapchainKHR* outSwapchain,
     VkSwapchainKHR                                         oldSwapchain = nullptr);
     /**
      * @brief Must be externally synchronized
