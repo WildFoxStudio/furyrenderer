@@ -45,7 +45,7 @@ namespace Fox
 	class RIVulkanInstance
 	{
 	public:
-		bool Init(const char* applicationName, std::vector<const char*> validationLayers, std::vector<const char*> extensions);
+		VkResult Init(const char* applicationName, std::vector<const char*> validationLayers, std::vector<const char*> extensions);
 		void Deinit();
 
 		VkSurfaceKHR CreateSurfaceFromWindow(const WindowData& windowData);

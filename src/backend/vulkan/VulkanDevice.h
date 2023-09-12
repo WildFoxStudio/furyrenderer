@@ -22,7 +22,7 @@ namespace Fox
 	{
 	public:
 		virtual ~RIVulkanDevice();
-		bool Create(const RIVulkanInstance& instance,
+          VkResult Create(const RIVulkanInstance& instance,
 			VkPhysicalDevice                    hardwareDevice,
 			std::vector<const char*>            extensions,
 			VkPhysicalDeviceFeatures& deviceFeatures,

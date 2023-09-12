@@ -12,7 +12,7 @@
 namespace Fox
 {
 
-bool
+VkResult
 RIVulkanInstance::Init(const char* applicationName, std::vector<const char*> validationLayers, std::vector<const char*> extensions)
 {
     check(Instance == nullptr);
@@ -38,12 +38,12 @@ RIVulkanInstance::Init(const char* applicationName, std::vector<const char*> val
     const VkResult result = vkCreateInstance(&createInfo, nullptr, &Instance);
     if (VKFAILED(result))
         {
-            return false;
+            return result;
         }
     // Load initialize all function through vkGetInstanceProcAddr
     volkLoadInstance(Instance);
 
-    return true;
+    return result;
 }
 
 void

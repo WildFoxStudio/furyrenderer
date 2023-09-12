@@ -27,7 +27,7 @@ namespace Fox
 		check(Device == nullptr);
 	};
 
-	bool
+	VkResult
 		RIVulkanDevice::Create(const RIVulkanInstance& instance,
 			VkPhysicalDevice                               hardwareDevice,
 			std::vector<const char*>                       extensions,
@@ -75,7 +75,7 @@ namespace Fox
 			if (VKFAILED(result))
 			{
 				// std::runtime_error("Failed to initialize VkDevice" + VKERRORSTRING(result));
-				return false;
+				return result;
 			}
 		}
 		{
@@ -123,14 +123,14 @@ namespace Fox
 				if (result != VK_SUCCESS)
 				{
 					// std::runtime_error("Failed to initialize VMA");
-					return false;
+					return result;
 				}
 			}
 		}
 
 		vkGetDeviceQueue(Device, _queueFamilyIndex, 0, &MainQueue);
 
-		return true;
+		return VK_SUCCESS;
 	}
 
 	void

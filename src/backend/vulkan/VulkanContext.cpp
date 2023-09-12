@@ -36,9 +36,10 @@ VulkanContext::_initializeInstance()
     auto validValidationLayers = _getInstanceSupportedValidationLayers(_validationLayers);
     auto validExtensions       = _getInstanceSupportedExtensions(_instanceExtensionNames);
 
-    if (!Instance.Init("Application", validValidationLayers, validExtensions))
+    const auto result = Instance.Init("Application", validValidationLayers, validExtensions));
+    if (VKFAILED(result))
         {
-            throw std::runtime_error("Could not create a vulkan instance");
+            throw std::runtime_error("Could not create a vulkan instance"+ std::string(VkUtils::VkErrorString(result));
         }
 }
 
@@ -94,9 +95,10 @@ VulkanContext::_initializeDevice()
     deviceFeatures.shaderSampledImageArrayDynamicIndexing = VK_TRUE;
     deviceFeatures.fillModeNonSolid                       = VK_TRUE;
 
-    if (!Device.Create(Instance, physicalDevice, _deviceExtensionNames, deviceFeatures, _validationLayers))
+    const auto result = Device.Create(Instance, physicalDevice, _deviceExtensionNames, deviceFeatures, _validationLayers);
+    if (VKFAILED(result))
         {
-            throw std::runtime_error("Could not create a vulkan device");
+            throw std::runtime_error("Could not create a vulkan device" + std::string(VkUtils::VkErrorString(result)));
         }
 
     // replacing global function pointers with functions retrieved with vkGetDeviceProcAddr
