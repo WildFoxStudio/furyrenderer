@@ -304,6 +304,7 @@ VulkanContext::_createRenderPass(const DRenderPassAttachments& attachments)
     subpass.flags                   = 0;
     subpass.pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.inputAttachmentCount    = 0;
+    subpass.pInputAttachments       = nullptr;
     subpass.colorAttachmentCount    = (uint32_t)colorAttachmentReference.size();
     subpass.pColorAttachments       = colorAttachmentReference.data();
     subpass.pResolveAttachments     = NULL;
