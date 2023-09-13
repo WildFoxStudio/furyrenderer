@@ -99,7 +99,10 @@ struct VkSubpassDescriptionHashFn
                 seed ^= VkAttachmentReferenceHashFn{}(*ref);
             }
 
-        seed ^= std::hash<const VkAttachmentReference*>{}(subpassDesc.pDepthStencilAttachment);
+        if (subpassDesc.pDepthStencilAttachment != nullptr)
+            {
+                seed ^= VkAttachmentReferenceHashFn{}(*subpassDesc.pDepthStencilAttachment);
+            }
 
         seed ^= std::hash<uint32_t>{}(subpassDesc.preserveAttachmentCount);
         for (uint32_t i = 0; i < subpassDesc.preserveAttachmentCount; i++)
@@ -139,16 +142,22 @@ struct VkSubpassDescriptionEqualFn
                     {
                         return false;
                     }
-                if (!VkAttachmentReferenceEqualFn{}(lhs.pResolveAttachments[i], rhs.pResolveAttachments[i]))
+                if (lhs.pResolveAttachments != nullptr && lhs.pResolveAttachments != nullptr)
                     {
-                        return false;
+                        if (!VkAttachmentReferenceEqualFn{}(lhs.pResolveAttachments[i], rhs.pResolveAttachments[i]))
+                            {
+                                return false;
+                            }
                     }
             }
 
         // Compare depth/stencil attachment
-        if (!VkAttachmentReferenceEqualFn{}(*lhs.pDepthStencilAttachment, *rhs.pDepthStencilAttachment))
+        if (lhs.pDepthStencilAttachment != nullptr && rhs.pDepthStencilAttachment != nullptr)
             {
-                return false;
+                if (!VkAttachmentReferenceEqualFn{}(*lhs.pDepthStencilAttachment, *rhs.pDepthStencilAttachment))
+                    {
+                        return false;
+                    }
             }
 
         for (uint32_t i = 0; i < lhs.preserveAttachmentCount; ++i)

@@ -96,3 +96,7 @@ if(BUILD_EXAMPLES)
     set(LIB_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/include")
     add_subdirectory("examples/HelloTriangle")
 endif()
+
+if(BUILD_TESTS)
+add_subdirectory("tests")
+endif()
