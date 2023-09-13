@@ -65,9 +65,8 @@ struct VkAttachmentReferenceHashFn
         std::size_t seed = 0;
 
         std::hash<uint32_t> uint32Hasher;
-        seed ^= uint32Hasher(lhs.attachment);
-        std::hash<VkImageLayout> imageLayoutHasher;
-        seed ^= imageLayoutHasher(lhs.layout);
+        seed += uint32Hasher(lhs.attachment + 1); // cant hash 0
+        seed += uint32Hasher(static_cast<uint32_t>(lhs.layout) + 1); // cant hash 0
 
         return seed;
     };
@@ -75,7 +74,7 @@ struct VkAttachmentReferenceHashFn
 
 struct VkAttachmentReferenceEqualFn
 {
-    bool operator()(const VkAttachmentReference& lhs, const VkAttachmentReference& rhs) const { return (lhs.attachment == lhs.attachment && rhs.layout == rhs.layout); }
+    bool operator()(const VkAttachmentReference& lhs, const VkAttachmentReference& rhs) const { return (lhs.attachment == rhs.attachment && lhs.layout == rhs.layout); }
 };
 
 struct VkSubpassDescriptionHashFn

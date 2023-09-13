@@ -117,6 +117,33 @@ TEST(UnitVkAttachmentDescriptionFinalLayout, VkAttachmentDescriptionDifferentFin
     EXPECT_FALSE(VkAttachmentDescriptionEqualFn{}(desc, desc2));
 }
 
+TEST(UnitVkAttachmentReference, VkAttachmentReferenceShouldHaveSameHashAndCompare)
+{
+    VkAttachmentReference ref{ 0, VK_IMAGE_LAYOUT_UNDEFINED };
+    VkAttachmentReference ref2{ 0, VK_IMAGE_LAYOUT_UNDEFINED };
+
+    EXPECT_EQ(VkAttachmentReferenceHashFn{}(ref), VkAttachmentReferenceHashFn{}(ref2));
+    EXPECT_TRUE(VkAttachmentReferenceEqualFn{}(ref, ref2));
+}
+
+TEST(UnitVkAttachmentReferenceIndex, VkAttachmentReferenceIndexShouldDifferHashAndCompare)
+{
+    VkAttachmentReference ref{ 0, VK_IMAGE_LAYOUT_UNDEFINED };
+    VkAttachmentReference ref2{ 1, VK_IMAGE_LAYOUT_UNDEFINED };
+
+    EXPECT_NE(VkAttachmentReferenceHashFn{}(ref), VkAttachmentReferenceHashFn{}(ref2));
+    EXPECT_FALSE(VkAttachmentReferenceEqualFn{}(ref, ref2));
+}
+
+TEST(UnitVkAttachmentReferenceLayout, VkAttachmentReferenceLayoutShouldDifferHashAndCompare)
+{
+    VkAttachmentReference ref{ 0, VK_IMAGE_LAYOUT_UNDEFINED };
+    VkAttachmentReference ref2{ 0, VK_IMAGE_LAYOUT_GENERAL };
+
+    EXPECT_NE(VkAttachmentReferenceHashFn{}(ref), VkAttachmentReferenceHashFn{}(ref2));
+    EXPECT_FALSE(VkAttachmentReferenceEqualFn{}(ref, ref2));
+}
+
 TEST(UnitRenderPassCaching, EmptyRenderPassInfoShouldHaveSameHashAndBeEqual)
 {
     RIRenderPassInfo       info;
@@ -214,14 +241,14 @@ TEST(UnitRenderPassCaching, SomeRenderPassInfoShouldHaveSameHashAndBeEqual)
     EXPECT_TRUE(areEqual);
 }
 
-TEST(UnitRenderPassCaching, SomeRenderPassInfoShouldNotHaveSameHashAndNotBeEqual)
-{
-    RIRenderPassInfo info;
-    RIRenderPassInfo expected;
-    
-    const auto infoHash     = RIRenderPassInfoHashFn{}(info);
-    const auto expectedHash = RIRenderPassInfoHashFn{}(expected);
-    EXPECT_NE(infoHash, expectedHash);
-    const auto areEqual = RIRenderPassInfoEqualFn{}(info, expected);
-    EXPECT_FALSE(areEqual);
-}
+//TEST(UnitRenderPassCaching, SomeRenderPassInfoShouldNotHaveSameHashAndNotBeEqual)
+//{
+//    RIRenderPassInfo info;
+//    RIRenderPassInfo expected;
+//
+//    const auto infoHash     = RIRenderPassInfoHashFn{}(info);
+//    const auto expectedHash = RIRenderPassInfoHashFn{}(expected);
+//    EXPECT_NE(infoHash, expectedHash);
+//    const auto areEqual = RIRenderPassInfoEqualFn{}(info, expected);
+//    EXPECT_FALSE(areEqual);
+//}
