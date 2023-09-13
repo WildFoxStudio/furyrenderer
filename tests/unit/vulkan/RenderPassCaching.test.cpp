@@ -19,6 +19,36 @@ GetDefaultVkAttachmentDescription()
     return desc;
 }
 
+VkSubpassDependency
+GetDefaultVkSubpassDependency()
+{
+    VkSubpassDependency dependency;
+    dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass    = 0;
+    dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcAccessMask = 0;
+    dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    return dependency;
+}
+
+VkSubpassDescription
+GetDefaultVkSubpassDescription(const std::vector<VkAttachmentReference>& colorAttachment, const std::vector<VkAttachmentReference>& depthStencilAttachment)
+{
+    VkSubpassDescription subpass{};
+    subpass.flags                   = 0;
+    subpass.pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.inputAttachmentCount    = 0;
+    subpass.pInputAttachments       = nullptr;
+    subpass.colorAttachmentCount    = (uint32_t)colorAttachment.size();
+    subpass.pColorAttachments       = colorAttachment.data();
+    subpass.pResolveAttachments     = NULL;
+    subpass.pDepthStencilAttachment = (depthStencilAttachment.size()) ? depthStencilAttachment.data() : nullptr;
+    subpass.preserveAttachmentCount = 0;
+    subpass.pPreserveAttachments    = NULL;
+    return subpass;
+}
+
 TEST(UnitVkAttachmentDescription, VkAttachmentDescriptionShouldHaveSameHashAndBeEqual)
 {
     VkAttachmentDescription desc = GetDefaultVkAttachmentDescription();
@@ -34,7 +64,7 @@ TEST(UnitVkAttachmentDescriptionFormat, VkAttachmentDescriptionDifferentFormatSh
     VkAttachmentDescription desc = GetDefaultVkAttachmentDescription();
 
     VkAttachmentDescription desc2 = GetDefaultVkAttachmentDescription();
-    desc.format                   = VK_FORMAT_R4G4_UNORM_PACK8;
+    desc2.format                  = VK_FORMAT_R4G4_UNORM_PACK8;
 
     EXPECT_NE(VkAttachmentDescriptionHashFn{}(desc), VkAttachmentDescriptionHashFn{}(desc2));
     EXPECT_FALSE(VkAttachmentDescriptionEqualFn{}(desc, desc2));
@@ -45,7 +75,7 @@ TEST(UnitVkAttachmentDescriptionSamples, VkAttachmentDescriptionDifferentSamples
     VkAttachmentDescription desc = GetDefaultVkAttachmentDescription();
 
     VkAttachmentDescription desc2 = GetDefaultVkAttachmentDescription();
-    desc.samples                  = VK_SAMPLE_COUNT_2_BIT;
+    desc2.samples                 = VK_SAMPLE_COUNT_2_BIT;
 
     EXPECT_NE(VkAttachmentDescriptionHashFn{}(desc), VkAttachmentDescriptionHashFn{}(desc2));
     EXPECT_FALSE(VkAttachmentDescriptionEqualFn{}(desc, desc2));
@@ -56,7 +86,7 @@ TEST(UnitVkAttachmentDescriptionLoadOp, VkAttachmentDescriptionDifferentLoadOpSh
     VkAttachmentDescription desc = GetDefaultVkAttachmentDescription();
 
     VkAttachmentDescription desc2 = GetDefaultVkAttachmentDescription();
-    desc.loadOp                   = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    desc2.loadOp                  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 
     EXPECT_NE(VkAttachmentDescriptionHashFn{}(desc), VkAttachmentDescriptionHashFn{}(desc2));
     EXPECT_FALSE(VkAttachmentDescriptionEqualFn{}(desc, desc2));
@@ -67,7 +97,7 @@ TEST(UnitVkAttachmentDescriptionStoreOp, VkAttachmentDescriptionDifferentStoreOp
     VkAttachmentDescription desc = GetDefaultVkAttachmentDescription();
 
     VkAttachmentDescription desc2 = GetDefaultVkAttachmentDescription();
-    desc.storeOp                  = VK_ATTACHMENT_STORE_OP_STORE;
+    desc2.storeOp                 = VK_ATTACHMENT_STORE_OP_STORE;
 
     EXPECT_NE(VkAttachmentDescriptionHashFn{}(desc), VkAttachmentDescriptionHashFn{}(desc2));
     EXPECT_FALSE(VkAttachmentDescriptionEqualFn{}(desc, desc2));
@@ -78,7 +108,7 @@ TEST(UnitVkAttachmentDescriptionStencilLoadOp, VkAttachmentDescriptionDifferentL
     VkAttachmentDescription desc = GetDefaultVkAttachmentDescription();
 
     VkAttachmentDescription desc2 = GetDefaultVkAttachmentDescription();
-    desc.stencilLoadOp            = VK_ATTACHMENT_LOAD_OP_LOAD;
+    desc2.stencilLoadOp           = VK_ATTACHMENT_LOAD_OP_LOAD;
 
     EXPECT_NE(VkAttachmentDescriptionHashFn{}(desc), VkAttachmentDescriptionHashFn{}(desc2));
     EXPECT_FALSE(VkAttachmentDescriptionEqualFn{}(desc, desc2));
@@ -89,7 +119,7 @@ TEST(UnitVkAttachmentDescriptionStencilStoreOp, VkAttachmentDescriptionDifferent
     VkAttachmentDescription desc = GetDefaultVkAttachmentDescription();
 
     VkAttachmentDescription desc2 = GetDefaultVkAttachmentDescription();
-    desc.stencilStoreOp           = VK_ATTACHMENT_STORE_OP_STORE;
+    desc2.stencilStoreOp          = VK_ATTACHMENT_STORE_OP_STORE;
 
     EXPECT_NE(VkAttachmentDescriptionHashFn{}(desc), VkAttachmentDescriptionHashFn{}(desc2));
     EXPECT_FALSE(VkAttachmentDescriptionEqualFn{}(desc, desc2));
@@ -100,7 +130,7 @@ TEST(UnitVkAttachmentDescriptionInitialLayout, VkAttachmentDescriptionDifferentI
     VkAttachmentDescription desc = GetDefaultVkAttachmentDescription();
 
     VkAttachmentDescription desc2 = GetDefaultVkAttachmentDescription();
-    desc.initialLayout            = VK_IMAGE_LAYOUT_UNDEFINED;
+    desc2.initialLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
 
     EXPECT_NE(VkAttachmentDescriptionHashFn{}(desc), VkAttachmentDescriptionHashFn{}(desc2));
     EXPECT_FALSE(VkAttachmentDescriptionEqualFn{}(desc, desc2));
@@ -111,7 +141,21 @@ TEST(UnitVkAttachmentDescriptionFinalLayout, VkAttachmentDescriptionDifferentFin
     VkAttachmentDescription desc = GetDefaultVkAttachmentDescription();
 
     VkAttachmentDescription desc2 = GetDefaultVkAttachmentDescription();
-    desc.finalLayout              = VK_IMAGE_LAYOUT_UNDEFINED;
+    desc2.finalLayout             = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    EXPECT_NE(VkAttachmentDescriptionHashFn{}(desc), VkAttachmentDescriptionHashFn{}(desc2));
+    EXPECT_FALSE(VkAttachmentDescriptionEqualFn{}(desc, desc2));
+}
+
+TEST(UnitVkAttachmentDescriptionCollisionTest, VkAttachmentDescriptionDifferentFinalLayoutShouldDifferHashAndCompare)
+{
+    VkAttachmentDescription desc = GetDefaultVkAttachmentDescription();
+    desc.format                  = VK_FORMAT_R4G4_UNORM_PACK8; // 1
+    desc.samples                 = VK_SAMPLE_COUNT_1_BIT; // 1
+
+    VkAttachmentDescription desc2 = GetDefaultVkAttachmentDescription();
+    desc2.format                  = VK_FORMAT_UNDEFINED; // 0
+    desc2.samples                 = VK_SAMPLE_COUNT_2_BIT; // 2
 
     EXPECT_NE(VkAttachmentDescriptionHashFn{}(desc), VkAttachmentDescriptionHashFn{}(desc2));
     EXPECT_FALSE(VkAttachmentDescriptionEqualFn{}(desc, desc2));
@@ -143,6 +187,201 @@ TEST(UnitVkAttachmentReferenceLayout, VkAttachmentReferenceLayoutShouldDifferHas
     EXPECT_NE(VkAttachmentReferenceHashFn{}(ref), VkAttachmentReferenceHashFn{}(ref2));
     EXPECT_FALSE(VkAttachmentReferenceEqualFn{}(ref, ref2));
 }
+
+TEST(UnitVkAttachmentReferenceLayoutCollisionTest, VkAttachmentReferenceLayoutShouldDifferHashAndCompare)
+{
+    VkAttachmentReference ref{ 1, VK_IMAGE_LAYOUT_UNDEFINED };
+    VkAttachmentReference ref2{ 0, VK_IMAGE_LAYOUT_GENERAL };
+
+    EXPECT_NE(VkAttachmentReferenceHashFn{}(ref), VkAttachmentReferenceHashFn{}(ref2));
+    EXPECT_FALSE(VkAttachmentReferenceEqualFn{}(ref, ref2));
+}
+
+TEST(UnitVkSubpassDependency, VkSubpassDependencyShouldHaveSameHashAndCompare) { VkSubpassDependency dep; }
+
+TEST(UnitVkSubpassDescription, VkSubpassDescriptionShouldHaveSameHashAndCompare)
+{
+    std::vector<VkAttachmentReference> colorAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc = GetDefaultVkSubpassDescription(colorAttachments, depthStencilAttachments);
+
+    std::vector<VkAttachmentReference> colorAttachments2{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments2{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc2 = GetDefaultVkSubpassDescription(colorAttachments2, depthStencilAttachments2);
+
+    EXPECT_EQ(VkSubpassDescriptionHashFn{}(desc), VkSubpassDescriptionHashFn{}(desc2));
+    EXPECT_TRUE(VkSubpassDescriptionEqualFn{}(desc, desc2));
+}
+
+TEST(UnitVkSubpassDescriptionFlags, VkSubpassDescriptionFlagsShouldDifferHashAndCompare)
+{
+    std::vector<VkAttachmentReference> colorAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc = GetDefaultVkSubpassDescription(colorAttachments, depthStencilAttachments);
+
+    std::vector<VkAttachmentReference> colorAttachments2{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments2{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc2 = GetDefaultVkSubpassDescription(colorAttachments2, depthStencilAttachments2);
+    desc2.flags                              = 1;
+
+    EXPECT_NE(VkSubpassDescriptionHashFn{}(desc), VkSubpassDescriptionHashFn{}(desc2));
+    EXPECT_FALSE(VkSubpassDescriptionEqualFn{}(desc, desc2));
+}
+
+TEST(UnitVkSubpassDescriptionPipelineBindPoint, VkSubpassDescriptionPipelineBindPointShouldDifferHashAndCompare)
+{
+    std::vector<VkAttachmentReference> colorAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc = GetDefaultVkSubpassDescription(colorAttachments, depthStencilAttachments);
+
+    std::vector<VkAttachmentReference> colorAttachments2{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments2{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc2 = GetDefaultVkSubpassDescription(colorAttachments2, depthStencilAttachments2);
+    desc2.pipelineBindPoint                  = VK_PIPELINE_BIND_POINT_COMPUTE;
+
+    EXPECT_NE(VkSubpassDescriptionHashFn{}(desc), VkSubpassDescriptionHashFn{}(desc2));
+    EXPECT_FALSE(VkSubpassDescriptionEqualFn{}(desc, desc2));
+}
+
+TEST(UnitVkSubpassDescriptionInputAttachmentCount, VkSubpassDescriptionInputAttachmentCountShouldDifferHashAndCompare)
+{
+    std::vector<VkAttachmentReference> colorAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc = GetDefaultVkSubpassDescription(colorAttachments, depthStencilAttachments);
+
+    std::vector<VkAttachmentReference> colorAttachments2{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments2{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc2 = GetDefaultVkSubpassDescription(colorAttachments2, depthStencilAttachments2);
+    desc2.inputAttachmentCount               = 1;
+    desc2.pInputAttachments                  = colorAttachments2.data();
+
+    EXPECT_NE(VkSubpassDescriptionHashFn{}(desc), VkSubpassDescriptionHashFn{}(desc2));
+    EXPECT_FALSE(VkSubpassDescriptionEqualFn{}(desc, desc2));
+}
+
+TEST(UnitVkSubpassDescriptionInputAttachment, VkSubpassDescriptionInputAttachmentShouldDifferHashAndCompare)
+{
+    std::vector<VkAttachmentReference> colorAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc = GetDefaultVkSubpassDescription(colorAttachments, depthStencilAttachments);
+    desc.inputAttachmentCount               = 1;
+    desc.pInputAttachments                  = colorAttachments.data();
+
+    std::vector<VkAttachmentReference> colorAttachments2{ { 1, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments2{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc2 = GetDefaultVkSubpassDescription(colorAttachments2, depthStencilAttachments2);
+    desc2.inputAttachmentCount               = 1;
+    desc2.pInputAttachments                  = colorAttachments2.data();
+
+    EXPECT_NE(VkSubpassDescriptionHashFn{}(desc), VkSubpassDescriptionHashFn{}(desc2));
+    EXPECT_FALSE(VkSubpassDescriptionEqualFn{}(desc, desc2));
+}
+
+TEST(UnitVkSubpassDescriptionInputAttachment2, VkSubpassDescriptionInputAttachmentShouldDifferHashAndCompare)
+{
+    std::vector<VkAttachmentReference> colorAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc = GetDefaultVkSubpassDescription(colorAttachments, depthStencilAttachments);
+    desc.inputAttachmentCount               = 1;
+    desc.pInputAttachments                  = colorAttachments.data();
+
+    std::vector<VkAttachmentReference> colorAttachments2{ { 0, VK_IMAGE_LAYOUT_GENERAL } };
+    std::vector<VkAttachmentReference> depthStencilAttachments2{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc2 = GetDefaultVkSubpassDescription(colorAttachments2, depthStencilAttachments2);
+    desc2.inputAttachmentCount               = 1;
+    desc2.pInputAttachments                  = colorAttachments2.data();
+
+    EXPECT_NE(VkSubpassDescriptionHashFn{}(desc), VkSubpassDescriptionHashFn{}(desc2));
+    EXPECT_FALSE(VkSubpassDescriptionEqualFn{}(desc, desc2));
+}
+
+TEST(UnitVkSubpassDescriptionColorAttachmentCount, VkSubpassDescriptionColorAttachmentCountShouldDifferHashAndCompare)
+{
+    std::vector<VkAttachmentReference> colorAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc = GetDefaultVkSubpassDescription(colorAttachments, depthStencilAttachments);
+
+    std::vector<VkAttachmentReference> colorAttachments2{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments2{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc2 = GetDefaultVkSubpassDescription(colorAttachments2, depthStencilAttachments2);
+    desc2.colorAttachmentCount               = 0;
+
+    EXPECT_NE(VkSubpassDescriptionHashFn{}(desc), VkSubpassDescriptionHashFn{}(desc2));
+    EXPECT_FALSE(VkSubpassDescriptionEqualFn{}(desc, desc2));
+}
+
+TEST(UnitVkSubpassDescriptionColorAttachment, VkSubpassDescriptionColorAttachmentShouldDifferHashAndCompare)
+{
+    std::vector<VkAttachmentReference> colorAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc = GetDefaultVkSubpassDescription(colorAttachments, depthStencilAttachments);
+
+    std::vector<VkAttachmentReference> colorAttachments2{ { 1, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments2{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc2 = GetDefaultVkSubpassDescription(colorAttachments2, depthStencilAttachments2);
+
+    EXPECT_NE(VkSubpassDescriptionHashFn{}(desc), VkSubpassDescriptionHashFn{}(desc2));
+    EXPECT_FALSE(VkSubpassDescriptionEqualFn{}(desc, desc2));
+}
+
+TEST(UnitVkSubpassDescriptionColorAttachment2, VkSubpassDescriptionColorAttachmentShouldDifferHashAndCompare)
+{
+    std::vector<VkAttachmentReference> colorAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc = GetDefaultVkSubpassDescription(colorAttachments, depthStencilAttachments);
+
+    std::vector<VkAttachmentReference> colorAttachments2{ { 0, VK_IMAGE_LAYOUT_GENERAL } };
+    std::vector<VkAttachmentReference> depthStencilAttachments2{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc2 = GetDefaultVkSubpassDescription(colorAttachments2, depthStencilAttachments2);
+
+    EXPECT_NE(VkSubpassDescriptionHashFn{}(desc), VkSubpassDescriptionHashFn{}(desc2));
+    EXPECT_FALSE(VkSubpassDescriptionEqualFn{}(desc, desc2));
+}
+
+TEST(UnitVkSubpassDescriptionResolveAttachments, VkSubpassDescriptionResolveAttachmentsShouldDifferHashAndCompare)
+{
+    std::vector<VkAttachmentReference> colorAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc = GetDefaultVkSubpassDescription(colorAttachments, depthStencilAttachments);
+
+    std::vector<VkAttachmentReference> colorAttachments2{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments2{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc2 = GetDefaultVkSubpassDescription(colorAttachments2, depthStencilAttachments2);
+    desc2.pResolveAttachments                = colorAttachments2.data();
+
+    EXPECT_NE(VkSubpassDescriptionHashFn{}(desc), VkSubpassDescriptionHashFn{}(desc2));
+    EXPECT_FALSE(VkSubpassDescriptionEqualFn{}(desc, desc2));
+}
+
+TEST(UnitVkSubpassDescriptionDepthStencilAttachment, VkSubpassDescriptionDepthStencilAttachmentShouldDifferHashAndCompare)
+{
+    std::vector<VkAttachmentReference> colorAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc = GetDefaultVkSubpassDescription(colorAttachments, depthStencilAttachments);
+
+    std::vector<VkAttachmentReference> colorAttachments2{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments2{ { 1, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc2 = GetDefaultVkSubpassDescription(colorAttachments2, depthStencilAttachments2);
+
+    EXPECT_NE(VkSubpassDescriptionHashFn{}(desc), VkSubpassDescriptionHashFn{}(desc2));
+    EXPECT_FALSE(VkSubpassDescriptionEqualFn{}(desc, desc2));
+}
+
+TEST(UnitVkSubpassDescriptionDepthStencilAttachment2, VkSubpassDescriptionDepthStencilAttachmentShouldDifferHashAndCompare)
+{
+    std::vector<VkAttachmentReference> colorAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc = GetDefaultVkSubpassDescription(colorAttachments, depthStencilAttachments);
+
+    std::vector<VkAttachmentReference> colorAttachments2{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments2{ { 0, VK_IMAGE_LAYOUT_GENERAL } };
+    VkSubpassDescription               desc2 = GetDefaultVkSubpassDescription(colorAttachments2, depthStencilAttachments2);
+
+    EXPECT_NE(VkSubpassDescriptionHashFn{}(desc), VkSubpassDescriptionHashFn{}(desc2));
+    EXPECT_FALSE(VkSubpassDescriptionEqualFn{}(desc, desc2));
+}
+
+///---------------------------------------------------------------------------------------------------------------------------------------
 
 TEST(UnitRenderPassCaching, EmptyRenderPassInfoShouldHaveSameHashAndBeEqual)
 {
@@ -241,14 +480,14 @@ TEST(UnitRenderPassCaching, SomeRenderPassInfoShouldHaveSameHashAndBeEqual)
     EXPECT_TRUE(areEqual);
 }
 
-//TEST(UnitRenderPassCaching, SomeRenderPassInfoShouldNotHaveSameHashAndNotBeEqual)
+// TEST(UnitRenderPassCaching, SomeRenderPassInfoShouldNotHaveSameHashAndNotBeEqual)
 //{
-//    RIRenderPassInfo info;
-//    RIRenderPassInfo expected;
+//     RIRenderPassInfo info;
+//     RIRenderPassInfo expected;
 //
-//    const auto infoHash     = RIRenderPassInfoHashFn{}(info);
-//    const auto expectedHash = RIRenderPassInfoHashFn{}(expected);
-//    EXPECT_NE(infoHash, expectedHash);
-//    const auto areEqual = RIRenderPassInfoEqualFn{}(info, expected);
-//    EXPECT_FALSE(areEqual);
-//}
+//     const auto infoHash     = RIRenderPassInfoHashFn{}(info);
+//     const auto expectedHash = RIRenderPassInfoHashFn{}(expected);
+//     EXPECT_NE(infoHash, expectedHash);
+//     const auto areEqual = RIRenderPassInfoEqualFn{}(info, expected);
+//     EXPECT_FALSE(areEqual);
+// }

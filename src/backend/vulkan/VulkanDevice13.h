@@ -65,10 +65,9 @@ struct VkAttachmentReferenceHashFn
         std::size_t seed = 0;
 
         std::hash<uint32_t> uint32Hasher;
-        seed += uint32Hasher(lhs.attachment + 1); // cant hash 0
-        seed += uint32Hasher(static_cast<uint32_t>(lhs.layout) + 1); // cant hash 0
-
-        return seed;
+        const auto          hash1 = uint32Hasher(lhs.attachment) ^ 0x9e3779b9;
+        const auto          hash2 = uint32Hasher(static_cast<uint32_t>(lhs.layout)) ^ 0x9e3779b1;
+        return (hash1 + hash2) ^ (hash2 - hash1);
     };
 };
 
@@ -83,27 +82,33 @@ struct VkSubpassDescriptionHashFn
     {
         std::size_t seed = 0;
 
-        seed ^= std::hash<uint32_t>{}(subpassDesc.flags);
-        seed ^= std::hash<VkPipelineBindPoint>{}(subpassDesc.pipelineBindPoint);
+        seed ^= std::hash<uint32_t>{}(subpassDesc.flags) ^ 0x9e3779b9;
+        seed += std::hash<VkPipelineBindPoint>{}(subpassDesc.pipelineBindPoint) ^ 0x9e3779b1;
         seed ^= std::hash<uint32_t>{}(subpassDesc.inputAttachmentCount);
         for (uint32_t i = 0; i < subpassDesc.inputAttachmentCount; i++)
             {
                 const VkAttachmentReference* ref = subpassDesc.pInputAttachments + i;
                 seed ^= VkAttachmentReferenceHashFn{}(*ref);
             }
-        seed ^= std::hash<uint32_t>{}(subpassDesc.colorAttachmentCount);
+        seed += std::hash<uint32_t>{}(subpassDesc.colorAttachmentCount) ^ 0x9e3779b9;
         for (uint32_t i = 0; i < subpassDesc.colorAttachmentCount; i++)
             {
                 const VkAttachmentReference* ref = subpassDesc.pColorAttachments + i;
                 seed ^= VkAttachmentReferenceHashFn{}(*ref);
             }
+        if (subpassDesc.pResolveAttachments != nullptr)
+            {
+                const auto hash = VkAttachmentReferenceHashFn{}(*subpassDesc.pResolveAttachments);
+                seed += hash;
+            }
 
         if (subpassDesc.pDepthStencilAttachment != nullptr)
             {
-                seed ^= VkAttachmentReferenceHashFn{}(*subpassDesc.pDepthStencilAttachment);
+                const auto hash = VkAttachmentReferenceHashFn{}(*subpassDesc.pDepthStencilAttachment);
+                seed += hash;
             }
 
-        seed ^= std::hash<uint32_t>{}(subpassDesc.preserveAttachmentCount);
+        seed += std::hash<uint32_t>{}(subpassDesc.preserveAttachmentCount) ^ 0x9e3779b9;
         for (uint32_t i = 0; i < subpassDesc.preserveAttachmentCount; i++)
             {
                 const uint32_t* ref = subpassDesc.pPreserveAttachments + i;
@@ -124,6 +129,14 @@ struct VkSubpassDescriptionEqualFn
             {
                 return false;
             }
+        // if they are different
+        if (lhs.pResolveAttachments != rhs.pResolveAttachments)
+            { // but one of them is nullptr
+                if (lhs.pResolveAttachments == nullptr || rhs.pResolveAttachments == nullptr)
+                    {
+                        return false;
+                    }
+            }
 
         // Compare input attachments
         for (uint32_t i = 0; i < lhs.inputAttachmentCount; ++i)
@@ -141,7 +154,7 @@ struct VkSubpassDescriptionEqualFn
                     {
                         return false;
                     }
-                if (lhs.pResolveAttachments != nullptr && lhs.pResolveAttachments != nullptr)
+                if (lhs.pResolveAttachments != nullptr && rhs.pResolveAttachments != nullptr)
                     {
                         if (!VkAttachmentReferenceEqualFn{}(lhs.pResolveAttachments[i], rhs.pResolveAttachments[i]))
                             {
