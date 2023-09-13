@@ -381,7 +381,44 @@ TEST(UnitVkSubpassDescriptionDepthStencilAttachment2, VkSubpassDescriptionDepthS
     EXPECT_FALSE(VkSubpassDescriptionEqualFn{}(desc, desc2));
 }
 
+TEST(UnitVkSubpassDescriptionPreserveAttachmentCount, VkSubpassDescriptionPreserveAttachmentCountShouldDifferHashAndCompare)
+{
+    std::vector<VkAttachmentReference> colorAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc = GetDefaultVkSubpassDescription(colorAttachments, depthStencilAttachments);
+
+    std::vector<VkAttachmentReference> colorAttachments2{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments2{ { 0, VK_IMAGE_LAYOUT_GENERAL } };
+    VkSubpassDescription               desc2 = GetDefaultVkSubpassDescription(colorAttachments2, depthStencilAttachments2);
+    desc2.preserveAttachmentCount            = 1;
+    const uint32_t preserve                  = 1;
+    desc2.pPreserveAttachments               = &preserve;
+
+    EXPECT_NE(VkSubpassDescriptionHashFn{}(desc), VkSubpassDescriptionHashFn{}(desc2));
+    EXPECT_FALSE(VkSubpassDescriptionEqualFn{}(desc, desc2));
+}
+
+TEST(UnitVkSubpassDescriptionPreserveAttachment, VkSubpassDescriptionPreserveAttachmentShouldDifferHashAndCompare)
+{
+    std::vector<VkAttachmentReference> colorAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    VkSubpassDescription               desc     = GetDefaultVkSubpassDescription(colorAttachments, depthStencilAttachments);
+    const uint32_t                     preserve = 0;
+    desc.pPreserveAttachments                   = &preserve;
+
+    std::vector<VkAttachmentReference> colorAttachments2{ { 0, VK_IMAGE_LAYOUT_UNDEFINED } };
+    std::vector<VkAttachmentReference> depthStencilAttachments2{ { 0, VK_IMAGE_LAYOUT_GENERAL } };
+    VkSubpassDescription               desc2 = GetDefaultVkSubpassDescription(colorAttachments2, depthStencilAttachments2);
+    desc2.preserveAttachmentCount            = 1;
+    const uint32_t preserve2                 = 1;
+    desc2.pPreserveAttachments               = &preserve2;
+
+    EXPECT_NE(VkSubpassDescriptionHashFn{}(desc), VkSubpassDescriptionHashFn{}(desc2));
+    EXPECT_FALSE(VkSubpassDescriptionEqualFn{}(desc, desc2));
+}
+
 ///---------------------------------------------------------------------------------------------------------------------------------------
+// The following tests are limited because the correct tests are above
 
 TEST(UnitRenderPassCaching, EmptyRenderPassInfoShouldHaveSameHashAndBeEqual)
 {
@@ -479,15 +516,3 @@ TEST(UnitRenderPassCaching, SomeRenderPassInfoShouldHaveSameHashAndBeEqual)
     const auto areEqual = RIRenderPassInfoEqualFn{}(info, expected);
     EXPECT_TRUE(areEqual);
 }
-
-// TEST(UnitRenderPassCaching, SomeRenderPassInfoShouldNotHaveSameHashAndNotBeEqual)
-//{
-//     RIRenderPassInfo info;
-//     RIRenderPassInfo expected;
-//
-//     const auto infoHash     = RIRenderPassInfoHashFn{}(info);
-//     const auto expectedHash = RIRenderPassInfoHashFn{}(expected);
-//     EXPECT_NE(infoHash, expectedHash);
-//     const auto areEqual = RIRenderPassInfoEqualFn{}(info, expected);
-//     EXPECT_FALSE(areEqual);
-// }
