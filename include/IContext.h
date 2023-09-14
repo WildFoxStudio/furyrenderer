@@ -127,6 +127,11 @@ enum class EFormat
     R8G8B8A8_UNORM,
     B8G8R8_UNORM,
     B8G8R8A8_UNORM,
+    DEPTH16_UNORM,
+    DEPTH32_FLOAT,
+    DEPTH16_UNORM_STENCIL8_UINT,
+    DEPTH24_UNORM_STENCIL8_UINT,
+    DEPTH32_FLOAT_STENCIL8_UINT,
 };
 
 enum class ESampleBit
@@ -158,8 +163,14 @@ struct DRenderPassAttachment
     ERenderPassLayout    FinalLayout;
     EAttachmentReference AttachmentReferenceLayout;
 
-    DRenderPassAttachment(EFormat format, ERenderPassLoad loadOp, ERenderPassStore storeOp, ERenderPassLayout initLayout, ERenderPassLayout finalLayout, EAttachmentReference attachmentReferenceLayout)
-      : Format(format), LoadOP(loadOp), StoreOP(storeOp), InitialLayout(initLayout), FinalLayout(finalLayout), AttachmentReferenceLayout(attachmentReferenceLayout){};
+    DRenderPassAttachment(EFormat format,
+    ESampleBit                    sampleBit,
+    ERenderPassLoad               loadOp,
+    ERenderPassStore              storeOp,
+    ERenderPassLayout             initLayout,
+    ERenderPassLayout             finalLayout,
+    EAttachmentReference          attachmentReferenceLayout)
+      : Format(format), Samples(sampleBit), LoadOP(loadOp), StoreOP(storeOp), InitialLayout(initLayout), FinalLayout(finalLayout), AttachmentReferenceLayout(attachmentReferenceLayout){};
 };
 
 struct DRenderPassAttachments
@@ -334,7 +345,7 @@ class IContext
   public:
     virtual ~IContext(){};
     virtual bool CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat, DSwapchain* swapchain) = 0;
-    virtual void DestroySwapchain(const DSwapchain swapchain)                                                          = 0;
+    virtual void DestroySwapchain(const DSwapchain swapchain)                                                                        = 0;
 
     virtual DFramebuffer CreateSwapchainFramebuffer()                 = 0;
     virtual void         DestroyFramebuffer(DFramebuffer framebuffer) = 0;

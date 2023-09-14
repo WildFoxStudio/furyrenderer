@@ -12,7 +12,7 @@
 
 namespace Fox
 {
-struct RIRenderPassInfo
+struct RIVkRenderPassInfo
 {
     std::vector<VkAttachmentDescription> AttachmentDescription;
     std::vector<VkAttachmentReference>   ColorAttachmentReference;
@@ -214,7 +214,7 @@ struct VkSubpassDependencyEqualFn
 
 struct RIRenderPassInfoHashFn
 {
-    size_t operator()(const RIRenderPassInfo& lhs) const
+    size_t operator()(const RIVkRenderPassInfo& lhs) const
     {
         size_t hash{};
 
@@ -237,7 +237,7 @@ struct RIRenderPassInfoHashFn
 
 struct RIRenderPassInfoEqualFn
 {
-    bool operator()(const RIRenderPassInfo& lhs, const RIRenderPassInfo& rhs) const
+    bool operator()(const RIVkRenderPassInfo& lhs, const RIVkRenderPassInfo& rhs) const
     {
         if (lhs.AttachmentDescription.size() != rhs.AttachmentDescription.size() || lhs.ColorAttachmentReference.size() != rhs.ColorAttachmentReference.size() ||
         lhs.DepthStencilAttachmentReference.size() != rhs.DepthStencilAttachmentReference.size() || lhs.SubpassDescription.size() != rhs.SubpassDescription.size() ||
@@ -280,6 +280,6 @@ class RIVulkanDevice13 : public RIVulkanDevice12
     virtual ~RIVulkanDevice13();
 
   private:
-    RICacheMap<RIRenderPassInfo, VkRenderPass, RIRenderPassInfoHashFn, RIRenderPassInfoEqualFn> _renderPassMap;
+    RICacheMap<RIVkRenderPassInfo, VkRenderPass, RIRenderPassInfoHashFn, RIRenderPassInfoEqualFn> _renderPassMap;
 };
 }

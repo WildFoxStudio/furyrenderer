@@ -422,8 +422,8 @@ TEST(UnitVkSubpassDescriptionPreserveAttachment, VkSubpassDescriptionPreserveAtt
 
 TEST(UnitRenderPassCaching, EmptyRenderPassInfoShouldHaveSameHashAndBeEqual)
 {
-    RIRenderPassInfo       info;
-    const RIRenderPassInfo expected;
+    RIVkRenderPassInfo       info;
+    const RIVkRenderPassInfo expected;
 
     const auto infoHash     = RIRenderPassInfoHashFn{}(info);
     const auto expectedHash = RIRenderPassInfoHashFn{}(expected);
@@ -433,8 +433,8 @@ TEST(UnitRenderPassCaching, EmptyRenderPassInfoShouldHaveSameHashAndBeEqual)
 
 TEST(UnitRenderPassCaching, SomeRenderPassInfoShouldHaveSameHashAndBeEqual)
 {
-    RIRenderPassInfo info;
-    RIRenderPassInfo expected;
+    RIVkRenderPassInfo info;
+    RIVkRenderPassInfo expected;
     {
         VkAttachmentDescription desc{};
         desc.format  = VK_FORMAT_UNDEFINED;

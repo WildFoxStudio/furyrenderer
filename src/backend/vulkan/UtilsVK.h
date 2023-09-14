@@ -141,6 +141,16 @@ convertFormat(const Fox::EFormat format)
                 return VK_FORMAT_B8G8R8_UNORM;
             case Fox::EFormat::B8G8R8A8_UNORM:
                 return VK_FORMAT_B8G8R8A8_UNORM;
+            case Fox::EFormat::DEPTH16_UNORM:
+                return VK_FORMAT_D16_UNORM;
+            case Fox::EFormat::DEPTH32_FLOAT:
+                return VK_FORMAT_D32_SFLOAT;
+            case Fox::EFormat::DEPTH16_UNORM_STENCIL8_UINT:
+                return VK_FORMAT_D16_UNORM_S8_UINT;
+            case Fox::EFormat::DEPTH24_UNORM_STENCIL8_UINT:
+                return VK_FORMAT_D24_UNORM_S8_UINT;
+            case Fox::EFormat::DEPTH32_FLOAT_STENCIL8_UINT:
+                return VK_FORMAT_D32_SFLOAT_S8_UINT;
         }
 
     check(0);

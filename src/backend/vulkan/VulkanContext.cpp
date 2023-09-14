@@ -254,81 +254,7 @@ VulkanContext::Log(const std::string& error)
 VkRenderPass
 VulkanContext::_createRenderPass(const DRenderPassAttachments& attachments)
 {
-    std::vector<VkAttachmentDescription> attachmentDescription;
-    attachmentDescription.reserve(attachments.Attachments.size());
-
-    std::vector<VkAttachmentReference> colorAttachmentReference;
-    colorAttachmentReference.reserve(attachments.Attachments.size());
-
-    std::vector<VkAttachmentReference> depthStencilAttachmentReference;
-    depthStencilAttachmentReference.reserve(attachments.Attachments.size());
-
-    for (const DRenderPassAttachment& att : attachments.Attachments)
-        {
-            VkAttachmentReference ref{};
-
-            ref.attachment = (uint32_t)attachmentDescription.size();
-            ref.layout     = VkUtils::convertAttachmentReferenceLayout(att.AttachmentReferenceLayout);
-
-            switch (ref.layout)
-                {
-                    case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-                        colorAttachmentReference.emplace_back(ref);
-                        break;
-                    case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-                    case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
-                    case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL:
-                        depthStencilAttachmentReference.emplace_back(ref);
-                        break;
-                    default:
-                        check(0);
-                        break;
-                }
-
-            VkAttachmentDescription desc{};
-            desc.format  = VkUtils::convertFormat(att.Format);
-            desc.samples = VkUtils::convertVkSampleCount(att.Samples);
-            desc.loadOp  = VkUtils::convertAttachmentLoadOp(att.LoadOP);
-            desc.storeOp = VkUtils::convertAttachmentStoreOp(att.StoreOP);
-            // Stencil not used right now
-            desc.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-            desc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-
-            desc.initialLayout = VkUtils::convertRenderPassLayout(att.InitialLayout, VkUtils::isColorFormat(desc.format));
-            desc.finalLayout   = VkUtils::convertRenderPassLayout(att.FinalLayout, VkUtils::isColorFormat(desc.format));
-
-            attachmentDescription.emplace_back(desc);
-        }
-
-    VkSubpassDescription subpass{};
-    subpass.flags                   = 0;
-    subpass.pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.inputAttachmentCount    = 0;
-    subpass.pInputAttachments       = nullptr;
-    subpass.colorAttachmentCount    = (uint32_t)colorAttachmentReference.size();
-    subpass.pColorAttachments       = colorAttachmentReference.data();
-    subpass.pResolveAttachments     = NULL;
-    subpass.pDepthStencilAttachment = (depthStencilAttachmentReference.size()) ? depthStencilAttachmentReference.data() : nullptr;
-    subpass.preserveAttachmentCount = 0;
-    subpass.pPreserveAttachments    = NULL;
-
-    VkSubpassDependency dependency{};
-    dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass    = 0;
-    dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-    VkRenderPassCreateInfo renderPassInfo{};
-    renderPassInfo.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.pNext           = NULL;
-    renderPassInfo.attachmentCount = (uint32_t)attachmentDescription.size();
-    renderPassInfo.pAttachments    = attachmentDescription.data();
-    renderPassInfo.subpassCount    = 1;
-    renderPassInfo.pSubpasses      = &subpass;
-    renderPassInfo.dependencyCount = 1;
-    renderPassInfo.pDependencies   = &dependency;
+    const auto info = ConvertRenderPassAttachmentsToRIVkRenderPassInfo(attachments);
 
     return nullptr;
 }
@@ -446,6 +372,85 @@ VulkanContext::_getDeviceSupportedValidationLayers(VkPhysicalDevice physicalDevi
         }
 
     return deviceSupportedValidationLayers;
+}
+
+RIVkRenderPassInfo
+ConvertRenderPassAttachmentsToRIVkRenderPassInfo(const DRenderPassAttachments& attachments)
+{
+    RIVkRenderPassInfo info;
+    info.AttachmentDescription.reserve(attachments.Attachments.size());
+    info.ColorAttachmentReference.reserve(attachments.Attachments.size());
+    info.DepthStencilAttachmentReference.reserve(attachments.Attachments.size());
+
+    for (const DRenderPassAttachment& att : attachments.Attachments)
+        {
+            VkAttachmentReference ref{};
+
+            ref.attachment = (uint32_t)info.AttachmentDescription.size();
+            ref.layout     = VkUtils::convertAttachmentReferenceLayout(att.AttachmentReferenceLayout);
+
+            switch (ref.layout)
+                {
+                    case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+                        info.ColorAttachmentReference.emplace_back(ref);
+                        break;
+                    case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+                    case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
+                    case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL:
+                    case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL:
+                    case VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL:
+                    case VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL:
+                    case VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL:
+                    case VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL:
+                        info.DepthStencilAttachmentReference.emplace_back(ref);
+                        break;
+                    default:
+                        check(0);
+                        break;
+                }
+
+            VkAttachmentDescription desc{};
+            desc.format  = VkUtils::convertFormat(att.Format);
+            desc.samples = VkUtils::convertVkSampleCount(att.Samples);
+            desc.loadOp  = VkUtils::convertAttachmentLoadOp(att.LoadOP);
+            desc.storeOp = VkUtils::convertAttachmentStoreOp(att.StoreOP);
+            // Stencil not used right now
+            desc.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            desc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+
+            desc.initialLayout = VkUtils::convertRenderPassLayout(att.InitialLayout, VkUtils::isColorFormat(desc.format));
+            desc.finalLayout   = VkUtils::convertRenderPassLayout(att.FinalLayout, VkUtils::isColorFormat(desc.format));
+
+            info.AttachmentDescription.emplace_back(desc);
+        }
+    {
+        VkSubpassDescription subpass{};
+        subpass.flags                   = 0;
+        subpass.pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass.inputAttachmentCount    = 0;
+        subpass.pInputAttachments       = nullptr;
+        subpass.colorAttachmentCount    = (uint32_t)info.ColorAttachmentReference.size();
+        subpass.pColorAttachments       = info.ColorAttachmentReference.data();
+        subpass.pResolveAttachments     = NULL;
+        subpass.pDepthStencilAttachment = (info.DepthStencilAttachmentReference.size()) ? info.DepthStencilAttachmentReference.data() : nullptr;
+        subpass.preserveAttachmentCount = 0;
+        subpass.pPreserveAttachments    = NULL;
+
+        info.SubpassDescription.emplace_back(std::move(subpass));
+    }
+    {
+        VkSubpassDependency dependency{};
+        dependency.srcSubpass    = VK_SUBPASS_EXTERNAL;
+        dependency.dstSubpass    = 0;
+        dependency.srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        dependency.srcAccessMask = 0;
+        dependency.dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+        info.SubpassDependency.emplace_back(std::move(dependency));
+    }
+
+    return info;
 }
 
 }

@@ -1,6 +1,7 @@
 set(SOURCES 
-  "unit/vulkan/RenderPassCaching.test.cpp"
   "unit/RICacheMap.test.cpp"
+  "unit/vulkan/RenderPassCaching.test.cpp"
+  "unit/vulkan/RIRenderPassAttachmentsConversion.test.cpp"
 )
 
 

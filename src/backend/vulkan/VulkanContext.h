@@ -4,7 +4,7 @@
 
 #include "IContext.h"
 
-#include "VulkanDevice12.h"
+#include "VulkanDevice13.h"
 #include "VulkanInstance.h"
 
 #include <list>
@@ -49,7 +49,7 @@ class VulkanContext : public IContext
 
   private:
     RIVulkanInstance Instance;
-    RIVulkanDevice12 Device;
+    RIVulkanDevice13 Device;
 
     void (*_warningOutput)(const char*);
     void (*_logOutput)(const char*);
@@ -106,5 +106,7 @@ class VulkanContext : public IContext
     std::vector<const char*> _getDeviceSupportedExtensions(VkPhysicalDevice physicalDevice, const std::vector<const char*>& extentions);
     std::vector<const char*> _getDeviceSupportedValidationLayers(VkPhysicalDevice physicalDevice, const std::vector<const char*>& validationLayers);
 };
+
+RIVkRenderPassInfo ConvertRenderPassAttachmentsToRIVkRenderPassInfo(const DRenderPassAttachments& attachments);
 
 }
