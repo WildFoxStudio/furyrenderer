@@ -41,6 +41,8 @@ RIVulkanDevice2::GetSurfaceFormats(VkSurfaceKHR surface)
                     {
                         throw std::runtime_error(VkUtils::VkErrorString(result));
                     }
+
+                return formats;
             }
     }
     check(0);

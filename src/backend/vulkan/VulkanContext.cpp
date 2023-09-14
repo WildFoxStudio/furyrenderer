@@ -176,14 +176,26 @@ VulkanContext::CreateSwapchain(const WindowData* windowData, EPresentMode& prese
 
     std::generate_n(std::back_inserter(swapchainVulkan.ImageAvailableSemaphore), NUM_OF_FRAMES_IN_FLIGHT, [this]() { return Device.CreateVkSemaphore(); });
 
-    VkRenderPass renderPass{};
+    DRenderPassAttachments attachments;
+    DRenderPassAttachment  color(VkUtils::convertVkFormat(swapchainVulkan.Format.format),
+    ESampleBit::COUNT_1_BIT,
+    ERenderPassLoad::Clear,
+    ERenderPassStore::Store,
+    ERenderPassLayout::Undefined,
+    ERenderPassLayout::Present,
+    EAttachmentReference::COLOR_ATTACHMENT);
+    attachments.Attachments.emplace_back(color);
+
+    VkRenderPass renderPass = _createRenderPass(attachments);
 
     std::transform(swapchainVulkan.ImageViews.begin(), swapchainVulkan.ImageViews.end(), std::back_inserter(swapchainVulkan.Framebuffers), [this, &capabilities, renderPass](VkImageView view) {
         return Device.CreateFramebuffer({ view }, capabilities.currentExtent.width, capabilities.currentExtent.height, renderPass);
     });
 
     _swapchains.emplace_back(std::move(swapchainVulkan));
-    return &_swapchains.back();
+
+    *swapchain = &_swapchains.back();
+    return true;
 }
 
 void
@@ -195,6 +207,9 @@ VulkanContext::DestroySwapchain(const DSwapchain swapchain)
     vkSwapchain->Framebuffers.clear();
     std::for_each(vkSwapchain->ImageViews.begin(), vkSwapchain->ImageViews.end(), [this](const VkImageView& imageView) { Device.DestroyImageView(imageView); });
     vkSwapchain->ImageViews.clear();
+
+    std::for_each(vkSwapchain->ImageAvailableSemaphore.begin(), vkSwapchain->ImageAvailableSemaphore.end(), [this](const VkSemaphore& semaphore) { Device.DestroyVkSemaphore(semaphore); });
+    vkSwapchain->ImageAvailableSemaphore.clear();
 
     Device.DestroySwapchain(vkSwapchain->Swaphchain);
     Instance.DestroySurface(vkSwapchain->Surface);
@@ -264,9 +279,10 @@ VulkanContext::_createRenderPass(const DRenderPassAttachments& attachments)
     const auto     info = ConvertRenderPassAttachmentsToRIVkRenderPassInfo(attachments);
     VkRenderPass   renderPass{};
     const VkResult result = Device.CreateRenderPass(info, &renderPass);
-    {
-        throw std::runtime_error(VkUtils::VkErrorString(result));
-    }
+    if (VKFAILED(result))
+        {
+            throw std::runtime_error(VkUtils::VkErrorString(result));
+        }
     _renderPasses.emplace(renderPass);
 
     return renderPass;

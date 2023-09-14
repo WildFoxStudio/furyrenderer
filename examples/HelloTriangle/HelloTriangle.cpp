@@ -11,6 +11,9 @@
 // OpenGL ES API header.This is useful in combination with an extension loading library.
 #include <GLFW/glfw3.h>
 
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+
 void
 Log(const char* msg)
 {
@@ -31,10 +34,22 @@ main()
             {
                 throw std::runtime_error("Failed to glfwInit");
             }
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);// as Vulkan, there is no need to create a context
         GLFWwindow* window = glfwCreateWindow(640, 480, "My Title", NULL, NULL);
         if (!window)
             {
                 throw std::runtime_error("Failed to glfwCreateWindow");
+            }
+        Fox::WindowData windowData;
+        windowData._hwnd     = glfwGetWin32Window(window);
+        windowData._instance = GetModuleHandle(NULL);
+
+        Fox::DSwapchain swapchain;
+        auto            presentMode = Fox::EPresentMode::IMMEDIATE_KHR;
+        auto            format      = Fox::EFormat::B8G8R8A8_UNORM;
+        if (!context->CreateSwapchain(&windowData, presentMode, format, &swapchain))
+            {
+                throw std::runtime_error("Failed to CreateSwapchain");
             }
 
         while (!glfwWindowShouldClose(window))
@@ -43,9 +58,10 @@ main()
                 glfwPollEvents();
             }
 
+        context->DestroySwapchain(swapchain);
+
         glfwDestroyWindow(window);
 
-        // context->CreateSwapchain()
         glfwTerminate();
     }
 
