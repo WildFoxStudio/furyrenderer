@@ -1,9 +1,16 @@
 set(SOURCES 
+  # Utils
+  "utilities/WindowFixture.h"
   "unit/RICacheMap.test.cpp"
+  # Unit
   "unit/vulkan/VkUtils.test.cpp"
   "unit/vulkan/RenderPassCaching.test.cpp"
   "unit/vulkan/RIRenderPassAttachmentsConversion.test.cpp"
+  # Integration
+  "integration/vulkan/ContextCreationDestruction.test.cpp"
+  "integration/vulkan/SwapchainCreationDestruction.test.cpp"
 )
+
 
 
 include(FetchContent)
@@ -22,10 +29,10 @@ add_executable(tests
 
 target_sources(tests PRIVATE ${GTEST_DIR} ${GTEST_DIR_INCLUDE}${SOURCES})
 
-target_link_libraries(tests FoxFury GTest::gtest_main GTest::gmock volk VulkanMemoryAllocator)
+target_link_libraries(tests FoxFury GTest::gtest_main GTest::gmock volk VulkanMemoryAllocator glfw)
 
 set_target_properties(tests PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "bin"
 )
 
-include_directories(${LIB_INCLUDE_DIR})
+include_directories(${LIB_INCLUDE_DIR} "utilities")
