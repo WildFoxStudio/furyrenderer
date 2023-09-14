@@ -54,6 +54,7 @@ target_sources(${PROJECT_NAME} PRIVATE
     "${INCLUDE_DIR}/backend/vulkan/VulkanContextFactory.h"
     "${SRC_DIR}/backend/vulkan/VulkanContextFactory.cpp"
     "${SRC_DIR}/Asserts.h"
+    "${SRC_DIR}/RICacheMap.h"
     "${SRC_DIR}/backend/vulkan/UtilsVk.h"
     "${SRC_DIR}/backend/vulkan/VulkanContext.h"
     "${SRC_DIR}/backend/vulkan/VulkanContext.cpp"

@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "RICacheMap.h"
 #include "RIResource.h"
 #include "VulkanDevice12.h"
 
@@ -278,6 +279,7 @@ class RIVulkanDevice13 : public RIVulkanDevice12
   public:
     virtual ~RIVulkanDevice13();
 
-    std::unordered_map<VkRenderPass, RIRenderPassInfoHashFn, RIRenderPassInfoEqualFn> _renderPassMap;
+  private:
+    RICacheMap<RIRenderPassInfo, VkRenderPass, RIRenderPassInfoHashFn, RIRenderPassInfoEqualFn> _renderPassMap;
 };
 }

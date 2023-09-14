@@ -1,4 +1,7 @@
-set(SOURCES "unit/vulkan/RenderPassCaching.test.cpp")
+set(SOURCES 
+  "unit/vulkan/RenderPassCaching.test.cpp"
+  "unit/RICacheMap.test.cpp"
+)
 
 
 include(FetchContent)
