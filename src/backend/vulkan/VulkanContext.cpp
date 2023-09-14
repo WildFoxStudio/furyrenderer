@@ -45,9 +45,46 @@ VulkanContext::_initializeInstance()
         }
 }
 
+VKAPI_ATTR VkBool32 VKAPI_CALL
+VulkanContext::_vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+VkDebugUtilsMessageTypeFlagsEXT                                            messageType,
+const VkDebugUtilsMessengerCallbackDataEXT*                                pCallbackData,
+void*                                                                      pUserData)
+{
+    VulkanContext* context = static_cast<VulkanContext*>(pUserData);
+    check(context);
+
+    if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+        {
+            context->Warning("Validation layer[WARNING]: " + std::string(pCallbackData->pMessage));
+        }
+    else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+        {
+            context->Warning("Validation layer[ERROR]: " + std::string(pCallbackData->pMessage));
+        }
+    else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT)
+        {
+            context->Warning("Validation layer[VERBOSE]: " + std::string(pCallbackData->pMessage));
+        }
+    else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)
+        {
+            context->Log("Validation layer[INFO]: " + std::string(pCallbackData->pMessage));
+        }
+
+    // check(false);
+    return VK_FALSE;
+}
+
 void
 VulkanContext::_initializeDebugger()
 {
+#ifdef _DEBUG
+    const VkResult result = Instance.CreateDebugUtilsMessenger(VulkanContext::_vulkanDebugCallback, this);
+    if (VKFAILED(result))
+        {
+            Warning("Failed to create vulkan debug utils messenger");
+        }
+#endif
 }
 
 void
@@ -56,7 +93,7 @@ VulkanContext::_initializeVersion()
     auto FN_vkEnumerateInstanceVersion = PFN_vkEnumerateInstanceVersion(vkGetInstanceProcAddr(nullptr, "vkEnumerateInstanceVersion"));
     if (vkEnumerateInstanceVersion == nullptr)
         {
-            OutWarning("Failed to vkGetInstanceProcAddr for vkEnumerateInstanceVersion");
+            Warning("Failed to vkGetInstanceProcAddr for vkEnumerateInstanceVersion");
         }
     else
         {
@@ -65,7 +102,7 @@ VulkanContext::_initializeVersion()
             if (VKFAILED(result))
                 {
                     const std::string out = "Failed to vkEnumerateInstanceVersion because:" + std::string(VkUtils::VkErrorString(result));
-                    OutWarning(out);
+                    Warning(out);
                 }
             else
                 {
@@ -256,7 +293,7 @@ VulkanContext::GetAdapterDedicatedVideoMemory() const
 }
 
 void
-VulkanContext::OutWarning(const std::string& error)
+VulkanContext::Warning(const std::string& error)
 {
     if (_warningOutput)
         {
@@ -346,7 +383,7 @@ VulkanContext::_queryBestPhysicalDevice()
     if (VKFAILED(result))
         {
             const std::string out = "Failed to enumerate physical devices:" + std::string(VkUtils::VkErrorString(result));
-            OutWarning(out);
+            Warning(out);
             throw std::runtime_error(VkUtils::VkErrorString(result));
         }
     // Select gpu

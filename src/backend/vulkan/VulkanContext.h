@@ -54,8 +54,8 @@ class VulkanContext : public IContext
     void (*_warningOutput)(const char*);
     void (*_logOutput)(const char*);
 
-    std::list<DSwapchainVulkan> _swapchains;
-    std::unordered_set<VkRenderPass>   _renderPasses;
+    std::list<DSwapchainVulkan>      _swapchains;
+    std::unordered_set<VkRenderPass> _renderPasses;
 
     const std::vector<const char*> _validationLayers = {
         "VK_LAYER_KHRONOS_validation",
@@ -91,7 +91,7 @@ class VulkanContext : public IContext
         "VK_KHR_dedicated_allocation",
         "VK_KHR_bind_memory2" };
 
-    void OutWarning(const std::string& error);
+    void Warning(const std::string& error);
     void Log(const std::string& error);
 
     void _initializeVolk();
@@ -100,12 +100,16 @@ class VulkanContext : public IContext
     void _initializeVersion();
     void _initializeDevice();
 
-    VkRenderPass             _createRenderPass(const DRenderPassAttachments& attachments);
-    std::vector<const char*> _getInstanceSupportedExtensions(const std::vector<const char*>& extentions);
-    std::vector<const char*> _getInstanceSupportedValidationLayers(const std::vector<const char*>& validationLayers);
-    VkPhysicalDevice         _queryBestPhysicalDevice();
-    std::vector<const char*> _getDeviceSupportedExtensions(VkPhysicalDevice physicalDevice, const std::vector<const char*>& extentions);
-    std::vector<const char*> _getDeviceSupportedValidationLayers(VkPhysicalDevice physicalDevice, const std::vector<const char*>& validationLayers);
+    static VKAPI_ATTR VkBool32 VKAPI_CALL _vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+    VkDebugUtilsMessageTypeFlagsEXT                                                                   messageType,
+    const VkDebugUtilsMessengerCallbackDataEXT*                                                       pCallbackData,
+    void*                                                                                             pUserData);
+    VkRenderPass                          _createRenderPass(const DRenderPassAttachments& attachments);
+    std::vector<const char*>              _getInstanceSupportedExtensions(const std::vector<const char*>& extentions);
+    std::vector<const char*>              _getInstanceSupportedValidationLayers(const std::vector<const char*>& validationLayers);
+    VkPhysicalDevice                      _queryBestPhysicalDevice();
+    std::vector<const char*>              _getDeviceSupportedExtensions(VkPhysicalDevice physicalDevice, const std::vector<const char*>& extentions);
+    std::vector<const char*>              _getDeviceSupportedValidationLayers(VkPhysicalDevice physicalDevice, const std::vector<const char*>& validationLayers);
 };
 
 RIVkRenderPassInfo ConvertRenderPassAttachmentsToRIVkRenderPassInfo(const DRenderPassAttachments& attachments);

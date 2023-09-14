@@ -105,25 +105,25 @@ RIVulkanInstance::DestroySurface(VkSurfaceKHR surface)
 }
 
 #ifdef _DEBUG
-bool
-RIVulkanInstance::CreateDebugUtilsMessenger(PFN_vkDebugUtilsMessengerCallbackEXT callback)
+VkResult
+RIVulkanInstance::CreateDebugUtilsMessenger(PFN_vkDebugUtilsMessengerCallbackEXT callback, void* userData)
 {
     VkDebugUtilsMessengerCreateInfoEXT dbgInfo{};
     dbgInfo.sType           = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
     dbgInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
     dbgInfo.messageType     = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
     dbgInfo.pfnUserCallback = callback;
-    dbgInfo.pUserData       = nullptr; // Optional
+    dbgInfo.pUserData       = userData; // Optional
 
     auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(Instance, "vkCreateDebugUtilsMessengerEXT");
     check(func);
     if (func != nullptr)
         {
-            return func(Instance, &dbgInfo, nullptr, &_debugMessenger);
-            return true;
+            const VkResult result = func(Instance, &dbgInfo, nullptr, &_debugMessenger);
+            return result;
         }
 
-    return false;
+    return VK_ERROR_INVALID_EXTERNAL_HANDLE_KHR;
 }
 
 void

@@ -48,7 +48,7 @@ class RIVulkanInstance
     void     DestroySurface(VkSurfaceKHR surface);
 
 #ifdef _DEBUG
-    bool CreateDebugUtilsMessenger(PFN_vkDebugUtilsMessengerCallbackEXT callback);
+    VkResult CreateDebugUtilsMessenger(PFN_vkDebugUtilsMessengerCallbackEXT callback, void* userData = nullptr);
 #endif
 
     VkInstance Instance{}; /* Vulkan library handle */
