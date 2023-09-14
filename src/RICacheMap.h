@@ -14,7 +14,7 @@ template<typename Key, class Value, typename HashFn, typename EqualFn>
 class RICacheMap
 {
   public:
-    void Add(Value value, const Key& key)
+    void Add(const Key& key, const Value& value)
     {
         check(Find(key) == nullptr); // element is already contained
 

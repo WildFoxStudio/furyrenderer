@@ -3,10 +3,9 @@
 #pragma once
 
 #include "VulkanDevice8.h"
+#include "RICacheMap.h"
 
 #include <volk.h>
-
-#include <unordered_map>
 
 namespace Fox
 {
@@ -85,6 +84,6 @@ class RIVulkanDevice9 : public RIVulkanDevice8
     void             DestroyPipelineLayout(VkPipelineLayout pipelineLayout);
 
   private:
-    std::unordered_map<RIPipelineLayoutInfo, VkPipelineLayout, RIPipelineLayoutHasher, RIPipelineLayoutEqualFn> _pipelineLayoutCache;
+    RICacheMap<RIPipelineLayoutInfo, VkPipelineLayout, RIPipelineLayoutHasher, RIPipelineLayoutEqualFn> _pipelineLayoutCache;
 };
 }

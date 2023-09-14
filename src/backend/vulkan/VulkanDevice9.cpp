@@ -9,15 +9,15 @@
 namespace Fox
 {
 
-RIVulkanDevice9::~RIVulkanDevice9() { check(_pipelineLayoutCache.size() == 0); }
+RIVulkanDevice9::~RIVulkanDevice9() { check(_pipelineLayoutCache.Size() == 0); }
 
 VkPipelineLayout
 RIVulkanDevice9::CreatePipelineLayout(const std::vector<VkDescriptorSetLayout>& descriptorSetLayout, const std::vector<VkPushConstantRange>& pushConstantRange)
 {
-    const auto& cache = _pipelineLayoutCache.find({ descriptorSetLayout, pushConstantRange });
-    if (cache != _pipelineLayoutCache.end())
+    VkPipelineLayout cached = _pipelineLayoutCache.Find(RIPipelineLayoutInfo{ descriptorSetLayout, pushConstantRange });
+    if (cached != nullptr)
         {
-            return cache->second;
+            return cached;
         }
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
@@ -34,7 +34,7 @@ RIVulkanDevice9::CreatePipelineLayout(const std::vector<VkDescriptorSetLayout>& 
             throw std::runtime_error(VkUtils::VkErrorString(result));
         }
 
-    _pipelineLayoutCache[RIPipelineLayoutInfo{ descriptorSetLayout, pushConstantRange }] = pipelineLayout;
+    _pipelineLayoutCache.Add(RIPipelineLayoutInfo{ descriptorSetLayout, pushConstantRange }, pipelineLayout);
 
     return pipelineLayout;
 }
@@ -44,14 +44,7 @@ RIVulkanDevice9::DestroyPipelineLayout(VkPipelineLayout pipelineLayout)
 {
     vkDestroyPipelineLayout(Device, pipelineLayout, nullptr);
 
-    for (const auto& pair : _pipelineLayoutCache)
-        {
-            if (pair.second == pipelineLayout)
-                {
-                    _pipelineLayoutCache.erase(pair.first);
-                    break;
-                }
-        }
+    _pipelineLayoutCache.EraseByValue(pipelineLayout);
 }
 
 }
