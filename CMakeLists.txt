@@ -22,6 +22,7 @@ add_library(${PROJECT_NAME} STATIC
 
 add_subdirectory("thirdparty/volk")
 add_subdirectory("thirdparty/VulkanMemoryAllocator")
+add_subdirectory("thirdparty/glfw")
 
 target_link_libraries(${PROJECT_NAME} PRIVATE volk VulkanMemoryAllocator)
 

@@ -55,6 +55,7 @@ class VulkanContext : public IContext
     void (*_logOutput)(const char*);
 
     std::list<DSwapchainVulkan> _swapchains;
+    std::unordered_set<VkRenderPass>   _renderPasses;
 
     const std::vector<const char*> _validationLayers = {
         "VK_LAYER_KHRONOS_validation",

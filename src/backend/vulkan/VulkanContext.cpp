@@ -110,6 +110,13 @@ VulkanContext::_initializeDevice()
 VulkanContext::~VulkanContext()
 {
     check(_swapchains.size() == 0);
+    vkDeviceWaitIdle(Device.Device);
+
+    for (const auto renderPass : _renderPasses)
+        {
+            Device.DestroyRenderPass(renderPass);
+        }
+    _renderPasses.clear();
 
     Device.Deinit();
     Instance.Deinit();
@@ -254,9 +261,15 @@ VulkanContext::Log(const std::string& error)
 VkRenderPass
 VulkanContext::_createRenderPass(const DRenderPassAttachments& attachments)
 {
-    const auto info = ConvertRenderPassAttachmentsToRIVkRenderPassInfo(attachments);
+    const auto     info = ConvertRenderPassAttachmentsToRIVkRenderPassInfo(attachments);
+    VkRenderPass   renderPass{};
+    const VkResult result = Device.CreateRenderPass(info, &renderPass);
+    {
+        throw std::runtime_error(VkUtils::VkErrorString(result));
+    }
+    _renderPasses.emplace(renderPass);
 
-    return nullptr;
+    return renderPass;
 }
 
 std::vector<const char*>

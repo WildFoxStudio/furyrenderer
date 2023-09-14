@@ -279,6 +279,9 @@ class RIVulkanDevice13 : public RIVulkanDevice12
   public:
     virtual ~RIVulkanDevice13();
 
+    VkResult CreateRenderPass(const RIVkRenderPassInfo& info, VkRenderPass* renderPass);
+    void         DestroyRenderPass(VkRenderPass renderPass);
+
   private:
     RICacheMap<RIVkRenderPassInfo, VkRenderPass, RIRenderPassInfoHashFn, RIRenderPassInfoEqualFn> _renderPassMap;
 };
