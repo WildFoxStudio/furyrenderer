@@ -3,6 +3,7 @@
 #pragma once
 
 #include "asserts.h"
+#include "IContext.h"
 
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <volk.h>
@@ -120,6 +121,16 @@ convertVkFormat(const VkFormat format)
                 return Fox::EFormat::B8G8R8_UNORM;
             case VK_FORMAT_B8G8R8A8_UNORM:
                 return Fox::EFormat::B8G8R8A8_UNORM;
+            case VK_FORMAT_D16_UNORM:
+                return Fox::EFormat::DEPTH16_UNORM;
+            case VK_FORMAT_D32_SFLOAT:
+                return Fox::EFormat::DEPTH32_FLOAT;
+            case VK_FORMAT_D16_UNORM_S8_UINT:
+                return Fox::EFormat::DEPTH16_UNORM_STENCIL8_UINT;
+            case VK_FORMAT_D24_UNORM_S8_UINT:
+                return Fox::EFormat::DEPTH24_UNORM_STENCIL8_UINT;
+            case VK_FORMAT_D32_SFLOAT_S8_UINT:
+                return Fox::EFormat::DEPTH32_FLOAT_STENCIL8_UINT;
         }
 
     check(0);
@@ -390,7 +401,7 @@ selectPhysycalDeviceOnHighestMemory(const std::vector<VkPhysicalDevice>& physica
 
 //@TODO can be unit tested
 inline std::vector<const char*>
-filterInclusive(const std::vector<const char*> source, const std::vector<const char*> included)
+filterInclusive(const std::vector<const char*>& source, const std::vector<const char*>& included)
 {
     std::vector<const char*> inclusive;
     std::copy_if(source.cbegin(), source.cend(), std::back_inserter(inclusive), [&included](const char* s1) {
@@ -403,7 +414,7 @@ filterInclusive(const std::vector<const char*> source, const std::vector<const c
 
 //@TODO can be unit tested
 inline std::vector<const char*>
-filterExclusive(const std::vector<const char*> source, const std::vector<const char*> excluded)
+filterExclusive(const std::vector<const char*>& source, const std::vector<const char*>& excluded)
 {
     std::vector<const char*> inclusive;
     std::copy_if(source.cbegin(), source.cend(), std::back_inserter(inclusive), [&excluded](const char* s1) {
