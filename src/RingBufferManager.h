@@ -2,9 +2,11 @@
 
 #pragma once
 
-#include "Core/utils/debug.h"
+#include "asserts.h"
 
-// Design it like a ring buffer
+namespace Fox
+{
+
 struct RingBufferManager
 {
     RingBufferManager(uint32_t maxSize, unsigned char* mappedMemory) : MaxSize(maxSize), Mapped(mappedMemory) {}
@@ -114,3 +116,4 @@ struct RingBufferManager
     uint32_t       Tail{};
     bool           Full{ false }; // This is used when the Head==Tail, if true it means that no available space is left
 };
+}
