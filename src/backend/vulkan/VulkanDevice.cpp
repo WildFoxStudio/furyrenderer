@@ -139,6 +139,8 @@ namespace Fox
 		check(PhysicalDevice != nullptr);
 		check(Device != nullptr);
 
+		vmaDestroyAllocator(VmaAllocator);
+
 		vkDestroyDevice(Device, nullptr);
 
 		Device = nullptr;
