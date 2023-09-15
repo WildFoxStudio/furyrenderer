@@ -286,9 +286,6 @@ VulkanContext::DestroyVertexBuffer(DBuffer buffer)
     Device.DestroyBuffer(bufferVulkan->Buffer);
 
     _vertexBuffers.erase(std::find_if(_vertexBuffers.begin(), _vertexBuffers.end(), [buffer](const DBufferVulkan& b) { return &b == buffer; }));
-
-    //VkBuffer_T* buf = (VkBuffer_T*)0xfa21a40000000003;
-    //vkDestroyBuffer(Device.Device, buf, nullptr);
 }
 
 void

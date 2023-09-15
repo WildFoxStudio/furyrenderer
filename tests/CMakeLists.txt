@@ -1,8 +1,9 @@
 set(SOURCES 
   # Utils
   "utilities/WindowFixture.h"
-  "unit/RICacheMap.test.cpp"
   # Unit
+  "unit/RICacheMap.test.cpp"
+  "unit/RingBufferManager.test.cpp"
   "unit/vulkan/VkUtils.test.cpp"
   "unit/vulkan/RenderPassCaching.test.cpp"
   "unit/vulkan/RIRenderPassAttachmentsConversion.test.cpp"
