@@ -9,6 +9,7 @@ set(SOURCES
   # Integration
   "integration/vulkan/ContextCreationDestruction.test.cpp"
   "integration/vulkan/SwapchainCreationDestruction.test.cpp"
+  "integration/vulkan/VertexBufferCreationDestruction.test.cpp"
 )
 
 

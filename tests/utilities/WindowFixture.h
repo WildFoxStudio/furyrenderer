@@ -12,7 +12,7 @@
 static void
 WarningAssert(const char* msg)
 {
-    ASSERT_NE(0, 0);
+    ASSERT_NE(0, 0) << std::string(msg);
 };
 
 class WindowFixture : public ::testing::Test

@@ -26,6 +26,13 @@ struct DSwapchainVulkan : public DSwapchain_T
     uint32_t                   CurrentImageIndex{};
 };
 
+struct DBufferVulkan : public DBuffer_T
+{
+    DBufferVulkan(EBufferType type, uint32_t size) : DBuffer_T{ type }, Size(size){};
+    const uint32_t Size;
+    RIVulkanBuffer Buffer;
+};
+
 class VulkanContext : public IContext
 {
     inline static constexpr uint32_t NUM_OF_FRAMES_IN_FLIGHT{ 2 };
@@ -39,6 +46,9 @@ class VulkanContext : public IContext
 
     DFramebuffer CreateSwapchainFramebuffer() override;
     void         DestroyFramebuffer(DFramebuffer framebuffer) override;
+
+    DBuffer CreateVertexBuffer(uint32_t size);
+    void    DestroyVertexBuffer(DBuffer buffer);
 
     void SubmitPass(RenderPassData&& data) override;
     void SubmitCopy(CopyDataCommand&& data) override;
@@ -55,6 +65,7 @@ class VulkanContext : public IContext
     void (*_logOutput)(const char*);
 
     std::list<DSwapchainVulkan>      _swapchains;
+    std::list<DBufferVulkan>         _vertexBuffers;
     std::unordered_set<VkRenderPass> _renderPasses;
 
     const std::vector<const char*> _validationLayers = {

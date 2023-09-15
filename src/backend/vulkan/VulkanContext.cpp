@@ -265,6 +265,32 @@ VulkanContext::DestroyFramebuffer(DFramebuffer framebuffer)
 {
 }
 
+DBuffer
+VulkanContext::CreateVertexBuffer(uint32_t size)
+{
+    DBufferVulkan buf{ EBufferType::VERTEX_INDEX_BUFFER, size };
+
+    buf.Buffer = Device.CreateBufferDeviceLocalTransferBit(size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+
+    _vertexBuffers.emplace_back(std::move(buf));
+
+    return &_vertexBuffers.back();
+}
+
+void
+VulkanContext::DestroyVertexBuffer(DBuffer buffer)
+{
+    check(buffer->Type == EBufferType::VERTEX_INDEX_BUFFER);
+    DBufferVulkan* bufferVulkan = static_cast<DBufferVulkan*>(buffer);
+
+    Device.DestroyBuffer(bufferVulkan->Buffer);
+
+    _vertexBuffers.erase(std::find_if(_vertexBuffers.begin(), _vertexBuffers.end(), [buffer](const DBufferVulkan& b) { return &b == buffer; }));
+
+    //VkBuffer_T* buf = (VkBuffer_T*)0xfa21a40000000003;
+    //vkDestroyBuffer(Device.Device, buf, nullptr);
+}
+
 void
 VulkanContext::SubmitPass(RenderPassData&& data)
 {
