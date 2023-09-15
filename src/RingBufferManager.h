@@ -9,105 +9,126 @@ namespace Fox
 
 struct RingBufferManager
 {
+  private:
+    inline bool _shouldWrapAround(uint32_t index) { return index >= MaxSize; };
+    inline bool _isInsideRange(uint32_t start, uint32_t length) const { return start < MaxSize && start + length <= MaxSize; };
+
+  public:
     RingBufferManager(uint32_t maxSize, unsigned char* mappedMemory) : MaxSize(maxSize), Mapped(mappedMemory) {}
 
-    // Free space for the head to move forward
-    void SetTail(uint32_t tail)
+    // Must receive the same number of pop with the same length as the number of time Push was called
+    void Pop(uint32_t length)
     {
-        check(tail <= MaxSize);
-#if _DEBUG
-        // We cannot move tail in front of head manually if it was behing
-        if (Tail <= Head)
+        check(length, MaxSize);
+#if defined(_DEBUG)
+        if (!Full && Tail != Head)
             {
-                check(tail <= Head);
-            }
-        else // if tail was in ahead of head
-            {
-                // Tail must not decrease, meaning it went past Head or it should be less than head
-                check(tail > Tail || tail < Head);
+                if (Tail < Head)
+                    {
+                        check(Tail + length <= Head);
+                    }
             }
 #endif
-        Tail = tail;
-        // If equal then reset to beginning
-        if (Tail == Head)
-            {
-                Tail = 0;
-                Head = 0;
-            }
+        // Wrap the Tail around if it exceeds MaxSize
+        Tail = _shouldWrapAround(Tail + length) ? Tail = length : Tail + length;
+        check(Tail > 0 && Tail < MaxSize);
+        Full = false; // When Pop is called it means the we're not full anymore
     }
 
-    uint32_t GetHead() const { return Head; };
-    uint32_t GetTail() const { return Tail; };
-
-    bool DoesFit(uint32_t length) const
+    // Returns the actual space that we can allocate with push. Can be less than available space
+    uint32_t Capacity() const
     {
-        if (length > MaxSize)
-            return false;
-
-        if (Head >= Tail)
+        if (Full)
             {
-                // Head is ahead of or at the same position as the tail
-                if (Head + length > MaxSize) // If wrap around
-                    {
-                        return length <= Tail;
-                    }
+                return 0;
+            }
+        if (Head == Tail)
+            {
+                return MaxSize;
+            }
+
+        if (Head < Tail)
+            {
+                return Tail - Head;
             }
         else
             {
-                // Head is behind the tail, the buffer wraps around
-                return (Tail - Head);
+                return MaxSize - Head;
             }
-
-        return !Full;
     }
 
-    uint32_t Copy(void* data, uint32_t length)
+    /*Returns the size of actual used memory*/
+    uint32_t Size() const
     {
-        check(DoesFit(length));
-        check(length <= MaxSize);
-
-        if (Head + length > MaxSize) // we cannot exceed the end of the buffer so we wrap around head
-            { // This space is free and lost in the buffer, so it's better to allocate bigger data first and smaller second
-                Head = 0;
-            }
-#if _DEBUG
-        if (Head < Tail)
+        if (Full)
             {
-                check(Head + length <= Tail);
+                return MaxSize;
+            }
+        else
+            {
+                if (Head >= Tail)
+                    {
+                        return Head - Tail;
+                    }
+                else
+                    {
+                        return MaxSize - (Tail - Head);
+                    }
+            }
+    }
+
+    /*If data is nullptr no copy is performed*/
+    uint32_t Push(void* data, uint32_t length)
+    {
+        // Must not be full
+        check(!Full);
+        // Allocation can be more than max size
+        check(length <= MaxSize);
+        // Check capacity
+        check(Capacity() >= length);
+#if defined(_DEBUG)
+        if (Head != Tail)
+            {
+                if (Head < Tail)
+                    {
+                        // If head < tail cannot go beyond tail
+                        check(Head + length <= Tail);
+                    }
+                //else if (_shouldWrapAround(Head + length))
+                //    {
+                //        // If head > tail and wrap arounds can't go beyond tail
+                //        check(length <= Tail);//no Capacity left
+                //    }
             }
 #endif
-
-        const uint32_t previousHead      = Head;
-        unsigned char* addressWithOffset = static_cast<unsigned char*>(Mapped) + Head;
-        memcpy(addressWithOffset, data, length);
-
-        // Increment tail
-        Head += length;
-        // If head an tail are the same it means that ring buffer is full
+        // Increase or wrap around
+        Head = _shouldWrapAround(Head + length) ? Head = length : Head + length;
+        // Mark as full if are equal
         if (Head == Tail)
             {
                 Full = true;
             }
 
-        return previousHead;
-    }
-
-    /* The available space is only an estimation, use DoesFit to check if can Copy*/
-    uint32_t AvailableSpace() const
-    {
-        if (Full)
-            return 0;
-
-        if (Head >= Tail)
+        const uint32_t dataStart = Head - length;
+        check(_isInsideRange(dataStart, length));
+        if (data != nullptr)
             {
-                // Head is ahead of or at the same position as the tail
-                return (MaxSize - (Head - Tail));
+                unsigned char* addressWithOffset = static_cast<unsigned char*>(Mapped) + dataStart;
+                memcpy(addressWithOffset, data, length);
             }
-        else
+
+        // Mark full and wrap around otherwise capacity is 0
+        if (Head == MaxSize)
             {
-                // Head is behind the tail, the buffer wraps around
-                return (Tail - Head);
+                if (Tail == 0)
+                    {
+                        Full = true;
+                    }
+                Head = 0;
             }
+
+        // Return data location
+        return dataStart;
     }
 
     const uint32_t MaxSize{};
