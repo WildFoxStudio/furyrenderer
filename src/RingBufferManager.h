@@ -29,9 +29,23 @@ struct RingBufferManager
                     }
             }
 #endif
-        // Wrap the Tail around if it exceeds MaxSize
-        Tail = _shouldWrapAround(Tail + length) ? Tail = length : Tail + length;
-        check(Tail > 0 && Tail < MaxSize);
+        const bool fit = Tail + length <= MaxSize;
+        if (fit)
+            {
+                Tail += length;
+            }
+        else
+            {
+                // Increase or wrap around
+                Tail = _shouldWrapAround(Tail + length) ? Tail = length : Tail + length;
+            }
+
+        if (Tail == MaxSize)
+            {
+                Tail = 0;
+            }
+
+        check(Tail > 0 && Tail <= MaxSize);
         Full = false; // When Pop is called it means the we're not full anymore
     }
 
@@ -94,15 +108,24 @@ struct RingBufferManager
                         // If head < tail cannot go beyond tail
                         check(Head + length <= Tail);
                     }
-                //else if (_shouldWrapAround(Head + length))
-                //    {
-                //        // If head > tail and wrap arounds can't go beyond tail
-                //        check(length <= Tail);//no Capacity left
-                //    }
+                // else if (_shouldWrapAround(Head + length))
+                //     {
+                //         // If head > tail and wrap arounds can't go beyond tail
+                //         check(length <= Tail);//no Capacity left
+                //     }
             }
 #endif
-        // Increase or wrap around
-        Head = _shouldWrapAround(Head + length) ? Head = length : Head + length;
+
+        const bool fit = Head + length <= MaxSize;
+        if (fit)
+            {
+                Head += length;
+            }
+        else
+            {
+                // Increase or wrap around
+                Head = _shouldWrapAround(Head + length) ? Head = length : Head + length;
+            }
         // Mark as full if are equal
         if (Head == Tail)
             {
