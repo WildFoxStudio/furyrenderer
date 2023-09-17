@@ -45,7 +45,7 @@ struct RingBufferManager
                 Tail = 0;
             }
 
-        check(Tail > 0 && Tail <= MaxSize);
+        check(Tail >= 0 && Tail <= MaxSize);
         Full = false; // When Pop is called it means the we're not full anymore
     }
 
@@ -156,8 +156,8 @@ struct RingBufferManager
 
     const uint32_t MaxSize{};
     unsigned char* Mapped{};
-    uint32_t       Head{};
-    uint32_t       Tail{};
+    uint32_t       Head{};//Goes from 0 To MaxSize incluse
+    uint32_t       Tail{};//Goes from 0 To MaxSize incluse
     bool           Full{ false }; // This is used when the Head==Tail, if true it means that no available space is left
 };
 }
