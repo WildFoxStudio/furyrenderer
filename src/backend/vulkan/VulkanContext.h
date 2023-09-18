@@ -8,6 +8,7 @@
 #include "VulkanDevice13.h"
 #include "VulkanInstance.h"
 
+#include <functional>
 #include <list>
 #include <vector>
 
@@ -34,7 +35,7 @@ struct DBufferVulkan : public DBuffer_T
     RIVulkanBuffer Buffer;
 };
 
-class VulkanContext : public IContext
+class VulkanContext final : public IContext
 {
     inline static constexpr uint32_t NUM_OF_FRAMES_IN_FLIGHT{ 2 };
 
@@ -54,6 +55,7 @@ class VulkanContext : public IContext
     void SubmitPass(RenderPassData&& data) override;
     void SubmitCopy(CopyDataCommand&& data) override;
     void AdvanceFrame() override;
+    void FlushDeletedBuffers() override;
 
     unsigned char* GetAdapterDescription() const override;
     size_t         GetAdapterDedicatedVideoMemory() const override;
@@ -70,12 +72,13 @@ class VulkanContext : public IContext
     void (*_warningOutput)(const char*);
     void (*_logOutput)(const char*);
 
-    std::list<DSwapchainVulkan>       _swapchains;
-    std::list<DBufferVulkan>          _vertexBuffers;
-    std::unordered_set<VkRenderPass>  _renderPasses;
-    uint32_t                          _frameIndex{};
-    std::vector<RICommandPoolManager> _cmdPool;
-    std::vector<CopyDataCommand>      _transferCommands;
+    std::list<DSwapchainVulkan>                     _swapchains;
+    std::list<DBufferVulkan>                        _vertexBuffers;
+    std::unordered_set<VkRenderPass>                _renderPasses;
+    uint32_t                                        _frameIndex{};
+    std::vector<std::vector<std::function<void()>>> _deletionQueue;
+    std::vector<RICommandPoolManager>               _cmdPool;
+    std::vector<CopyDataCommand>                    _transferCommands;
     // Staging buffer
     std::vector<std::vector<uint32_t>> _perFrameCopySizes;
     RIVulkanBuffer                     _stagingBuffer;
@@ -125,6 +128,10 @@ class VulkanContext : public IContext
     void _initializeDevice();
     void _initializeStagingBuffer(uint32_t stagingBufferSize);
     void _deinitializeStagingBuffer();
+
+    void _performDeletionQueue();
+    void _performCopyOperations();
+    void _submitCommands();
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL _vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT                                                                   messageType,

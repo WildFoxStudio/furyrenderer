@@ -356,6 +356,7 @@ class IContext
     virtual void SubmitPass(RenderPassData&& data)  = 0;
     virtual void SubmitCopy(CopyDataCommand&& data) = 0;
     virtual void AdvanceFrame()                     = 0;
+    virtual void FlushDeletedBuffers()              = 0;
 
     virtual unsigned char* GetAdapterDescription() const          = 0;
     virtual size_t         GetAdapterDedicatedVideoMemory() const = 0;

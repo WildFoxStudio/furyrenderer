@@ -23,6 +23,8 @@ VulkanContext::VulkanContext(const DContextConfig* const config) : _warningOutpu
     {
         std::generate_n(std::back_inserter(_cmdPool), NUM_OF_FRAMES_IN_FLIGHT, [this]() { return RICommandPoolManager(Device.CreateCommandPool()); });
     }
+    // Allocate per frame deletion queue
+    std::generate_n(std::back_inserter(_deletionQueue), NUM_OF_FRAMES_IN_FLIGHT, [this]() { return std::vector<std::function<void()>>(); });
 }
 
 void
@@ -179,6 +181,8 @@ VulkanContext::~VulkanContext()
 
     _deinitializeStagingBuffer();
 
+    FlushDeletedBuffers();
+
     for (const auto renderPass : _renderPasses)
         {
             Device.DestroyRenderPass(renderPass);
@@ -313,9 +317,10 @@ VulkanContext::DestroyVertexBuffer(DBuffer buffer)
     check(buffer->Type == EBufferType::VERTEX_INDEX_BUFFER);
     DBufferVulkan* bufferVulkan = static_cast<DBufferVulkan*>(buffer);
 
-    Device.DestroyBuffer(bufferVulkan->Buffer);
-
-    _vertexBuffers.erase(std::find_if(_vertexBuffers.begin(), _vertexBuffers.end(), [buffer](const DBufferVulkan& b) { return &b == buffer; }));
+    _deletionQueue[_frameIndex].push_back([this, buffer, bufferVulkan]() {
+        Device.DestroyBuffer(bufferVulkan->Buffer);
+        _vertexBuffers.erase(std::find_if(_vertexBuffers.begin(), _vertexBuffers.end(), [buffer](const DBufferVulkan& b) { return &b == buffer; }));
+    });
 }
 
 void
@@ -335,6 +340,66 @@ VulkanContext::AdvanceFrame()
     // Reset command pool
     auto& commandPool = _cmdPool[_frameIndex];
     commandPool.Reset();
+
+    _performDeletionQueue();
+
+    _performCopyOperations();
+    _submitCommands();
+
+    // Increment the frame index
+    _frameIndex = (_frameIndex + 1) % NUM_OF_FRAMES_IN_FLIGHT;
+}
+
+void
+VulkanContext::FlushDeletedBuffers()
+{
+    const uint32_t numOfDeletions = std::count_if(_deletionQueue.begin(), _deletionQueue.end(), [](const std::vector<std::function<void()>>& lst) { return lst.size() > 0; });
+    if (numOfDeletions > 0)
+        {
+            WaitDeviceIdle();
+            for (auto& lst : _deletionQueue)
+                {
+                    std::for_each(lst.begin(), lst.end(), [this](const std::function<void()> fn) { fn(); });
+                    lst.clear();
+                }
+        }
+}
+
+unsigned char*
+VulkanContext::GetAdapterDescription() const
+{
+    return nullptr;
+}
+
+size_t
+VulkanContext::GetAdapterDedicatedVideoMemory() const
+{
+    return 0;
+}
+
+void
+VulkanContext::Warning(const std::string& error)
+{
+    if (_warningOutput)
+        {
+            _warningOutput(error.data());
+        }
+}
+
+void
+VulkanContext::Log(const std::string& error)
+{
+    if (_logOutput)
+        {
+            _logOutput(error.data());
+        }
+}
+
+void
+VulkanContext::_performCopyOperations()
+{
+    // Reset command pool
+    auto& commandPool = _cmdPool[_frameIndex];
 
     // Perform copy commands
     {
@@ -455,7 +520,13 @@ VulkanContext::AdvanceFrame()
         // Clear all transfer commands we've processed
         _transferCommands.erase(_transferCommands.begin(), it);
     }
+}
 
+void
+VulkanContext::_submitCommands()
+{
+    // Reset command pool
+    auto& commandPool = _cmdPool[_frameIndex];
     // Queue submit
     auto recordedCommandBuffers = commandPool.GetRecorded();
     if (recordedCommandBuffers.size() > 0)
@@ -465,39 +536,15 @@ VulkanContext::AdvanceFrame()
 
             Device.SubmitToMainQueue(recordedCommandBuffers, {}, VK_NULL_HANDLE, VK_NULL_HANDLE);
         }
-
-    // Increment the frame index
-    _frameIndex = (_frameIndex + 1) % NUM_OF_FRAMES_IN_FLIGHT;
-}
-
-unsigned char*
-VulkanContext::GetAdapterDescription() const
-{
-    return nullptr;
-}
-
-size_t
-VulkanContext::GetAdapterDedicatedVideoMemory() const
-{
-    return 0;
 }
 
 void
-VulkanContext::Warning(const std::string& error)
+VulkanContext::_performDeletionQueue()
 {
-    if (_warningOutput)
-        {
-            _warningOutput(error.data());
-        }
-}
-
-void
-VulkanContext::Log(const std::string& error)
-{
-    if (_logOutput)
-        {
-            _logOutput(error.data());
-        }
+    // Assume this frame index these resource were deleted NUM_FRAMES_IN_FLIGHT ago
+    auto& deletionQueue = _deletionQueue[_frameIndex];
+    std::for_each(deletionQueue.begin(), deletionQueue.end(), [this](const std::function<void()> fn) { fn(); });
+    deletionQueue.clear();
 }
 
 VkRenderPass
