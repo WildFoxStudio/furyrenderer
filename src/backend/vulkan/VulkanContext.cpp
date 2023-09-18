@@ -480,16 +480,31 @@ VulkanContext::_performCopyOperations()
         auto              it = _transferCommands.begin();
         for (; it != _transferCommands.end(); it++)
             {
-                if (it->VertexCommand.has_value())
-                    { // Perform vertex copy
-                        const CopyVertexCommand& v = it->VertexCommand.value();
+
+                if (it->VertexCommand.has_value() || it->UniformCommand.has_value())
+                    {
+                        DBufferVulkan*                    destination{};
+                        const std::vector<unsigned char>* data{};
+                        uint32_t*                         offset{};
+                        if (it->VertexCommand.has_value())
+                            {
+                                destination = static_cast<DBufferVulkan*>(it->VertexCommand.value().Destination);
+                                data        = &it->VertexCommand.value().Data;
+                                offset      = &it->VertexCommand.value().DestOffset;
+                            }
+                        if (it->UniformCommand.has_value())
+                            {
+                                destination = static_cast<DBufferVulkan*>(it->UniformCommand.value().Destination);
+                                data        = &it->UniformCommand.value().Data;
+                                offset      = &it->UniformCommand.value().DestOffset;
+                            }
 
                         // If not space left in staging buffer stop copying
                         const auto capacity = _stagingBufferManager->Capacity();
-                        if (capacity < v.Data.size())
+                        if (capacity < data->size())
                             {
                                 const auto freeSpace = _stagingBufferManager->MaxSize - _stagingBufferManager->Size();
-                                if (freeSpace - capacity < v.Data.size())
+                                if (freeSpace - capacity < data->size())
                                     {
                                         break;
                                     }
@@ -499,38 +514,9 @@ VulkanContext::_performCopyOperations()
                                         _perFrameCopySizes[_frameIndex].push_back(capacity);
                                     }
                             }
-                        DBufferVulkan* destination = static_cast<DBufferVulkan*>(v.Destination);
-
-                        const uint32_t stagingOffset = _stagingBufferManager->Push((void*)v.Data.data(), v.Data.size());
-                        _perFrameCopySizes[_frameIndex].push_back(v.Data.size());
-                        transfer.CopyVertexBuffer(_stagingBuffer.Buffer, destination->Buffer.Buffer, v.Data.size(), stagingOffset);
-                    }
-                else if (it->UniformCommand.has_value())
-                    { // Copy ubo
-                        const CopyUniformBufferCommand& v = it->UniformCommand.value();
-
-                        // If not space left in staging buffer stop copying
-                        const auto capacity = _stagingBufferManager->Capacity();
-                        if (capacity < v.Data.size())
-                            {
-                                const auto freeSpace = _stagingBufferManager->MaxSize - _stagingBufferManager->Size();
-                                if (freeSpace - capacity < v.Data.size())
-                                    {
-                                        break;
-                                    }
-                                else
-                                    {
-                                        _stagingBufferManager->Push(nullptr, capacity);
-                                        _perFrameCopySizes[_frameIndex].push_back(capacity);
-                                    }
-                            }
-
-                        const uint32_t stagingOffset = _stagingBufferManager->Push((void*)v.Data.data(), v.Data.size());
-                        _perFrameCopySizes[_frameIndex].push_back(v.Data.size());
-
-                        DBufferVulkan* destination = static_cast<DBufferVulkan*>(v.Destination);
-
-                        transfer.CopyVertexBuffer(_stagingBuffer.Buffer, destination->Buffer.Buffer, v.Data.size(), stagingOffset);
+                        const uint32_t stagingOffset = _stagingBufferManager->Push((void*)data->data(), data->size());
+                        _perFrameCopySizes[_frameIndex].push_back(data->size());
+                        transfer.CopyBuffer(_stagingBuffer.Buffer, destination->Buffer.Buffer, data->size(), stagingOffset);
                     }
                 // else if (it->ImageCommand.has_value())
                 //     {

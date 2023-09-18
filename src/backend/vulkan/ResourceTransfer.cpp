@@ -151,7 +151,7 @@ CResourceTransfer::CopyMipMap(VkBuffer sourceBuffer, VkImage destination, VkExte
 }
 
 void
-CResourceTransfer::CopyVertexBuffer(VkBuffer sourceBuffer, VkBuffer destination, size_t length, size_t beginOffset)
+CResourceTransfer::CopyBuffer(VkBuffer sourceBuffer, VkBuffer destination, size_t length, size_t beginOffset)
 {
     VkBufferCopy copy{};
     copy.srcOffset = beginOffset;

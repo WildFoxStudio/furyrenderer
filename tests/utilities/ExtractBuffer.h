@@ -16,7 +16,7 @@ ExtractBuffer(Fox::VulkanContext* vkContext, Fox::DBuffer src, uint32_t bytes, v
     auto                   cmdPool   = device.CreateCommandPool();
     auto                   cmdBuffer = cmdPool->Allocate();
     Fox::CResourceTransfer transfer(cmdBuffer->Cmd);
-    transfer.CopyVertexBuffer(vkSrcBuf->Buffer.Buffer, outBuf.Buffer, bytes, 0);
+    transfer.CopyBuffer(vkSrcBuf->Buffer.Buffer, outBuf.Buffer, bytes, 0);
     transfer.FinishCommandBuffer();
 
     const std::vector<Fox::RICommandBuffer*> cmds{ cmdBuffer };
