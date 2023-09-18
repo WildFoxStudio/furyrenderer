@@ -19,7 +19,7 @@ namespace Fox
 {
 struct DContextConfig
 {
-    const uint32_t stagingBufferSize{ 64 * 1024 * 1024 }; // 64mb
+    uint32_t stagingBufferSize{ 64 * 1024 * 1024 }; // 64mb
     void (*warningFunction)(const char*){};
     void (*logOutputFunction)(const char*){};
 };

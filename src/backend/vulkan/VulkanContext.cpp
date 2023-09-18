@@ -440,6 +440,18 @@ VulkanContext::AdvanceFrame()
         // This is used to move tail as same position as head (free space) of previous frame data
         transfer.FinishCommandBuffer();
 
+        // If we couldn't transfer all data print log
+        if (it != _transferCommands.end())
+            {
+                uint32_t bytesLeft{};
+                std::for_each(it, _transferCommands.end(), [&bytesLeft](const CopyDataCommand& c) {
+                    bytesLeft += c.VertexCommand.has_value() ? c.VertexCommand.value().Data.size() : 0;
+                    bytesLeft += c.UniformCommand.has_value() ? c.UniformCommand.value().Data.size() : 0;
+                });
+                const std::string out = "Warning: Staging buffer could not copy " + std::to_string(bytesLeft) + " bytes. Condider increase the staging buffer size";
+                Log(out);
+            }
+
         // Clear all transfer commands we've processed
         _transferCommands.erase(_transferCommands.begin(), it);
     }
