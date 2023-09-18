@@ -1,6 +1,7 @@
 set(SOURCES 
   # Utils
   "utilities/WindowFixture.h"
+  "utilities/ExtractBuffer.h"
   # Unit
   "unit/RICacheMap.test.cpp"
   "unit/RingBufferManager.test.cpp"
@@ -12,6 +13,7 @@ set(SOURCES
   "integration/vulkan/SwapchainCreationDestruction.test.cpp"
   "integration/vulkan/VertexBufferCreationDestruction.test.cpp"
   "integration/vulkan/VertexBufferUpload.test.cpp"
+  "integration/vulkan/UniformBufferUpload.test.cpp"
 )
 
 
