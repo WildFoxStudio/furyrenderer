@@ -58,6 +58,8 @@ target_sources(${PROJECT_NAME} PRIVATE
     "${SRC_DIR}/RICacheMap.h"
     "${SRC_DIR}/backend/vulkan/UtilsVk.h"
     "${SRC_DIR}/RingBufferManager.h"
+    "${SRC_DIR}/backend/vulkan/ResourceTransfer.h"
+    "${SRC_DIR}/backend/vulkan/ResourceTransfer.cpp"
     "${SRC_DIR}/backend/vulkan/VulkanContext.h"
     "${SRC_DIR}/backend/vulkan/VulkanContext.cpp"
     "${SRC_DIR}/backend/vulkan/VulkanInstance.h"

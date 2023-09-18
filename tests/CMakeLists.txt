@@ -11,6 +11,7 @@ set(SOURCES
   "integration/vulkan/ContextCreationDestruction.test.cpp"
   "integration/vulkan/SwapchainCreationDestruction.test.cpp"
   "integration/vulkan/VertexBufferCreationDestruction.test.cpp"
+  "integration/vulkan/VertexBufferUpload.test.cpp"
 )
 
 

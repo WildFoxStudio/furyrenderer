@@ -1,6 +1,7 @@
 
 #include "VulkanContext.h"
 
+#include "ResourceTransfer.h"
 #include "UtilsVK.h"
 
 #include <algorithm>
@@ -17,6 +18,11 @@ VulkanContext::VulkanContext(const DContextConfig* const config) : _warningOutpu
     _initializeDebugger();
     _initializeVersion();
     _initializeDevice();
+    _initializeStagingBuffer(config->stagingBufferSize);
+    // Command pools per frame
+    {
+        std::generate_n(std::back_inserter(_cmdPool), NUM_OF_FRAMES_IN_FLIGHT, [this]() { return RICommandPoolManager(Device.CreateCommandPool()); });
+    }
 }
 
 void
@@ -144,10 +150,34 @@ VulkanContext::_initializeDevice()
     volkLoadDevice(Device.Device);
 }
 
+void
+VulkanContext::_initializeStagingBuffer(uint32_t stagingBufferSize)
+{
+    // Create staging buffer with manager
+    _stagingBuffer = Device.CreateBufferHostVisible(stagingBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    std::generate_n(std::back_inserter(_perFrameCopySizes), NUM_OF_FRAMES_IN_FLIGHT, []() { return std::vector<uint32_t>(); });
+    unsigned char* _stagingBufferPtr = (unsigned char*)Device.MapBuffer(_stagingBuffer);
+    _stagingBufferManager            = std::make_unique<RingBufferManager>(stagingBufferSize, _stagingBufferPtr);
+}
+
+void
+VulkanContext::_deinitializeStagingBuffer()
+{ // Unmap and destroy staging buffer
+    _stagingBufferManager.reset();
+    Device.UnmapBuffer(_stagingBuffer);
+    Device.DestroyBuffer(_stagingBuffer);
+}
+
 VulkanContext::~VulkanContext()
 {
     check(_swapchains.size() == 0);
     vkDeviceWaitIdle(Device.Device);
+
+    // Free command pools
+    std::for_each(_cmdPool.begin(), _cmdPool.end(), [this](const RICommandPoolManager& pool) { Device.DestroyCommandPool(pool.GetCommandPool()); });
+    _cmdPool.clear();
+
+    _deinitializeStagingBuffer();
 
     for (const auto renderPass : _renderPasses)
         {
@@ -270,7 +300,7 @@ VulkanContext::CreateVertexBuffer(uint32_t size)
 {
     DBufferVulkan buf{ EBufferType::VERTEX_INDEX_BUFFER, size };
 
-    buf.Buffer = Device.CreateBufferDeviceLocalTransferBit(size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+    buf.Buffer = Device.CreateBufferDeviceLocalTransferBit(size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
 
     _vertexBuffers.emplace_back(std::move(buf));
 
@@ -296,11 +326,136 @@ VulkanContext::SubmitPass(RenderPassData&& data)
 void
 VulkanContext::SubmitCopy(CopyDataCommand&& data)
 {
+    _transferCommands.emplace_back(std::move(data));
 }
 
 void
 VulkanContext::AdvanceFrame()
 {
+    // Reset command pool
+    auto& commandPool = _cmdPool[_frameIndex];
+    commandPool.Reset();
+
+    // Perform copy commands
+    {
+        // Sort from smallest to largest data
+        std::sort(_transferCommands.begin(), _transferCommands.end(), [](const CopyDataCommand& a, const CopyDataCommand& b) {
+            uint32_t aSize{};
+            if (a.UniformCommand.has_value())
+                {
+                    aSize = a.UniformCommand.value().Data.size();
+                }
+            if (a.VertexCommand.has_value())
+                {
+                    aSize = a.VertexCommand.value().Data.size();
+                }
+            uint32_t bSize{};
+            if (b.UniformCommand.has_value())
+                {
+                    bSize = b.UniformCommand.value().Data.size();
+                }
+            if (a.VertexCommand.has_value())
+                {
+                    bSize = b.VertexCommand.value().Data.size();
+                }
+
+            return aSize < bSize;
+        });
+
+        // Pop previous frame allocation, freeing space
+        {
+            for (const uint32_t bytes : _perFrameCopySizes[_frameIndex])
+                {
+                    _stagingBufferManager->Pop(bytes);
+                }
+            _perFrameCopySizes[_frameIndex].clear();
+        }
+
+        // Copy
+        CResourceTransfer transfer(commandPool.Allocate()->Cmd);
+        auto              it = _transferCommands.begin();
+        for (; it != _transferCommands.end(); it++)
+            {
+                if (it->VertexCommand.has_value())
+                    { // Perform vertex copy
+                        const CopyVertexCommand& v = it->VertexCommand.value();
+
+                        // If not space left in staging buffer stop copying
+                        const auto capacity = _stagingBufferManager->Capacity();
+                        if (capacity < v.Data.size())
+                            {
+                                const auto freeSpace = _stagingBufferManager->MaxSize - _stagingBufferManager->Size();
+                                if (freeSpace - capacity < v.Data.size())
+                                    {
+                                        break;
+                                    }
+                                else
+                                    {
+                                        _stagingBufferManager->Push(nullptr, capacity);
+                                        _perFrameCopySizes[_frameIndex].push_back(capacity);
+                                    }
+                            }
+                        DBufferVulkan* destination = static_cast<DBufferVulkan*>(v.Destination);
+
+                        const uint32_t stagingOffset = _stagingBufferManager->Push((void*)v.Data.data(), v.Data.size());
+                        _perFrameCopySizes[_frameIndex].push_back(v.Data.size());
+                        transfer.CopyVertexBuffer(_stagingBuffer.Buffer, destination->Buffer.Buffer, v.Data.size(), stagingOffset);
+                    }
+                // else if (it->UniformCommand.has_value())
+                //     { // Copy ubo
+                //         const CopyUniformBufferCommand& v = it->UniformCommand.value();
+
+                //        // If not space left in staging buffer stop copying
+                //        if (!_stagingBufferManager->DoesFit(v.Data.size()))
+                //            {
+                //                break;
+                //            }
+                //        const uint32_t stagingOffset = _stagingBufferManager->Copy((void*)v.Data.data(), v.Data.size());
+                //        transfer.CopyVertexBuffer(_stagingBuffer.Buffer, v.Destination->Buffer.Buffer, v.Data.size(), stagingOffset);
+                //    }
+                // else if (it->ImageCommand.has_value())
+                //     {
+                //         // Copy mip maps
+                //         const CopyImageCommand& v = it->ImageCommand.value();
+
+                //        uint32_t mipMapsBytes{};
+                //        for (const auto& mip : v.MipMapCopy)
+                //            {
+                //                mipMapsBytes += mip.Data.size();
+                //            }
+
+                //        // If not space left in staging buffer stop copying
+                //        if (!_stagingBufferManager->DoesFit(mipMapsBytes))
+                //            {
+                //                break;
+                //            }
+
+                //        for (const auto& mip : v.MipMapCopy)
+                //            {
+                //                const uint32_t stagingOffset = _stagingBufferManager->Copy((void*)mip.Data.data(), mip.Data.size());
+                //                transfer.CopyMipMap(_stagingBuffer.Buffer, v.Destination, VkExtent2D{ mip.Width, mip.Height }, mip.MipLevel, mip.Offset, stagingOffset);
+                //            }
+                //    }
+            }
+        // This is used to move tail as same position as head (free space) of previous frame data
+        transfer.FinishCommandBuffer();
+
+        // Clear all transfer commands we've processed
+        _transferCommands.erase(_transferCommands.begin(), it);
+    }
+
+    // Queue submit
+    auto recordedCommandBuffers = commandPool.GetRecorded();
+    if (recordedCommandBuffers.size() > 0)
+        {
+            // Reset only when there is work submitted otherwise we'll wait indefinetly
+            // vkResetFences(Device.Device, 1, &_fence[_frameIndex]);
+
+            Device.SubmitToMainQueue(recordedCommandBuffers, {}, VK_NULL_HANDLE, VK_NULL_HANDLE);
+        }
+
+    // Increment the frame index
+    _frameIndex = (_frameIndex + 1) % NUM_OF_FRAMES_IN_FLIGHT;
 }
 
 unsigned char*
@@ -540,6 +695,12 @@ ConvertRenderPassAttachmentsToRIVkRenderPassInfo(const DRenderPassAttachments& a
     }
 
     return info;
+}
+
+void
+VulkanContext::WaitDeviceIdle()
+{
+    vkDeviceWaitIdle(Device.Device);
 }
 
 }

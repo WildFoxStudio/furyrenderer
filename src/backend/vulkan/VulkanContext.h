@@ -4,6 +4,7 @@
 
 #include "IContext.h"
 
+#include "RingBufferManager.h"
 #include "VulkanDevice13.h"
 #include "VulkanInstance.h"
 
@@ -57,6 +58,11 @@ class VulkanContext : public IContext
     unsigned char* GetAdapterDescription() const override;
     size_t         GetAdapterDedicatedVideoMemory() const override;
 
+#pragma region Utility
+    void              WaitDeviceIdle();
+    RIVulkanDevice13& GetDevice() { return Device; }
+#pragma endregion
+
   private:
     RIVulkanInstance Instance;
     RIVulkanDevice13 Device;
@@ -64,9 +70,16 @@ class VulkanContext : public IContext
     void (*_warningOutput)(const char*);
     void (*_logOutput)(const char*);
 
-    std::list<DSwapchainVulkan>      _swapchains;
-    std::list<DBufferVulkan>         _vertexBuffers;
-    std::unordered_set<VkRenderPass> _renderPasses;
+    std::list<DSwapchainVulkan>       _swapchains;
+    std::list<DBufferVulkan>          _vertexBuffers;
+    std::unordered_set<VkRenderPass>  _renderPasses;
+    uint32_t                          _frameIndex{};
+    std::vector<RICommandPoolManager> _cmdPool;
+    std::vector<CopyDataCommand>      _transferCommands;
+    // Staging buffer
+    std::vector<std::vector<uint32_t>> _perFrameCopySizes;
+    RIVulkanBuffer                     _stagingBuffer;
+    std::unique_ptr<RingBufferManager> _stagingBufferManager;
 
     const std::vector<const char*> _validationLayers = {
         "VK_LAYER_KHRONOS_validation",
@@ -110,6 +123,8 @@ class VulkanContext : public IContext
     void _initializeDebugger();
     void _initializeVersion();
     void _initializeDevice();
+    void _initializeStagingBuffer(uint32_t stagingBufferSize);
+    void _deinitializeStagingBuffer();
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL _vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT                                                                   messageType,

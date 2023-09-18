@@ -63,8 +63,6 @@ struct VkAttachmentReferenceHashFn
 {
     size_t operator()(const VkAttachmentReference& lhs) const
     {
-        std::size_t seed = 0;
-
         std::hash<uint32_t> uint32Hasher;
         const auto          hash1 = uint32Hasher(lhs.attachment) ^ 0x9e3779b9;
         const auto          hash2 = uint32Hasher(static_cast<uint32_t>(lhs.layout)) ^ 0x9e3779b1;
@@ -113,7 +111,7 @@ struct VkSubpassDescriptionHashFn
         for (uint32_t i = 0; i < subpassDesc.preserveAttachmentCount; i++)
             {
                 const uint32_t* ref = subpassDesc.pPreserveAttachments + i;
-                seed ^= std::hash<uint32_t>{}(subpassDesc.preserveAttachmentCount);
+                seed ^= std::hash<uint32_t>{}(*ref);
             }
 
         return seed;
@@ -280,7 +278,7 @@ class RIVulkanDevice13 : public RIVulkanDevice12
     virtual ~RIVulkanDevice13();
 
     VkResult CreateRenderPass(const RIVkRenderPassInfo& info, VkRenderPass* renderPass);
-    void         DestroyRenderPass(VkRenderPass renderPass);
+    void     DestroyRenderPass(VkRenderPass renderPass);
 
   private:
     RICacheMap<RIVkRenderPassInfo, VkRenderPass, RIRenderPassInfoHashFn, RIRenderPassInfoEqualFn> _renderPassMap;
