@@ -23,8 +23,6 @@ VulkanContext::VulkanContext(const DContextConfig* const config) : _warningOutpu
     {
         std::generate_n(std::back_inserter(_cmdPool), NUM_OF_FRAMES_IN_FLIGHT, [this]() { return RICommandPoolManager(Device.CreateCommandPool()); });
     }
-    // Allocate per frame deletion queue
-    std::generate_n(std::back_inserter(_deletionQueue), NUM_OF_FRAMES_IN_FLIGHT, [this]() { return std::vector<std::function<void()>>(); });
 }
 
 void
@@ -317,7 +315,7 @@ VulkanContext::DestroyVertexBuffer(DBuffer buffer)
     check(buffer->Type == EBufferType::VERTEX_INDEX_BUFFER);
     DBufferVulkan* bufferVulkan = static_cast<DBufferVulkan*>(buffer);
 
-    _deletionQueue[_frameIndex].push_back([this, buffer, bufferVulkan]() {
+    _deferDestruction([this, buffer, bufferVulkan]() {
         Device.DestroyBuffer(bufferVulkan->Buffer);
         _vertexBuffers.erase(std::find_if(_vertexBuffers.begin(), _vertexBuffers.end(), [buffer](const DBufferVulkan& b) { return &b == buffer; }));
     });
@@ -341,10 +339,28 @@ VulkanContext::DestroyUniformBuffer(DBuffer buffer)
     check(buffer->Type == EBufferType::UNIFORM_BUFFER_OBJECT);
     DBufferVulkan* bufferVulkan = static_cast<DBufferVulkan*>(buffer);
 
-    _deletionQueue[_frameIndex].push_back([this, buffer, bufferVulkan]() {
+    _deferDestruction([this, buffer, bufferVulkan]() {
         Device.DestroyBuffer(bufferVulkan->Buffer);
         _uniformBuffers.erase(std::find_if(_uniformBuffers.begin(), _uniformBuffers.end(), [buffer](const DBufferVulkan& b) { return &b == buffer; }));
     });
+}
+
+void
+VulkanContext::_deferDestruction(DeleteFn&& fn)
+{
+    const auto index               = _frameIndex + NUM_OF_FRAMES_IN_FLIGHT;
+    auto       foundSameFrameIndex = std::find_if(_deletionQueue.begin(), _deletionQueue.end(), [index](const FramesWaitToDeletionList& pair) { return pair.first == index; });
+
+    if (foundSameFrameIndex == _deletionQueue.end())
+        {
+            std::vector<DeleteFn> lst{ std::move(fn) };
+            auto                  pair = std::make_pair(index, std::move(lst));
+            _deletionQueue.emplace_back(std::move(pair));
+        }
+    else
+        {
+            foundSameFrameIndex->second.emplace_back(std::move(fn));
+        }
 }
 
 void
@@ -377,14 +393,12 @@ VulkanContext::AdvanceFrame()
 void
 VulkanContext::FlushDeletedBuffers()
 {
-    const uint32_t numOfDeletions = std::count_if(_deletionQueue.begin(), _deletionQueue.end(), [](const std::vector<std::function<void()>>& lst) { return lst.size() > 0; });
-    if (numOfDeletions > 0)
+    if (_deletionQueue.size() > 0)
         {
             WaitDeviceIdle();
-            for (auto& lst : _deletionQueue)
+            while (_deletionQueue.size() > 0)
                 {
-                    std::for_each(lst.begin(), lst.end(), [this](const std::function<void()> fn) { fn(); });
-                    lst.clear();
+                    _performDeletionQueue();
                 }
         }
 }
@@ -565,10 +579,18 @@ VulkanContext::_submitCommands()
 void
 VulkanContext::_performDeletionQueue()
 {
-    // Assume this frame index these resource were deleted NUM_FRAMES_IN_FLIGHT ago
-    auto& deletionQueue = _deletionQueue[_frameIndex];
-    std::for_each(deletionQueue.begin(), deletionQueue.end(), [this](const std::function<void()> fn) { fn(); });
-    deletionQueue.clear();
+    // Free resource if N frames have passed
+    std::for_each(_deletionQueue.begin(), _deletionQueue.end(), [this](FramesWaitToDeletionList& pair) {
+        if (pair.first == 0)
+            {
+                std::for_each(pair.second.begin(), pair.second.end(), [](const DeleteFn& fn) { fn(); });
+            }
+    });
+    // Remove from queue all deleted fn
+    _deletionQueue.erase(std::remove_if(_deletionQueue.begin(), _deletionQueue.end(), [](const FramesWaitToDeletionList& pair) { return pair.first == 0; }), _deletionQueue.end());
+
+    // Decrease the frame number to wait
+    std::for_each(_deletionQueue.begin(), _deletionQueue.end(), [this](FramesWaitToDeletionList& pair) { pair.first--; });
 }
 
 VkRenderPass

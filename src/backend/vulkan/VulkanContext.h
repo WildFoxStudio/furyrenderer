@@ -10,6 +10,7 @@
 
 #include <functional>
 #include <list>
+#include <tuple>
 #include <vector>
 
 namespace Fox
@@ -74,14 +75,16 @@ class VulkanContext final : public IContext
     void (*_warningOutput)(const char*);
     void (*_logOutput)(const char*);
 
-    std::list<DSwapchainVulkan>                     _swapchains;
-    std::list<DBufferVulkan>                        _vertexBuffers;
-    std::list<DBufferVulkan>                        _uniformBuffers;
-    std::unordered_set<VkRenderPass>                _renderPasses;
-    uint32_t                                        _frameIndex{};
-    std::vector<std::vector<std::function<void()>>> _deletionQueue;
-    std::vector<RICommandPoolManager>               _cmdPool;
-    std::vector<CopyDataCommand>                    _transferCommands;
+    std::list<DSwapchainVulkan>      _swapchains;
+    std::list<DBufferVulkan>         _vertexBuffers;
+    std::list<DBufferVulkan>         _uniformBuffers;
+    std::unordered_set<VkRenderPass> _renderPasses;
+    using DeleteFn                 = std::function<void()>;
+    using FramesWaitToDeletionList = std::pair<uint32_t, std::vector<DeleteFn>>;
+    uint32_t                              _frameIndex{};
+    std::vector<FramesWaitToDeletionList> _deletionQueue;
+    std::vector<RICommandPoolManager>     _cmdPool;
+    std::vector<CopyDataCommand>          _transferCommands;
     // Staging buffer
     std::vector<std::vector<uint32_t>> _perFrameCopySizes;
     RIVulkanBuffer                     _stagingBuffer;
@@ -135,6 +138,7 @@ class VulkanContext final : public IContext
     void _performDeletionQueue();
     void _performCopyOperations();
     void _submitCommands();
+    void _deferDestruction(DeleteFn&& fn);
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL _vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT                                                                   messageType,
