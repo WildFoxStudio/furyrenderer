@@ -350,8 +350,10 @@ class IContext
     virtual DFramebuffer CreateSwapchainFramebuffer()                 = 0;
     virtual void         DestroyFramebuffer(DFramebuffer framebuffer) = 0;
 
-    virtual DBuffer CreateVertexBuffer(uint32_t size)   = 0;
-    virtual void    DestroyVertexBuffer(DBuffer buffer) = 0;
+    virtual DBuffer CreateVertexBuffer(uint32_t size)    = 0;
+    virtual void    DestroyVertexBuffer(DBuffer buffer)  = 0;
+    virtual DBuffer CreateUniformBuffer(uint32_t size)   = 0;
+    virtual void    DestroyUniformBuffer(DBuffer buffer) = 0;
 
     virtual void SubmitPass(RenderPassData&& data)  = 0;
     virtual void SubmitCopy(CopyDataCommand&& data) = 0;

@@ -48,6 +48,8 @@ class VulkanContext final : public IContext
 
     DFramebuffer CreateSwapchainFramebuffer() override;
     void         DestroyFramebuffer(DFramebuffer framebuffer) override;
+    DBuffer      CreateUniformBuffer(uint32_t size) override;
+    void         DestroyUniformBuffer(DBuffer buffer) override;
 
     DBuffer CreateVertexBuffer(uint32_t size);
     void    DestroyVertexBuffer(DBuffer buffer);
@@ -74,6 +76,7 @@ class VulkanContext final : public IContext
 
     std::list<DSwapchainVulkan>                     _swapchains;
     std::list<DBufferVulkan>                        _vertexBuffers;
+    std::list<DBufferVulkan>                        _uniformBuffers;
     std::unordered_set<VkRenderPass>                _renderPasses;
     uint32_t                                        _frameIndex{};
     std::vector<std::vector<std::function<void()>>> _deletionQueue;

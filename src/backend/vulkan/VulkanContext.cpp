@@ -323,6 +323,30 @@ VulkanContext::DestroyVertexBuffer(DBuffer buffer)
     });
 }
 
+DBuffer
+VulkanContext::CreateUniformBuffer(uint32_t size)
+{
+    DBufferVulkan buf{ EBufferType::UNIFORM_BUFFER_OBJECT, size };
+
+    buf.Buffer = Device.CreateBufferDeviceLocalTransferBit(size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+
+    _uniformBuffers.emplace_back(std::move(buf));
+
+    return &_uniformBuffers.back();
+}
+
+void
+VulkanContext::DestroyUniformBuffer(DBuffer buffer)
+{
+    check(buffer->Type == EBufferType::UNIFORM_BUFFER_OBJECT);
+    DBufferVulkan* bufferVulkan = static_cast<DBufferVulkan*>(buffer);
+
+    _deletionQueue[_frameIndex].push_back([this, buffer, bufferVulkan]() {
+        Device.DestroyBuffer(bufferVulkan->Buffer);
+        _uniformBuffers.erase(std::find_if(_uniformBuffers.begin(), _uniformBuffers.end(), [buffer](const DBufferVulkan& b) { return &b == buffer; }));
+    });
+}
+
 void
 VulkanContext::SubmitPass(RenderPassData&& data)
 {
