@@ -16,7 +16,7 @@ RIVulkanDevice5::~RIVulkanDevice5()
 }
 
 RIVulkanImage
-RIVulkanDevice5::CreateImageDeviceLocal(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format, VkImageUsageFlags usage)
+RIVulkanDevice5::CreateImageDeviceLocal(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format, VkImageUsageFlags usage, VkImageTiling tiling)
 {
 
     VkImageCreateInfo imageInfo{ VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
@@ -27,7 +27,7 @@ RIVulkanDevice5::CreateImageDeviceLocal(uint32_t width, uint32_t height, uint32_
     imageInfo.mipLevels     = mipLevels;
     imageInfo.arrayLayers   = 1;
     imageInfo.format        = format;
-    imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.tiling        = tiling;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     imageInfo.usage         = usage;
     imageInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
@@ -55,7 +55,7 @@ RIVulkanDevice5::CreateImageDeviceLocal(uint32_t width, uint32_t height, uint32_
 }
 
 RIVulkanImage
-RIVulkanDevice5::CreateImageHostVisible(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format, VkImageUsageFlags usage)
+RIVulkanDevice5::CreateImageHostVisible(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format, VkImageUsageFlags usage, VkImageTiling tiling)
 {
 
     VkImageCreateInfo imageInfo{ VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
@@ -66,13 +66,14 @@ RIVulkanDevice5::CreateImageHostVisible(uint32_t width, uint32_t height, uint32_
     imageInfo.mipLevels     = mipLevels;
     imageInfo.arrayLayers   = 1;
     imageInfo.format        = format;
-    imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.tiling        = tiling;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     imageInfo.usage         = usage;
     imageInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
 
     VmaAllocationCreateInfo allocInfo = {};
+    allocInfo.flags                   = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT;
     allocInfo.usage                   = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
 
     RIVulkanImage  image{};
@@ -164,6 +165,24 @@ RIVulkanDevice5::DestroyImageView(VkImageView imageView)
 {
     vkDestroyImageView(Device, imageView, nullptr);
     _imageViews.erase(_imageViews.find(imageView));
+}
+
+void*
+RIVulkanDevice5::MapImage(const RIVulkanImage& image)
+{
+    void*          gpuVirtualAddress{};
+    const VkResult result = vmaMapMemory(VmaAllocator, image.Allocation, &gpuVirtualAddress);
+    if (VKFAILED(result))
+        {
+            throw std::runtime_error(VkUtils::VkErrorString(result));
+        }
+    return gpuVirtualAddress;
+}
+
+void
+RIVulkanDevice5::UnmapImage(const RIVulkanImage& image)
+{
+    vmaUnmapMemory(VmaAllocator, image.Allocation);
 }
 
 }

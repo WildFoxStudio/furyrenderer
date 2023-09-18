@@ -82,6 +82,11 @@ struct DViewport
     unsigned int x, y, w, h, znear, zfar;
 };
 
+struct DImage_T
+{
+};
+typedef DImage_T* DImage;
+
 typedef union DClearColorValue
 {
     float    float32[4];
@@ -246,11 +251,19 @@ struct DrawCommand
     }
 };
 
-// struct CopyImageCommand
-//{
-//     VkImage                      Destination{};
-//     std::vector<CopyMipMapLevel> MipMapCopy;
-// };
+struct CopyMipMapLevel
+{
+    uint32_t                   MipLevel{};
+    uint32_t                   Width, Height;
+    uint32_t                   Offset{}; // The offset in the destination VkImage buffer
+    std::vector<unsigned char> Data;
+};
+
+struct CopyImageCommand
+{
+    DImage                       Destination{};
+    std::vector<CopyMipMapLevel> MipMapCopy;
+};
 
 struct CopyVertexCommand
 {
@@ -268,8 +281,8 @@ struct CopyUniformBufferCommand
 
 struct CopyDataCommand
 {
-    std::optional<CopyVertexCommand> VertexCommand;
-    // std::optional<CopyImageCommand>         ImageCommand;
+    std::optional<CopyVertexCommand>        VertexCommand;
+    std::optional<CopyImageCommand>         ImageCommand;
     std::optional<CopyUniformBufferCommand> UniformCommand;
 
     inline void CopyVertex(DBuffer destination, uint32_t destinationOffset, void* data, uint32_t bytes)
@@ -294,26 +307,26 @@ struct CopyDataCommand
         UniformCommand = CopyUniformBufferCommand{ ubo, 0, std::move(blob) };
     }
 
-    // inline void CopyImageMipMap(VkImage destination, uint32_t offset, void* data, uint32_t width, uint32_t height, uint32_t mipMapIndex, uint32_t bytes)
-    //{
-    //     check(!VertexCommand.has_value());
-    //     check(!ImageCommand.has_value());
-    //     check(!UniformCommand.has_value());
+    inline void CopyImageMipMap(DImage destination, uint32_t offset, void* data, uint32_t width, uint32_t height, uint32_t mipMapIndex, uint32_t bytes)
+    {
+        // check(!VertexCommand.has_value());
+        // check(!ImageCommand.has_value());
+        // check(!UniformCommand.has_value());
 
-    //    std::vector<unsigned char> blob(bytes, 0);
-    //    memcpy(blob.data(), data, bytes);
+        std::vector<unsigned char> blob(bytes, 0);
+        memcpy(blob.data(), data, bytes);
 
-    //    std::vector<CopyMipMapLevel> level;
-    //    CopyMipMapLevel              l;
-    //    l.Data     = std::move(blob);
-    //    l.MipLevel = mipMapIndex;
-    //    l.Width    = width;
-    //    l.Height   = height;
-    //    l.Offset   = offset;
+        std::vector<CopyMipMapLevel> level;
+        CopyMipMapLevel              l;
+        l.Data     = std::move(blob);
+        l.MipLevel = mipMapIndex;
+        l.Width    = width;
+        l.Height   = height;
+        l.Offset   = offset;
 
-    //    level.push_back(std::move(l));
-    //    ImageCommand = CopyImageCommand{ destination, level };
-    //}
+        level.push_back(std::move(l));
+        ImageCommand = CopyImageCommand{ destination, level };
+    }
 };
 
 struct RenderPassData
@@ -350,10 +363,12 @@ class IContext
     virtual DFramebuffer CreateSwapchainFramebuffer()                 = 0;
     virtual void         DestroyFramebuffer(DFramebuffer framebuffer) = 0;
 
-    virtual DBuffer CreateVertexBuffer(uint32_t size)    = 0;
-    virtual void    DestroyVertexBuffer(DBuffer buffer)  = 0;
-    virtual DBuffer CreateUniformBuffer(uint32_t size)   = 0;
-    virtual void    DestroyUniformBuffer(DBuffer buffer) = 0;
+    virtual DBuffer CreateVertexBuffer(uint32_t size)                                                  = 0;
+    virtual void    DestroyVertexBuffer(DBuffer buffer)                                                = 0;
+    virtual DBuffer CreateUniformBuffer(uint32_t size)                                                 = 0;
+    virtual void    DestroyUniformBuffer(DBuffer buffer)                                               = 0;
+    virtual DImage  CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) = 0;
+    virtual void    DestroyImage(DImage image)                                                         = 0;
 
     virtual void SubmitPass(RenderPassData&& data)  = 0;
     virtual void SubmitCopy(CopyDataCommand&& data) = 0;

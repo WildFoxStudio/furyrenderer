@@ -151,6 +151,102 @@ CResourceTransfer::CopyMipMap(VkBuffer sourceBuffer, VkImage destination, VkExte
 }
 
 void
+CResourceTransfer::BlitMipMap_DEPRECATED(VkImage src, VkImage destination, VkExtent2D extent, uint32_t mipIndex)
+{
+
+    VkImageMemoryBarrier destinationBarrierTransfer{};
+    {
+        destinationBarrierTransfer.sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        destinationBarrierTransfer.oldLayout                       = VK_IMAGE_LAYOUT_UNDEFINED;
+        destinationBarrierTransfer.newLayout                       = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        destinationBarrierTransfer.srcQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+        destinationBarrierTransfer.dstQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+        destinationBarrierTransfer.image                           = destination;
+        destinationBarrierTransfer.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+        destinationBarrierTransfer.subresourceRange.baseMipLevel   = mipIndex;
+        destinationBarrierTransfer.subresourceRange.levelCount     = 1; // number of mip maps
+        destinationBarrierTransfer.subresourceRange.baseArrayLayer = 0;
+        destinationBarrierTransfer.subresourceRange.layerCount     = 1;
+        destinationBarrierTransfer.srcAccessMask                   = 0;
+        destinationBarrierTransfer.dstAccessMask                   = VK_ACCESS_TRANSFER_WRITE_BIT;
+    }
+
+    // Define the region to blit (we will blit the whole swapchain image)
+    VkOffset3D blitSize;
+    blitSize.x = extent.width;
+    blitSize.y = extent.height;
+    blitSize.z = 1;
+    VkImageBlit imageBlitRegion{};
+    imageBlitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    imageBlitRegion.srcSubresource.layerCount = 1;
+    imageBlitRegion.srcOffsets[1]             = blitSize;
+    imageBlitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    imageBlitRegion.dstSubresource.layerCount = 1;
+    imageBlitRegion.dstOffsets[1]             = blitSize;
+
+    vkCmdPipelineBarrier(_command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, (uint32_t)1, &destinationBarrierTransfer);
+    // 1:1 blit ratio
+    vkCmdBlitImage(_command, src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, destination, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &imageBlitRegion, VK_FILTER_NEAREST);
+}
+
+void
+CResourceTransfer::CopyImageToBuffer(VkBuffer destBuffer, VkImage sourceImage, VkExtent2D extent, uint32_t mipIndex)
+{
+    VkBufferImageCopy region{};
+    {
+        region.bufferOffset      = 0;
+        region.bufferRowLength   = 0;
+        region.bufferImageHeight = 0;
+
+        region.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.mipLevel       = mipIndex;
+        region.imageSubresource.baseArrayLayer = 0;
+        region.imageSubresource.layerCount     = 1;
+
+        region.imageOffset = { 0, 0, 0 };
+        region.imageExtent = { extent.width, extent.height, 1 };
+    }
+
+    VkImageMemoryBarrier barrierTransfer{};
+    {
+        barrierTransfer.sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrierTransfer.oldLayout                       = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrierTransfer.newLayout                       = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrierTransfer.srcQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+        barrierTransfer.dstQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+        barrierTransfer.image                           = sourceImage;
+        barrierTransfer.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrierTransfer.subresourceRange.baseMipLevel   = mipIndex;
+        barrierTransfer.subresourceRange.levelCount     = 1; // number of mip maps
+        barrierTransfer.subresourceRange.baseArrayLayer = 0;
+        barrierTransfer.subresourceRange.layerCount     = 1;
+        barrierTransfer.srcAccessMask                   = 0;
+        barrierTransfer.dstAccessMask                   = VK_ACCESS_TRANSFER_READ_BIT;
+    }
+
+    vkCmdPipelineBarrier(_command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, (uint32_t)1, &barrierTransfer);
+    vkCmdCopyImageToBuffer(_command, sourceImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, destBuffer, 1, &region);
+
+    VkImageMemoryBarrier barrierSampler{};
+    {
+        barrierSampler.sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrierSampler.oldLayout                       = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrierSampler.newLayout                       = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrierSampler.srcQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+        barrierSampler.dstQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+        barrierSampler.image                           = sourceImage;
+        barrierSampler.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrierSampler.subresourceRange.baseMipLevel   = mipIndex;
+        barrierSampler.subresourceRange.levelCount     = 1;
+        barrierSampler.subresourceRange.baseArrayLayer = 0;
+        barrierSampler.subresourceRange.layerCount     = 1;
+        barrierSampler.srcAccessMask                   = VK_ACCESS_TRANSFER_READ_BIT;
+        barrierSampler.dstAccessMask                   = VK_ACCESS_SHADER_READ_BIT;
+    }
+    vkCmdPipelineBarrier(_command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, (uint32_t)1, &barrierSampler);
+}
+
+void
 CResourceTransfer::CopyBuffer(VkBuffer sourceBuffer, VkBuffer destination, size_t length, size_t beginOffset)
 {
     VkBufferCopy copy{};

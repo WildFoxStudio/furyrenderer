@@ -346,6 +346,40 @@ VulkanContext::DestroyUniformBuffer(DBuffer buffer)
     });
 }
 
+DImage
+VulkanContext::CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount)
+{
+    DImageVulkan image;
+
+    const auto vkFormat = VkUtils::convertFormat(format);
+
+    image.Image = Device.CreateImageDeviceLocal(
+    width, height, mipMapCount, vkFormat, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+
+    const VkResult result = Device.CreateImageView(vkFormat, image.Image.Image, VK_IMAGE_ASPECT_COLOR_BIT, 0, mipMapCount, &image.View);
+    if (VKFAILED(result))
+        {
+            throw std::runtime_error(VkUtils::VkErrorString(result));
+        }
+
+    _images.emplace_back(std::move(image));
+
+    return &_images.back();
+}
+
+void
+VulkanContext::DestroyImage(DImage image)
+{
+    DImageVulkan* const imageVulkan = static_cast<DImageVulkan*>(image);
+
+    _deferDestruction([this, image, imageVulkan]() {
+        Device.DestroyImageView(imageVulkan->View);
+        Device.DestroyImage(imageVulkan->Image);
+
+        _images.erase(std::find_if(_images.begin(), _images.end(), [imageVulkan](const DImageVulkan& b) { return &b == imageVulkan; }));
+    });
+}
+
 void
 VulkanContext::_deferDestruction(DeleteFn&& fn)
 {
@@ -498,6 +532,9 @@ VulkanContext::_performCopyOperations()
                                 data        = &it->UniformCommand.value().Data;
                                 offset      = &it->UniformCommand.value().DestOffset;
                             }
+                        check(destination != nullptr);
+                        check(data != nullptr);
+                        check(offset != nullptr);
 
                         // If not space left in staging buffer stop copying
                         const auto capacity = _stagingBufferManager->Capacity();
@@ -518,31 +555,41 @@ VulkanContext::_performCopyOperations()
                         _perFrameCopySizes[_frameIndex].push_back(data->size());
                         transfer.CopyBuffer(_stagingBuffer.Buffer, destination->Buffer.Buffer, data->size(), stagingOffset);
                     }
-                // else if (it->ImageCommand.has_value())
-                //     {
-                //         // Copy mip maps
-                //         const CopyImageCommand& v = it->ImageCommand.value();
+                else if (it->ImageCommand.has_value())
+                    {
+                        // Copy mip maps
+                        const CopyImageCommand& v = it->ImageCommand.value();
 
-                //        uint32_t mipMapsBytes{};
-                //        for (const auto& mip : v.MipMapCopy)
-                //            {
-                //                mipMapsBytes += mip.Data.size();
-                //            }
+                        uint32_t mipMapsBytes{};
+                        for (const auto& mip : v.MipMapCopy)
+                            {
+                                mipMapsBytes += mip.Data.size();
+                            }
 
-                //        // If not space left in staging buffer stop copying
-                //        if (!_stagingBufferManager->DoesFit(mipMapsBytes))
-                //            {
-                //                break;
-                //            }
-
-                //        for (const auto& mip : v.MipMapCopy)
-                //            {
-                //                const uint32_t stagingOffset = _stagingBufferManager->Copy((void*)mip.Data.data(), mip.Data.size());
-                //                transfer.CopyMipMap(_stagingBuffer.Buffer, v.Destination, VkExtent2D{ mip.Width, mip.Height }, mip.MipLevel, mip.Offset, stagingOffset);
-                //            }
-                //    }
+                        // If not space left in staging buffer stop copying
+                        const auto capacity = _stagingBufferManager->Capacity();
+                        if (capacity < mipMapsBytes)
+                            {
+                                const auto freeSpace = _stagingBufferManager->MaxSize - _stagingBufferManager->Size();
+                                if (freeSpace - capacity < mipMapsBytes)
+                                    {
+                                        break;
+                                    }
+                                else
+                                    {
+                                        _stagingBufferManager->Push(nullptr, capacity);
+                                        _perFrameCopySizes[_frameIndex].push_back(capacity);
+                                    }
+                            }
+                        for (const auto& mip : v.MipMapCopy)
+                            {
+                                DImageVulkan*  destination   = static_cast<DImageVulkan*>(v.Destination);
+                                const uint32_t stagingOffset = _stagingBufferManager->Push((void*)mip.Data.data(), mip.Data.size());
+                                transfer.CopyMipMap(_stagingBuffer.Buffer, destination->Image.Image, VkExtent2D{ mip.Width, mip.Height }, mip.MipLevel, mip.Offset, stagingOffset);
+                            }
+                    }
             }
-        // This is used to move tail as same position as head (free space) of previous frame data
+
         transfer.FinishCommandBuffer();
 
         // If we couldn't transfer all data print log
@@ -679,7 +726,6 @@ VulkanContext::_queryBestPhysicalDevice()
 std::vector<const char*>
 VulkanContext::_getDeviceSupportedExtensions(VkPhysicalDevice physicalDevice, const std::vector<const char*>& extentions)
 {
-
     const auto               validExtensions           = VkUtils::getDeviceExtensionProperties(physicalDevice);
     const auto               extensionNames            = VkUtils::convertExtensionPropertiesToNames(validExtensions);
     std::vector<const char*> deviceSupportedExtensions = VkUtils::filterInclusive(extentions, extensionNames);

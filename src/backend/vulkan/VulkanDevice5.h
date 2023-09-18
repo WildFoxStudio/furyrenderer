@@ -50,12 +50,14 @@ class RIVulkanDevice5 : public RIVulkanDevice4
   public:
     virtual ~RIVulkanDevice5();
 
-    RIVulkanImage CreateImageDeviceLocal(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format, VkImageUsageFlags usage);
-    RIVulkanImage CreateImageHostVisible(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format, VkImageUsageFlags usage);
+    RIVulkanImage CreateImageDeviceLocal(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format, VkImageUsageFlags usage, VkImageTiling tiling = VK_IMAGE_TILING_OPTIMAL);
+    RIVulkanImage CreateImageHostVisible(uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format, VkImageUsageFlags usage, VkImageTiling tiling = VK_IMAGE_TILING_OPTIMAL);
     void          DestroyImage(const RIVulkanImage& image);
     VkImageView   CreateImageView_DEPRECATED(VkFormat format, const RIVulkanImage& image, VkImageAspectFlags aspect, uint32_t baseMipLevel, uint32_t mipmapCount);
     VkResult      CreateImageView(VkFormat format, VkImage image, VkImageAspectFlags aspect, uint32_t baseMipLevel, uint32_t mipmapCount, VkImageView* outImageView);
     void          DestroyImageView(VkImageView imageView);
+    void*         MapImage(const RIVulkanImage& image);
+    void          UnmapImage(const RIVulkanImage& image);
 
   private:
     std::unordered_set<RIVulkanImage, RIVulkanImageHasher, RIVulkanImageEqualFn> _images;

@@ -36,6 +36,12 @@ struct DBufferVulkan : public DBuffer_T
     RIVulkanBuffer Buffer;
 };
 
+struct DImageVulkan : public DImage_T
+{
+    RIVulkanImage Image;
+    VkImageView   View{};
+};
+
 class VulkanContext final : public IContext
 {
     inline static constexpr uint32_t NUM_OF_FRAMES_IN_FLIGHT{ 2 };
@@ -49,11 +55,13 @@ class VulkanContext final : public IContext
 
     DFramebuffer CreateSwapchainFramebuffer() override;
     void         DestroyFramebuffer(DFramebuffer framebuffer) override;
-    DBuffer      CreateUniformBuffer(uint32_t size) override;
-    void         DestroyUniformBuffer(DBuffer buffer) override;
 
     DBuffer CreateVertexBuffer(uint32_t size);
     void    DestroyVertexBuffer(DBuffer buffer);
+    DBuffer CreateUniformBuffer(uint32_t size) override;
+    void    DestroyUniformBuffer(DBuffer buffer) override;
+    DImage  CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount);
+    void    DestroyImage(DImage image);
 
     void SubmitPass(RenderPassData&& data) override;
     void SubmitCopy(CopyDataCommand&& data) override;
@@ -78,6 +86,7 @@ class VulkanContext final : public IContext
     std::list<DSwapchainVulkan>      _swapchains;
     std::list<DBufferVulkan>         _vertexBuffers;
     std::list<DBufferVulkan>         _uniformBuffers;
+    std::list<DImageVulkan>          _images;
     std::unordered_set<VkRenderPass> _renderPasses;
     using DeleteFn                 = std::function<void()>;
     using FramesWaitToDeletionList = std::pair<uint32_t, std::vector<DeleteFn>>;
@@ -153,5 +162,4 @@ class VulkanContext final : public IContext
 };
 
 RIVkRenderPassInfo ConvertRenderPassAttachmentsToRIVkRenderPassInfo(const DRenderPassAttachments& attachments);
-
 }
