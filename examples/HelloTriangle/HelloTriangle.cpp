@@ -14,10 +14,40 @@
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
 
+#include <array>
+#include <fstream>
+#include <string>
+
 void
 Log(const char* msg)
 {
     std::cout << msg << std::endl;
+};
+
+inline std::vector<unsigned char>
+ReadBlobUnsafe(const std::string& filename)
+{
+    std::ifstream file(filename, std::ios::binary | std::ios::ate);
+
+    if (!file.is_open())
+        return {};
+
+    std::ifstream::pos_type pos = file.tellg();
+
+    // What happens if the OS supports really big files.
+    // It may be larger than 32 bits?
+    // This will silently truncate the value/
+    std::streamoff length = pos;
+
+    std::vector<unsigned char> bytes(length);
+    if (pos > 0)
+        { // Manuall memory management.
+            // Not a good idea use a container/.
+            file.seekg(0, std::ios::beg);
+            file.read((char*)bytes.data(), length);
+        }
+    file.close();
+    return bytes;
 };
 
 int
@@ -34,7 +64,7 @@ main()
             {
                 throw std::runtime_error("Failed to glfwInit");
             }
-        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);// as Vulkan, there is no need to create a context
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // as Vulkan, there is no need to create a context
         GLFWwindow* window = glfwCreateWindow(640, 480, "My Title", NULL, NULL);
         if (!window)
             {
@@ -52,11 +82,58 @@ main()
                 throw std::runtime_error("Failed to CreateSwapchain");
             }
 
+        // Create vertex layout
+        Fox::VertexLayoutInfo   info("SV_POSITION", Fox::EFormat::R8G8B8_UNORM, 0, Fox::EVertexInputClassification::PER_VERTEX_DATA);
+        Fox::DVertexInputLayout vertexLayout = context->CreateVertexLayout({ info });
+        constexpr uint32_t      stride       = 3 * sizeof(float);
+        Fox::PipelineFormat     psoFormat(vertexLayout, stride);
+
+        Fox::ShaderSource shaderSource;
+        shaderSource.SourceCode.VertexShader = ReadBlobUnsafe("vertex.spv");
+        shaderSource.SourceCode.PixelShader  = ReadBlobUnsafe("fragment.spv");
+
+        Fox::DPipeline pipeline = context->CreatePipeline(shaderSource, psoFormat);
+
+        constexpr std::array<float, 9> ndcTriangle{ -1, -1, 0.5, 3, -1, 0.5, -1, 3, 0.5 };
+        constexpr size_t               bufSize  = sizeof(float) * ndcTriangle.size();
+        Fox::DBuffer                   triangle = context->CreateVertexBuffer(bufSize);
+
+        Fox::CopyDataCommand copy;
+        copy.CopyVertex(triangle, 0, (void*)ndcTriangle.data(), bufSize);
+        context->SubmitCopy(std::move(copy));
+
+        Fox::DFramebuffer           swapchainFbo = context->CreateSwapchainFramebuffer(swapchain);
+        Fox::DViewport              viewport{ 0, 0, 640, 480, 0.f, 1.f };
+        Fox::DRenderPassAttachment  colorAttachment(format,
+        Fox::ESampleBit::COUNT_1_BIT,
+        Fox::ERenderPassLoad::Clear,
+        Fox::ERenderPassStore::Store,
+        Fox::ERenderPassLayout::Undefined,
+        Fox::ERenderPassLayout::Present,
+        Fox::EAttachmentReference::COLOR_ATTACHMENT);
+        Fox::DRenderPassAttachments renderPass;
+        renderPass.Attachments.push_back(colorAttachment);
+
         while (!glfwWindowShouldClose(window))
             {
                 // Keep running
                 glfwPollEvents();
+
+                Fox::RenderPassData draw(swapchainFbo, viewport, renderPass);
+                draw.ClearColor(1, 0, 0, 1);
+
+                Fox::DrawCommand drawTriangle(pipeline);
+                drawTriangle.Draw(triangle, 0, 3);
+
+                draw.AddDrawCommand(std::move(drawTriangle));
+
+                context->SubmitPass(std::move(draw));
+
+                context->AdvanceFrame();
             }
+
+        context->DestroyVertexBuffer(triangle);
+        context->DestroyPipeline(pipeline);
 
         context->DestroySwapchain(swapchain);
 

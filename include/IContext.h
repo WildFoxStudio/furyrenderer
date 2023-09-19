@@ -4,6 +4,7 @@
 
 #include <map>
 #include <optional>
+#include <string>
 #include <vector>
 
 #if defined(_WIN32) || defined(WIN32) || defined(_WIN64) || defined(WIN64)
@@ -77,6 +78,96 @@ struct DPipeline_T
 
 typedef DPipeline_T* DPipeline;
 
+enum class EFormat
+{
+    R8_UNORM,
+    R8G8B8_UNORM,
+    R8G8B8A8_UNORM,
+    B8G8R8_UNORM,
+    B8G8R8A8_UNORM,
+    DEPTH16_UNORM,
+    DEPTH32_FLOAT,
+    DEPTH16_UNORM_STENCIL8_UINT,
+    DEPTH24_UNORM_STENCIL8_UINT,
+    DEPTH32_FLOAT_STENCIL8_UINT,
+};
+
+enum class EVertexInputClassification
+{
+    PER_VERTEX_DATA,
+    PER_INSTANCE_DATA
+};
+
+struct VertexLayoutInfo
+{
+
+    const char*                Semantic;
+    EFormat                    Format;
+    uint32_t                   ByteOffset;
+    EVertexInputClassification Classification;
+    uint32_t                   InstanceDataStepRate;
+
+    VertexLayoutInfo(const char* semantic, EFormat format, uint32_t byteOffset, EVertexInputClassification classification, uint32_t instanceDataStepRate = 0)
+      : Semantic(semantic), Format(format), ByteOffset(byteOffset), Classification(classification), InstanceDataStepRate(instanceDataStepRate){};
+};
+
+struct DVertexInputLayout_T
+{
+};
+
+typedef DVertexInputLayout_T* DVertexInputLayout;
+
+enum class ETopology
+{
+    TRIANGLE_LIST,
+    LINES_LIST
+};
+
+enum class EFillMode
+{
+    FILL,
+    LINE
+};
+enum class ECullMode
+{
+    NONE,
+    FRONT,
+    BACK
+};
+
+enum class EDepthTest
+{
+    ALWAYS,
+    NEVER,
+    LESS,
+    LESS_OR_EQUAL,
+    GREATER,
+    GREATER_OR_EQUAL
+};
+
+enum ERIBlendMode
+{
+    DefaultBlendMode,
+    Additive
+};
+
+struct PipelineFormat
+{
+    DVertexInputLayout VertexInput;
+    uint32_t           VertexStrideBytes;
+
+    ETopology    Topology{ ETopology::TRIANGLE_LIST };
+    EFillMode    FillMode{ EFillMode::FILL };
+    ECullMode    CullMode{ ECullMode::NONE };
+    bool         DepthTest{ false };
+    bool         DepthWrite{ false };
+    EDepthTest   DepthTestMode{ EDepthTest::ALWAYS };
+    bool         StencilTest{ false };
+    ERIBlendMode BlendMode{ ERIBlendMode::DefaultBlendMode };
+
+    PipelineFormat(DVertexInputLayout vertexLayout, uint32_t stride) : VertexInput(vertexLayout), VertexStrideBytes(stride){};
+};
+
 struct DViewport
 {
     unsigned int x, y, w, h, znear, zfar;
@@ -123,20 +214,6 @@ enum class ERenderPassLayout
     AsAttachment,
     ShaderReadOnly,
     Present
-};
-
-enum class EFormat
-{
-    R8_UNORM,
-    R8G8B8_UNORM,
-    R8G8B8A8_UNORM,
-    B8G8R8_UNORM,
-    B8G8R8A8_UNORM,
-    DEPTH16_UNORM,
-    DEPTH32_FLOAT,
-    DEPTH16_UNORM_STENCIL8_UINT,
-    DEPTH24_UNORM_STENCIL8_UINT,
-    DEPTH32_FLOAT_STENCIL8_UINT,
 };
 
 enum class ESampleBit
@@ -190,13 +267,6 @@ struct SetBuffer
     uint32_t Range{};
 };
 
-// struct SetImage
-//{
-//     VkImageView   ImageView{};
-//     VkImageLayout ImageLayout{};
-//     VkSampler     Sampler{};
-// };
-
 enum class EBindingType
 {
     UNIFORM_BUFFER_OBJECT,
@@ -204,12 +274,112 @@ enum class EBindingType
     SAMPLER
 };
 
+enum class EShaderStage
+{
+    VERTEX,
+    FRAGMENT,
+    ALL
+};
+
+struct ShaderDescriptorBindings
+{
+    std::string  Name; // Optional
+    EBindingType StorageType;
+    size_t       Size; // Size in bytes of the block
+    uint32_t     Count{ 1 }; // Used for array structures
+    EShaderStage Stage;
+
+    ShaderDescriptorBindings(std::string name, EBindingType type, size_t size, uint32_t elementCount, EShaderStage stage)
+      : Name(name), StorageType(type), Size(size), Count(elementCount), Stage(stage){};
+
+    inline size_t Hash() const
+    {
+
+        size_t                 hash = 0;
+        std::hash<std::string> hasher;
+        hash += hasher(Name);
+        hash += (71 * hash + (size_t)StorageType) % 5;
+        hash += (71 * hash + (size_t)Size) % 5;
+        hash += (71 * hash + (size_t)Count) % 5;
+        hash += (71 * hash + (size_t)Stage) % 5;
+        return hash;
+    };
+
+    bool operator==(ShaderDescriptorBindings const& o) const
+    {
+        if (Name != o.Name)
+            return false;
+
+        if (StorageType != o.StorageType)
+            return false;
+
+        if (Size != o.Size)
+            return false;
+
+        if (Count != o.Count)
+            return false;
+
+        if (Stage != o.Stage)
+            return false;
+
+        return true;
+    };
+};
+
+struct RIShaderDescriptorBindingsHasher
+{
+    size_t operator()(std::vector<ShaderDescriptorBindings> const& key) const
+    {
+        size_t hash = 0;
+        for (size_t i = 0; i < key.size(); i++)
+            {
+                hash += key[i].Hash();
+            }
+        return hash;
+    };
+};
+class RIShaderDescriptorBindingsEqualFn
+{
+  public:
+    bool operator()(std::vector<ShaderDescriptorBindings> const& t1, std::vector<ShaderDescriptorBindings> const& t2) const
+    {
+        if (t1.size() != t2.size())
+            return false;
+
+        for (size_t i = 0; i < t1.size(); i++)
+            {
+                if (!(t1[i] == t2[i]))
+                    return false;
+            }
+
+        return true;
+    }
+};
+
+struct ShaderLayout
+{
+    std::map<uint32_t /*Set*/, std::map<uint32_t /*binding*/, ShaderDescriptorBindings>> SetsLayout;
+};
+
+struct ShaderByteCode
+{
+    // Compiled shader raw binary data
+    std::vector<unsigned char> VertexShader;
+    std::vector<unsigned char> PixelShader;
+};
+
+struct ShaderSource
+{
+    ShaderByteCode SourceCode;
+    ShaderLayout   SetsLayout;
+};
+
 struct SetBinding
 {
     /* Only a buffer or image is a valid at once*/
     EBindingType         Type{};
     std::vector<DBuffer> Buffers;
-    // std::vector<SetImage>  Images;
+    std::vector<DImage>  Images;
 };
 
 struct DrawCommand
@@ -232,16 +402,11 @@ struct DrawCommand
         DescriptorSetBindings[set][bindingIndex] = (std::move(binding));
     }
 
-    /*inline void BindImageArray(uint32_t set, uint32_t bindingIndex, const std::vector<std::pair<VkImageView, VkSampler>>& imageToSamplerArray)
+    inline void BindImageArray(uint32_t set, uint32_t bindingIndex, const std::vector<DImage>& imagesArray)
     {
-        std::vector<SetImage> images(imageToSamplerArray.size());
-        std::transform(imageToSamplerArray.begin(), imageToSamplerArray.end(), std::back_inserter(images), [](const std::pair<VkImageView, VkSampler>& p) {
-            return SetImage{ p.first, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, p.second };
-        });
-
-        SetBinding binding{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, {}, images };
+        SetBinding binding{ EBindingType::SAMPLER, {}, imagesArray };
         DescriptorSetBindings[set][bindingIndex] = (std::move(binding));
-    }*/
+    }
 
     inline void Draw(DBuffer vertexBuffer, uint32_t start, uint32_t count)
     {
@@ -360,15 +525,18 @@ class IContext
     virtual bool CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat, DSwapchain* swapchain) = 0;
     virtual void DestroySwapchain(const DSwapchain swapchain)                                                                        = 0;
 
-    virtual DFramebuffer CreateSwapchainFramebuffer()                 = 0;
+    virtual DFramebuffer CreateSwapchainFramebuffer(DSwapchain swapchain) = 0;
     virtual void         DestroyFramebuffer(DFramebuffer framebuffer) = 0;
 
-    virtual DBuffer CreateVertexBuffer(uint32_t size)                                                  = 0;
-    virtual void    DestroyVertexBuffer(DBuffer buffer)                                                = 0;
-    virtual DBuffer CreateUniformBuffer(uint32_t size)                                                 = 0;
-    virtual void    DestroyUniformBuffer(DBuffer buffer)                                               = 0;
-    virtual DImage  CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) = 0;
-    virtual void    DestroyImage(DImage image)                                                         = 0;
+    virtual DBuffer            CreateVertexBuffer(uint32_t size)                                                  = 0;
+    virtual void               DestroyVertexBuffer(DBuffer buffer)                                                = 0;
+    virtual DBuffer            CreateUniformBuffer(uint32_t size)                                                 = 0;
+    virtual void               DestroyUniformBuffer(DBuffer buffer)                                               = 0;
+    virtual DImage             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) = 0;
+    virtual void               DestroyImage(DImage image)                                                         = 0;
+    virtual DVertexInputLayout CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)                      = 0;
+    virtual DPipeline          CreatePipeline(const ShaderSource& shader, const PipelineFormat& format)           = 0;
+    virtual void               DestroyPipeline(DPipeline pipeline)                                                = 0;
 
     virtual void SubmitPass(RenderPassData&& data)  = 0;
     virtual void SubmitCopy(CopyDataCommand&& data) = 0;

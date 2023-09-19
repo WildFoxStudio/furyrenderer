@@ -2,8 +2,8 @@
 
 #pragma once
 
-#include "asserts.h"
 #include "IContext.h"
+#include "asserts.h"
 
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <volk.h>
@@ -442,6 +442,134 @@ convertAttachmentReferenceLayout(const Fox::EAttachmentReference& att)
 
     check(0);
     return VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
+}
+
+//@TODO add unit test
+inline std::vector<VkDescriptorSetLayoutBinding>
+convertDescriptorBindings(const std::map<uint32_t /*binding*/, ::Fox::ShaderDescriptorBindings>& bindingToDescription)
+{
+
+    std::vector<VkDescriptorSetLayoutBinding> bindings;
+
+    for (const auto& pair : bindingToDescription)
+        {
+            const auto  binding     = pair.first;
+            const auto& description = pair.second;
+
+            VkDescriptorSetLayoutBinding b{};
+            b.binding            = binding;
+            b.descriptorType     = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            b.descriptorCount    = description.Count;
+            b.stageFlags         = VK_SHADER_STAGE_ALL_GRAPHICS;
+            b.pImmutableSamplers = nullptr;
+
+            switch (description.StorageType)
+                {
+                    case ::Fox::EBindingType::UNIFORM_BUFFER_OBJECT:
+                        b.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                        break;
+                    // case RIShaderDescriptorBindings::Type::DYNAMIC:
+                    //     b.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+                    //     break;
+                    case ::Fox::EBindingType::STORAGE_BUFFER_OBJECT:
+                        b.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                        break;
+                    case ::Fox::EBindingType::SAMPLER:
+                        b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                        break;
+                }
+
+            switch (description.Stage)
+                {
+                    case ::Fox::EShaderStage::VERTEX:
+                        b.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+                        break;
+                    case ::Fox::EShaderStage::FRAGMENT:
+                        b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+                        break;
+                    case ::Fox::EShaderStage::ALL:
+                        b.stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
+                        break;
+                }
+            bindings.emplace_back(std::move(b));
+        }
+
+    return bindings;
+}
+
+//@TODO add unit test
+inline std::vector<VkDescriptorPoolSize>
+computeDescriptorSetsPoolSize(const std::map<uint32_t /*Set*/, std::map<uint32_t /*binding*/, ::Fox::ShaderDescriptorBindings>>& sets)
+{
+    std::vector<VkDescriptorPoolSize> poolSizes;
+    for (const auto& setPair : sets)
+        {
+            for (const auto& bindingPair : setPair.second)
+                {
+                    VkDescriptorType descriptorType{};
+                    switch (bindingPair.second.StorageType)
+                        {
+                            case ::Fox::EBindingType::UNIFORM_BUFFER_OBJECT:
+                                descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                                break;
+                            // case RIShaderDescriptorBindings::Type::DYNAMIC:
+                            //     descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+                            //     break;
+                            case ::Fox::EBindingType::STORAGE_BUFFER_OBJECT:
+                                descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                                break;
+                            case ::Fox::EBindingType::SAMPLER:
+                                descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                                break;
+                        }
+
+                    auto sameTypeIt = std::find_if(poolSizes.begin(), poolSizes.end(), [&descriptorType](const VkDescriptorPoolSize& size) { return size.type == descriptorType; });
+                    if (sameTypeIt == poolSizes.end())
+                        {
+                            VkDescriptorPoolSize poolSize{ descriptorType, bindingPair.second.Count };
+                            poolSizes.push_back(poolSize);
+                        }
+                    else
+                        {
+                            sameTypeIt->descriptorCount += bindingPair.second.Count;
+                        }
+                }
+        }
+    return poolSizes;
+}
+
+inline VkResult
+createShaderModule(VkDevice device, const std::vector<unsigned char>& byteCode, VkShaderModule* shaderModule)
+{
+    check(device);
+    check(byteCode.size() > 0);
+    check(shaderModule && !*shaderModule);
+
+    VkShaderModuleCreateInfo createInfo{};
+    createInfo.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    createInfo.codeSize = byteCode.size();
+    createInfo.pCode    = reinterpret_cast<const uint32_t*>(byteCode.data());
+
+    return vkCreateShaderModule(device, &createInfo, nullptr, shaderModule);
+}
+
+inline VkPipelineShaderStageCreateInfo
+createShaderStageInfo(VkShaderStageFlagBits stage, VkShaderModule shaderModule)
+{
+    constexpr const char* PENTRYPOINTNAME{ "main" };
+    check(shaderModule);
+    check(stage == VK_SHADER_STAGE_VERTEX_BIT || stage == VK_SHADER_STAGE_FRAGMENT_BIT);
+
+    VkPipelineShaderStageCreateInfo stageInfo{};
+    stageInfo.pNext               = nullptr;
+    stageInfo.sType               = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stageInfo.flags               = NULL;
+    stageInfo.stage               = stage;
+    stageInfo.module              = shaderModule;
+    stageInfo.pName               = PENTRYPOINTNAME;
+    stageInfo.pSpecializationInfo = nullptr;
+
+    return stageInfo;
 }
 
 }

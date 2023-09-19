@@ -11,83 +11,10 @@ namespace Fox
 
 RIVulkanDevice11::~RIVulkanDevice11() { check(_descriptorPools.size() == 0); }
 
-std::vector<VkDescriptorSet>
-RIDescriptorPoolManager::AllocateDescriptorSets(VkDescriptorSetLayout descriptorSetLayout, int num)
-{
-
-    std::vector<VkDescriptorSetLayout> pLayouts(num, descriptorSetLayout);
-
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool     = _pool;
-    allocInfo.descriptorSetCount = (uint32_t)num;
-    allocInfo.pSetLayouts        = pLayouts.data(); // once created it cannot change setLayout
-
-    std::vector<VkDescriptorSet> descriptorSet(num, nullptr);
-    const VkResult   result = vkAllocateDescriptorSets(_device, &allocInfo, descriptorSet.data());
-    if (VKFAILED(result))
-        {
-            throw std::runtime_error(VkUtils::VkErrorString(result));
-        }
-    return descriptorSet;
-}
-
-RIDescriptorSet*
+VkDescriptorSet
 RIDescriptorPoolManager::CreateDescriptorSet(VkDescriptorSetLayout descriptorSetLayout)
 {
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool     = _pool;
-    allocInfo.descriptorSetCount = (uint32_t)1;
-    allocInfo.pSetLayouts        = &descriptorSetLayout; // once created it cannot change setLayout
-
-    if (_descriptorSets.size() < _maxSets)
-        {
-
-            VkDescriptorSet descriptorSet{};
-            const VkResult  result = vkAllocateDescriptorSets(_device, &allocInfo, &descriptorSet);
-            if (VKFAILED(result))
-                {
-                    throw std::runtime_error(VkUtils::VkErrorString(result));
-                }
-
-            _descriptorSets.emplace_back();
-            _descriptorSets.back().DescriptorSet = descriptorSet;
-
-            return &_descriptorSets.back();
-        }
-
-    // Get unused descriptorSet
-    auto* recycled = _getFirstUnusedDescriptorSet();
-    if (recycled != nullptr)
-        {
-            vkFreeDescriptorSets(_device, _pool, (uint32_t)1, &recycled->DescriptorSet);
-
-            VkDescriptorSet descriptorSet{};
-            const VkResult  result = vkAllocateDescriptorSets(_device, &allocInfo, &recycled->DescriptorSet);
-            if (VKFAILED(result))
-                {
-                    throw std::runtime_error(VkUtils::VkErrorString(result));
-                }
-
-            return recycled;
-        }
-
-    check(0);
-    throw std::runtime_error("No descriptor sets left");
-}
-
-void
-RIDescriptorPoolManager::ResetDescriptorSet(const std::vector<RIDescriptorSet>& descriptorSets)
-{
-    std::vector<VkDescriptorSet> vulkanDescriptorSets(descriptorSets.size());
-
-    std::transform(descriptorSets.cbegin(), descriptorSets.cend(), std::back_inserter(vulkanDescriptorSets), [](const RIDescriptorSet& s) {
-        check(s.Count() == 0); // Must not be bound to a executing command buffer
-        return s.DescriptorSet;
-    });
-
-    vkFreeDescriptorSets(_device, _pool, (uint32_t)vulkanDescriptorSets.size(), vulkanDescriptorSets.data());
+    return DRIDescriptorSetAllocator::Allocate(descriptorSetLayout);
 }
 
 RIDescriptorSetBinder
@@ -99,9 +26,7 @@ RIDescriptorPoolManager::CreateDescriptorSetBinder()
 void
 RIDescriptorPoolManager::ResetPool()
 {
-    vkResetDescriptorPool(_device, _pool, NULL);
-
-    _descriptorSets.clear();
+    DRIDescriptorSetAllocator::ResetPool();
     _cachedDescriptorSets.clear();
 }
 
@@ -109,19 +34,6 @@ void
 RIDescriptorPoolManager::UpdateDescriptorSet(std::vector<VkWriteDescriptorSet> write)
 {
     vkUpdateDescriptorSets(_device, (uint32_t)write.size(), write.data(), 0, nullptr);
-}
-
-RIDescriptorSet*
-RIDescriptorPoolManager::_getFirstUnusedDescriptorSet()
-{
-    for (RIDescriptorSet& e : _descriptorSets)
-        {
-            if (e.Count() == 0)
-                {
-                    return &e;
-                }
-        }
-    return {};
 }
 
 void
@@ -220,25 +132,23 @@ void
 RIDescriptorSetBinder::BindDescriptorSet(VkCommandBuffer cmd, VkPipelineLayout pipelineLayout, VkDescriptorSetLayout descriptorSetLayout, uint32_t setIndex)
 {
     check(_currentUpdate.has_value());
-    RIDescriptorSet* set = QueryOrMakeDescriptorSet(descriptorSetLayout);
+    VkDescriptorSet set = QueryOrMakeDescriptorSet(descriptorSetLayout);
 
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, setIndex, 1, &set->DescriptorSet, (uint32_t)_dynamicOffsets.size(), _dynamicOffsets.data());
-
-    set->IncreaseCounter();
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, setIndex, 1, &set, (uint32_t)_dynamicOffsets.size(), _dynamicOffsets.data());
 
     _currentUpdate = std::nullopt;
 }
 
-RIDescriptorSet*
+VkDescriptorSet
 RIDescriptorSetBinder::QueryOrMakeDescriptorSet(VkDescriptorSetLayout descriptorSetLayout)
 {
     check(_currentUpdate.has_value()); // You must bind something first
-    RIDescriptorSet* set = _queryDescriptorSet(descriptorSetLayout, _currentUpdate.value());
+    VkDescriptorSet set = _queryDescriptorSet(descriptorSetLayout, _currentUpdate.value());
 
     if (!set)
         {
-            set = _pool->CreateDescriptorSet(descriptorSetLayout);
-            _currentUpdate.value().SetDstSet(set->DescriptorSet);
+            set = _poolManager->CreateDescriptorSet(descriptorSetLayout);
+            _currentUpdate.value().SetDstSet(set);
             vkUpdateDescriptorSets(_device, (uint32_t)_currentUpdate.value().WriteDescriptorSet.size(), _currentUpdate.value().WriteDescriptorSet.data(), 0, nullptr);
 
             _cachedDescriptorSets[descriptorSetLayout][_currentUpdate.value()] = set;
@@ -249,7 +159,7 @@ RIDescriptorSetBinder::QueryOrMakeDescriptorSet(VkDescriptorSetLayout descriptor
     return set;
 }
 
-RIDescriptorSet*
+VkDescriptorSet
 RIDescriptorSetBinder::_queryDescriptorSet(VkDescriptorSetLayout descriptorSetLayout, const RIDescriptorSetWrite& write)
 {
     auto existing = _cachedDescriptorSets.find(descriptorSetLayout);
@@ -319,12 +229,12 @@ RIVulkanDevice11::CreateDescriptorPool2(const std::vector<VkDescriptorPoolSize>&
 {
     check(0);
     VkDescriptorPool         descriptorPool = CreateDescriptorPool(poolDimensions, maxSets);
-    RIDescriptorPoolManager* pool           = new RIDescriptorPoolManager(Device, descriptorPool, maxSets);
+    RIDescriptorPoolManager* pool           = new RIDescriptorPoolManager(Device, poolDimensions, maxSets);
     return pool;
 }
 
 void
-RIVulkanDevice11::ResetDescriptorSet(VkDescriptorPool pool, const std::vector<VkDescriptorSet>& descriptorSets)
+RIVulkanDevice11::ResetDescriptorSet_DEPRECATED(VkDescriptorPool pool, const std::vector<VkDescriptorSet>& descriptorSets)
 {
     vkFreeDescriptorSets(Device, pool, (uint32_t)descriptorSets.size(), descriptorSets.data());
 }

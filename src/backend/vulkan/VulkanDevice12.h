@@ -21,7 +21,7 @@ struct RICommandBuffer : public RIResource
 /*Does not own the pool, must be freed by the vulkan device*/
 struct RICommandPool
 {
-    explicit RICommandPool(VkDevice device, VkCommandPool pool) : _device(device), _pool(pool){};
+    explicit RICommandPool(VkDevice device, VkCommandPool pool) : _device(device), _poolManager(pool){};
 
     /*All the command buffers once reset go into initial state*/
     void Reset();
@@ -30,10 +30,10 @@ struct RICommandPool
     RICommandBuffer* Allocate();
 
     // Move constructor
-    RICommandPool(RICommandPool&& other) : _device(other._device), _pool(other._pool)
+    RICommandPool(RICommandPool&& other) : _device(other._device), _poolManager(other._poolManager)
     {
         // Move the contents from 'other' to this object
-        other._pool = nullptr;
+        other._poolManager = nullptr;
     }
 
     // Delete copy constructor and copy assignment operator
@@ -42,21 +42,21 @@ struct RICommandPool
 
   private:
     VkDevice                   _device;
-    VkCommandPool              _pool;
+    VkCommandPool              _poolManager;
     std::list<RICommandBuffer> _cachedCmds; // pool of commands
     friend class RIVulkanDevice12;
 };
 
 struct RICommandPoolManager
 {
-    RICommandPoolManager(RICommandPool* pool) : _pool(std::move(pool)){};
+    RICommandPoolManager(RICommandPool* pool) : _poolManager(std::move(pool)){};
 
     /*The pointer must not be deleted, is manages by the pool*/
     inline RICommandBuffer* Allocate()
     {
         if (_cmds.size() == 0)
             {
-                _recorded.push_back(_pool->Allocate());
+                _recorded.push_back(_poolManager->Allocate());
             }
         else
             {
@@ -67,7 +67,7 @@ struct RICommandPoolManager
     };
     inline void Reset()
     {
-        _pool->Reset();
+        _poolManager->Reset();
         if (_recorded.size() > 0)
             {
                 std::for_each(_recorded.begin(), _recorded.end(), [this](RICommandBuffer* cmd) { cmd->ReleaseResources(); });
@@ -79,10 +79,10 @@ struct RICommandPoolManager
     /*The pointers must not be deleted, are manages by the pool*/
     inline std::vector<RICommandBuffer*> GetRecorded() { return _recorded; }
 
-    RICommandPool* GetCommandPool() const { return _pool; };
+    RICommandPool* GetCommandPool() const { return _poolManager; };
 
   private:
-    RICommandPool*                _pool;
+    RICommandPool*                _poolManager;
     std::vector<RICommandBuffer*> _cmds; // all allocated command buffers
     std::vector<RICommandBuffer*> _recorded; // Getted cmds after the reset method
 };

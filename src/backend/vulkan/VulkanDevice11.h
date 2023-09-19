@@ -3,6 +3,7 @@
 #pragma once
 
 #include "RIResource.h"
+#include "UtilsVK.h"
 #include "VulkanDevice10.h"
 
 #include <volk.h>
@@ -15,15 +16,86 @@
 namespace Fox
 {
 
-struct RIDescriptorSet : public RIResource
+/**
+ * \brief This class hold N descriptor set pools where the dimensions correspond to an array of descriptor set layouts used to create a particular pipeline layout
+ * One pool per frame, assume that all descriptor sets are used in a single frame, when frame finished we can free all the descriptor sets and destroy pools after the first one
+ */
+struct DRIDescriptorSetAllocator
 {
-    RIDescriptorSet() = default;
-    RIDescriptorSet(VkDescriptorSet set) : DescriptorSet(set){};
-    // Move constructor
-    RIDescriptorSet(RIDescriptorSet&& other) noexcept : DescriptorSet(other.DescriptorSet){};
-    VkDescriptorSet DescriptorSet{};
+    DRIDescriptorSetAllocator(VkDevice& device, const std::vector<VkDescriptorPoolSize>& poolDimensions, const uint32_t maxSetsPerPool)
+      : _device(device), _poolDimensions(poolDimensions), _maxSetPerPool(maxSetsPerPool)
+    {
+    }
+    ~DRIDescriptorSetAllocator()
+    {
+        for (auto pool : _pools)
+            {
+                vkDestroyDescriptorPool(_device, pool, nullptr);
+            }
+    }
+
+    VkDescriptorSet Allocate(VkDescriptorSetLayout layout)
+    {
+        const uint32_t poolIndex = (uint32_t)std::floor(_countAllocated / (double)_maxSetPerPool) + 1;
+        if (poolIndex > _pools.size())
+            {
+                VkDescriptorPoolCreateInfo poolInfo{};
+                poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+                poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+                poolInfo.poolSizeCount = (uint32_t)_poolDimensions.size(); // is the number of elements in pPoolSizes.
+                poolInfo.pPoolSizes    = _poolDimensions.data(); // is a pointer to an array of VkDescriptorPoolSize structures
+                poolInfo.maxSets       = _maxSetPerPool; //  is the maximum number of -descriptor sets- that can be allocated from the pool (must be grater than 0)
+
+                VkDescriptorPool descriptorPool{};
+                const VkResult   result = vkCreateDescriptorPool(_device, &poolInfo, nullptr, &descriptorPool);
+                if (VKFAILED(result))
+                    {
+                        throw std::runtime_error(VkUtils::VkErrorString(result));
+                    }
+                _pools.push_back(descriptorPool);
+            }
+
+        _countAllocated++;
+
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool     = _pools[poolIndex];
+        allocInfo.descriptorSetCount = (uint32_t)1;
+        allocInfo.pSetLayouts        = &layout;
+
+        VkDescriptorSet descriptorSet{};
+        const VkResult  result = vkAllocateDescriptorSets(_device, &allocInfo, &descriptorSet);
+        if (VKFAILED(result))
+            {
+                throw std::runtime_error(VkUtils::VkErrorString(result));
+            }
+        return descriptorSet;
+    }
+
+    /*All of the descriptor sets must not be in use*/
+    void ResetPool()
+    {
+        for (auto pool : _pools)
+            {
+                vkDestroyDescriptorPool(_device, pool, nullptr);
+            }
+
+        _pools.clear();
+        _countAllocated = 0;
+    }
+
+  private:
+    VkDevice                                _device;
+    const std::vector<VkDescriptorPoolSize> _poolDimensions;
+    const uint32_t                          _maxSetPerPool;
+    std::vector<VkDescriptorPool>           _pools{};
+    uint32_t                                _countAllocated;
 };
 
+/**
+ * \brief This struct is used to cache and also update a descriptor set
+ * It contains all the info needed to update the descriptor set
+ */
 struct RIDescriptorSetWrite
 {
     std::vector<VkWriteDescriptorSet>              WriteDescriptorSet;
@@ -180,55 +252,58 @@ struct RIDescriptorPoolManagerInterface
 {
     RIDescriptorPoolManagerInterface() = default;
 
-    virtual RIDescriptorSet* CreateDescriptorSet(VkDescriptorSetLayout descriptorSetLayout)         = 0;
-    virtual void             ResetDescriptorSet(const std::vector<RIDescriptorSet>& descriptorSets) = 0;
+    virtual VkDescriptorSet CreateDescriptorSet(VkDescriptorSetLayout descriptorSetLayout) = 0;
 };
 
+/**
+ * \brief This class is responsible to cache and update descriptor sets. Based on the bounded resources it can return an existing identical descriptor set or
+ * it allocated and updates a new one for you. The interface is simplified for binding resources.
+ */
 struct RIDescriptorSetBinder
 {
-    using DescriptorSetCacheMap                      = std::unordered_map<RIDescriptorSetWrite, RIDescriptorSet*, RIDescriptorSetWriteHashFn, RIDescriptorSetWriteEqualFn>;
+    using DescriptorSetCacheMap                      = std::unordered_map<RIDescriptorSetWrite, VkDescriptorSet, RIDescriptorSetWriteHashFn, RIDescriptorSetWriteEqualFn>;
     using DescriptorSetLayoutToDescriptorSetCacheMap = std::unordered_map<VkDescriptorSetLayout, DescriptorSetCacheMap>;
     RIDescriptorSetBinder(VkDevice device, RIDescriptorPoolManagerInterface* pool, DescriptorSetLayoutToDescriptorSetCacheMap& cachedDescriptorSets)
-      : _device(device), _pool(pool), _cachedDescriptorSets(cachedDescriptorSets)
+      : _device(device), _poolManager(pool), _cachedDescriptorSets(cachedDescriptorSets)
     {
     }
 
-    void             BindUniformBuffer(uint32_t bindingIndex, VkBuffer buffer, uint32_t offset, uint32_t bytes);
-    void             BindUniformBufferDynamic(uint32_t bindingIndex, VkBuffer buffer, uint32_t offset, uint32_t bytes, uint32_t dynamicOffset);
-    void             BindCombinedImageSamplerArray(uint32_t bindingIndex, const std::vector<std::pair<VkImageView, VkSampler>>& imageToSamplerArray);
-    void             BindDescriptorSet(VkCommandBuffer cmd, VkPipelineLayout pipelineLayout, VkDescriptorSetLayout descriptorSetLayout, uint32_t setIndex);
-    RIDescriptorSet* QueryOrMakeDescriptorSet(VkDescriptorSetLayout descriptorSetLayout);
+    void            BindUniformBuffer(uint32_t bindingIndex, VkBuffer buffer, uint32_t offset, uint32_t bytes);
+    void            BindUniformBufferDynamic(uint32_t bindingIndex, VkBuffer buffer, uint32_t offset, uint32_t bytes, uint32_t dynamicOffset);
+    void            BindCombinedImageSamplerArray(uint32_t bindingIndex, const std::vector<std::pair<VkImageView, VkSampler>>& imageToSamplerArray);
+    void            BindDescriptorSet(VkCommandBuffer cmd, VkPipelineLayout pipelineLayout, VkDescriptorSetLayout descriptorSetLayout, uint32_t setIndex);
+    VkDescriptorSet QueryOrMakeDescriptorSet(VkDescriptorSetLayout descriptorSetLayout);
 
   private:
     VkDevice                                    _device;
-    RIDescriptorPoolManagerInterface*           _pool;
+    RIDescriptorPoolManagerInterface*           _poolManager;
     DescriptorSetLayoutToDescriptorSetCacheMap& _cachedDescriptorSets;
     std::optional<RIDescriptorSetWrite>         _currentUpdate;
     std::vector<uint32_t>                       _dynamicOffsets;
 
-    RIDescriptorSet* _queryDescriptorSet(VkDescriptorSetLayout descriptorSetLayout, const RIDescriptorSetWrite& write);
+    VkDescriptorSet _queryDescriptorSet(VkDescriptorSetLayout descriptorSetLayout, const RIDescriptorSetWrite& write);
 };
 
-// Descriptor set allocator with ref counting wrapper
-struct RIDescriptorPoolManager : public RIDescriptorPoolManagerInterface
+/**
+ * \brief This class is just an implementation to be used by the RIDescriptorSetBinder to allocate new descriptor set. But is also store the cache to all the
+ * allocated descriptor sets.
+ */
+struct RIDescriptorPoolManager
+  : public RIDescriptorPoolManagerInterface
+  , public DRIDescriptorSetAllocator
 {
-    RIDescriptorPoolManager(VkDevice device, VkDescriptorPool pool, uint32_t maxSets) : _device(device), _pool(pool), _maxSets(maxSets) { _descriptorSets.reserve(_maxSets); };
-    RIDescriptorSet*             CreateDescriptorSet(VkDescriptorSetLayout descriptorSetLayout) override;
-    void                         ResetDescriptorSet(const std::vector<RIDescriptorSet>& descriptorSets) override;
-    RIDescriptorSetBinder        CreateDescriptorSetBinder();
-    void                         ResetPool();
-    void                         UpdateDescriptorSet(std::vector<VkWriteDescriptorSet> write);
-    std::vector<VkDescriptorSet> AllocateDescriptorSets(VkDescriptorSetLayout descriptorSetLayout, int num);
+    RIDescriptorPoolManager(VkDevice device, const std::vector<VkDescriptorPoolSize>& poolDimensions, const uint32_t maxSetsPerPool)
+      : _device(device), DRIDescriptorSetAllocator(device, poolDimensions, maxSetsPerPool){};
+
+    VkDescriptorSet       CreateDescriptorSet(VkDescriptorSetLayout descriptorSetLayout) override;
+    RIDescriptorSetBinder CreateDescriptorSetBinder();
+    void                  ResetPool();
+    void                  UpdateDescriptorSet(std::vector<VkWriteDescriptorSet> write);
 
   private:
-    VkDevice                     _device;
-    VkDescriptorPool             _pool;
-    const uint32_t               _maxSets;
-    std::vector<RIDescriptorSet> _descriptorSets; // fixed size to maxSets, do not ever reallocate it
+    VkDevice _device;
 
     RIDescriptorSetBinder::DescriptorSetLayoutToDescriptorSetCacheMap _cachedDescriptorSets; // used only by the RIDescriptorSetBinder class
-
-    RIDescriptorSet* _getFirstUnusedDescriptorSet();
 };
 
 class RIVulkanDevice11 : public RIVulkanDevice10
@@ -243,7 +318,7 @@ class RIVulkanDevice11 : public RIVulkanDevice10
     RIDescriptorPoolManager* CreateDescriptorPool2(const std::vector<VkDescriptorPoolSize>& poolDimensions, uint32_t maxSets);
 
     VkDescriptorSet CreateDescriptorSet(VkDescriptorPool pool, VkDescriptorSetLayout descriptorSetLayout);
-    void            ResetDescriptorSet(VkDescriptorPool pool, const std::vector<VkDescriptorSet>& descriptorSets);
+    void            ResetDescriptorSet_DEPRECATED(VkDescriptorPool pool, const std::vector<VkDescriptorSet>& descriptorSets);
 
     RIDescriptorSetBinder CreateDescriptorSetBinder(RIDescriptorPoolManager* pool);
 

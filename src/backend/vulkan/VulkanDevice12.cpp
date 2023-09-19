@@ -20,7 +20,7 @@ RICommandPool::Allocate()
     info.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     info.pNext              = NULL;
     info.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    info.commandPool        = _pool;
+    info.commandPool        = _poolManager;
     info.commandBufferCount = (uint32_t)1;
 
     VkCommandBuffer cmd{};
@@ -38,9 +38,9 @@ RICommandPool::Allocate()
 void
 RICommandPool::Reset()
 {
-    check(_pool); // has beed moved, invalid state
+    check(_poolManager); // has beed moved, invalid state
 
-    vkResetCommandPool(_device, _pool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+    vkResetCommandPool(_device, _poolManager, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
     std::for_each(_cachedCmds.begin(), _cachedCmds.end(), [](RICommandBuffer& cmd) {
         if (cmd.Count() > 0)
             {
@@ -75,7 +75,7 @@ RIVulkanDevice12::CreateCommandPool()
 void
 RIVulkanDevice12::DestroyCommandPool(RICommandPool* pool)
 {
-    vkDestroyCommandPool(Device, pool->_pool, nullptr);
+    vkDestroyCommandPool(Device, pool->_poolManager, nullptr);
 
     // remove from the list
     for (auto it = _cachedPools.begin(); it != _cachedPools.end(); ++it)

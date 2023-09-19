@@ -4,6 +4,7 @@
 
 #include "IContext.h"
 
+#include "DescriptorPool.h"
 #include "RingBufferManager.h"
 #include "VulkanDevice13.h"
 #include "VulkanInstance.h"
@@ -16,17 +17,25 @@
 namespace Fox
 {
 
+struct DFramebufferVulkan : public DFramebuffer_T
+{
+    /*Per frame or single framebuffer*/
+    std::vector<VkFramebuffer> Framebuffers;
+};
+
 struct DSwapchainVulkan : public DSwapchain_T
 {
-    VkSurfaceKHR               Surface;
-    VkSurfaceCapabilitiesKHR   Capabilities;
-    VkSurfaceFormatKHR         Format;
-    VkSwapchainKHR             Swaphchain{};
-    std::vector<VkImage>       Images;
-    std::vector<VkImageView>   ImageViews;
-    std::vector<VkFramebuffer> Framebuffers;
-    std::vector<VkSemaphore>   ImageAvailableSemaphore;
-    uint32_t                   CurrentImageIndex{};
+    VkSurfaceKHR             Surface;
+    VkSurfaceCapabilitiesKHR Capabilities;
+    VkSurfaceFormatKHR       Format;
+    VkPresentModeKHR         PresentMode;
+    VkSwapchainKHR           Swapchain{};
+    std::vector<VkImage>     Images;
+    std::vector<VkImageView> ImageViews;
+    DFramebufferVulkan*      Framebuffers;
+    // std::vector<VkFramebuffer> Framebuffers;
+    std::vector<VkSemaphore> ImageAvailableSemaphore;
+    uint32_t                 CurrentImageIndex{};
 };
 
 struct DBufferVulkan : public DBuffer_T
@@ -40,6 +49,18 @@ struct DImageVulkan : public DImage_T
 {
     RIVulkanImage Image;
     VkImageView   View{};
+    VkSampler     Sampler{};
+};
+
+struct DVertexInputLayoutVulkan : public DVertexInputLayout_T
+{
+    std::vector<VkVertexInputAttributeDescription> VertexInputAttributes;
+};
+
+struct DPipelineVulkan : public DPipeline_T
+{
+    VkPipeline       Pipeline{};
+    VkPipelineLayout PipelineLayout{};
 };
 
 class VulkanContext final : public IContext
@@ -53,15 +74,18 @@ class VulkanContext final : public IContext
     bool CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat, DSwapchain* swapchain) override;
     void DestroySwapchain(const DSwapchain swapchain) override;
 
-    DFramebuffer CreateSwapchainFramebuffer() override;
+    DFramebuffer CreateSwapchainFramebuffer(DSwapchain swapchain) override;
     void         DestroyFramebuffer(DFramebuffer framebuffer) override;
 
-    DBuffer CreateVertexBuffer(uint32_t size);
-    void    DestroyVertexBuffer(DBuffer buffer);
-    DBuffer CreateUniformBuffer(uint32_t size) override;
-    void    DestroyUniformBuffer(DBuffer buffer) override;
-    DImage  CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount);
-    void    DestroyImage(DImage image);
+    DBuffer            CreateVertexBuffer(uint32_t size);
+    void               DestroyVertexBuffer(DBuffer buffer);
+    DBuffer            CreateUniformBuffer(uint32_t size) override;
+    void               DestroyUniformBuffer(DBuffer buffer) override;
+    DImage             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount);
+    void               DestroyImage(DImage image);
+    DVertexInputLayout CreateVertexLayout(const std::vector<VertexLayoutInfo>& info);
+    DPipeline          CreatePipeline(const ShaderSource& shader, const PipelineFormat& format);
+    void               DestroyPipeline(DPipeline pipeline);
 
     void SubmitPass(RenderPassData&& data) override;
     void SubmitCopy(CopyDataCommand&& data) override;
@@ -77,6 +101,7 @@ class VulkanContext final : public IContext
 #pragma endregion
 
   private:
+    static constexpr uint64_t MAX_FENCE_TIMEOUT = 0xffffffffffffffff; // nanoseconds
     RIVulkanInstance Instance;
     RIVulkanDevice13 Device;
 
@@ -93,11 +118,24 @@ class VulkanContext final : public IContext
     uint32_t                              _frameIndex{};
     std::vector<FramesWaitToDeletionList> _deletionQueue;
     std::vector<RICommandPoolManager>     _cmdPool;
+    std::vector<VkSemaphore>              _workFinishedSemaphores;
+    std::vector<VkFence>                  _fence;
     std::vector<CopyDataCommand>          _transferCommands;
-    // Staging buffer
+    std::vector<RenderPassData>           _drawCommands;
+    // Staging buffer, used to copy stuff from ram to CPU-VISIBLE-MEMORY then to GPU-ONLY-MEMORY
     std::vector<std::vector<uint32_t>> _perFrameCopySizes;
     RIVulkanBuffer                     _stagingBuffer;
     std::unique_ptr<RingBufferManager> _stagingBufferManager;
+    // No need to delete them, are POD structs
+    std::list<DVertexInputLayoutVulkan> _vertexLayouts;
+    std::list<DPipelineVulkan>          _pipelines;
+    // Framebuffers
+    std::list<DFramebufferVulkan> _framebuffers;
+
+    // Pipeline layout to map of descriptor set layout - used to retrieve the correct VkDescriptorSetLayout when creating descriptor set
+    std::unordered_map<VkPipelineLayout, std::map<uint32_t, VkDescriptorSetLayout>> _pipelineLayoutToSetIndexDescriptorSetLayout;
+    /*Per frame map of per pipeline layout to descriptor pool, we can allocate descriptor sets per pipeline layout*/
+    std::vector<std::unordered_map<VkPipelineLayout, std::shared_ptr<RIDescriptorPoolManager>>> _pipelineLayoutToDescriptorPool;
 
     const std::vector<const char*> _validationLayers = {
         "VK_LAYER_KHRONOS_validation",
@@ -144,10 +182,12 @@ class VulkanContext final : public IContext
     void _initializeStagingBuffer(uint32_t stagingBufferSize);
     void _deinitializeStagingBuffer();
 
-    void _performDeletionQueue();
-    void _performCopyOperations();
-    void _submitCommands();
-    void _deferDestruction(DeleteFn&& fn);
+    void       _performDeletionQueue();
+    void       _performCopyOperations();
+    void       _submitCommands();
+    void       _deferDestruction(DeleteFn&& fn);
+    VkPipeline _createPipeline(VkPipelineLayout pipelineLayout, VkRenderPass renderPass, const std::vector<VkPipelineShaderStageCreateInfo>& shaderStages, const PipelineFormat& format);
+    void       _recreateSwapchainBlocking(DSwapchainVulkan* swapchain);
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL _vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT                                                                   messageType,

@@ -23,6 +23,19 @@ VulkanContext::VulkanContext(const DContextConfig* const config) : _warningOutpu
     {
         std::generate_n(std::back_inserter(_cmdPool), NUM_OF_FRAMES_IN_FLIGHT, [this]() { return RICommandPoolManager(Device.CreateCommandPool()); });
     }
+    // Initialize per frame pipeline layout map to descriptor pool manager
+    _pipelineLayoutToDescriptorPool.resize(NUM_OF_FRAMES_IN_FLIGHT);
+
+    // Fences per frame
+    {
+        constexpr bool fenceSignaled = true; // since the loop begins waiting on a fence the fence must be already signaled otherwise it will timeout
+        std::generate_n(std::back_inserter(_fence), NUM_OF_FRAMES_IN_FLIGHT, [this, fenceSignaled = fenceSignaled]() { return Device.CreateFence(fenceSignaled); });
+    }
+
+    // Semaphores per frame
+    {
+        std::generate_n(std::back_inserter(_workFinishedSemaphores), NUM_OF_FRAMES_IN_FLIGHT, [this]() { return Device.CreateVkSemaphore(); });
+    }
 }
 
 void
@@ -173,9 +186,41 @@ VulkanContext::~VulkanContext()
     check(_swapchains.size() == 0);
     vkDeviceWaitIdle(Device.Device);
 
+    // Wait for all fences to signal
+    std::for_each(_fence.begin(), _fence.end(), [this](VkFence fence) {
+        const VkResult result = vkWaitForFences(Device.Device, 1, &fence, VK_TRUE /*Wait all*/, MAX_FENCE_TIMEOUT);
+        if (VKFAILED(result))
+            {
+                throw std::runtime_error(VkUtils::VkErrorString(result));
+            }
+    });
+    _fence.clear();
+
+    std::for_each(_workFinishedSemaphores.begin(), _workFinishedSemaphores.end(), [this](VkSemaphore semaphore) { Device.DestroyVkSemaphore(semaphore); });
+    _workFinishedSemaphores.clear();
+
     // Free command pools
     std::for_each(_cmdPool.begin(), _cmdPool.end(), [this](const RICommandPoolManager& pool) { Device.DestroyCommandPool(pool.GetCommandPool()); });
     _cmdPool.clear();
+
+    // Destroy fences
+    std::for_each(_fence.begin(), _fence.end(), [this](VkFence fence) { Device.DestroyFence(fence); });
+    _fence.clear();
+
+    // Free pipeline layouts and their descriptor set layouts used to create them
+    for (const auto& pair : _pipelineLayoutToSetIndexDescriptorSetLayout)
+        {
+            Device.DestroyPipelineLayout(pair.first);
+
+            for (const auto& p : pair.second)
+                {
+                    Device.DestroyDescriptorSetLayout(p.second);
+                }
+        }
+    _pipelineLayoutToSetIndexDescriptorSetLayout.clear();
+
+    // Destroy all descriptor pools managers
+    _pipelineLayoutToDescriptorPool.clear();
 
     _deinitializeStagingBuffer();
 
@@ -230,7 +275,8 @@ VulkanContext::CreateSwapchain(const WindowData* windowData, EPresentMode& prese
     swapchainVulkan.Surface      = surface;
     swapchainVulkan.Capabilities = capabilities;
     swapchainVulkan.Format       = formats.at(0);
-    swapchainVulkan.Swaphchain   = vkSwapchain;
+    swapchainVulkan.PresentMode  = vkPresentMode;
+    swapchainVulkan.Swapchain    = vkSwapchain;
     swapchainVulkan.Images       = Device.GetSwapchainImages(vkSwapchain);
 
     std::transform(swapchainVulkan.Images.begin(), swapchainVulkan.Images.end(), std::back_inserter(swapchainVulkan.ImageViews), [this, format = swapchainVulkan.Format.format](const VkImage& image) {
@@ -257,9 +303,13 @@ VulkanContext::CreateSwapchain(const WindowData* windowData, EPresentMode& prese
 
     VkRenderPass renderPass = _createRenderPass(attachments);
 
-    std::transform(swapchainVulkan.ImageViews.begin(), swapchainVulkan.ImageViews.end(), std::back_inserter(swapchainVulkan.Framebuffers), [this, &capabilities, renderPass](VkImageView view) {
+    DFramebufferVulkan vulkanFramebuffer;
+    std::transform(swapchainVulkan.ImageViews.begin(), swapchainVulkan.ImageViews.end(), std::back_inserter(vulkanFramebuffer.Framebuffers), [this, &capabilities, renderPass](VkImageView view) {
         return Device.CreateFramebuffer({ view }, capabilities.currentExtent.width, capabilities.currentExtent.height, renderPass);
     });
+
+    _framebuffers.emplace_back(std::move(vulkanFramebuffer));
+    swapchainVulkan.Framebuffers = &_framebuffers.back();
 
     _swapchains.emplace_back(std::move(swapchainVulkan));
 
@@ -272,29 +322,36 @@ VulkanContext::DestroySwapchain(const DSwapchain swapchain)
 {
     DSwapchainVulkan* vkSwapchain = static_cast<DSwapchainVulkan*>(swapchain);
 
-    std::for_each(vkSwapchain->Framebuffers.begin(), vkSwapchain->Framebuffers.end(), [this](const VkFramebuffer& framebuffer) { Device.DestroyFramebuffer(framebuffer); });
-    vkSwapchain->Framebuffers.clear();
+    DestroyFramebuffer(vkSwapchain->Framebuffers);
+
     std::for_each(vkSwapchain->ImageViews.begin(), vkSwapchain->ImageViews.end(), [this](const VkImageView& imageView) { Device.DestroyImageView(imageView); });
     vkSwapchain->ImageViews.clear();
 
     std::for_each(vkSwapchain->ImageAvailableSemaphore.begin(), vkSwapchain->ImageAvailableSemaphore.end(), [this](const VkSemaphore& semaphore) { Device.DestroyVkSemaphore(semaphore); });
     vkSwapchain->ImageAvailableSemaphore.clear();
 
-    Device.DestroySwapchain(vkSwapchain->Swaphchain);
+    Device.DestroySwapchain(vkSwapchain->Swapchain);
     Instance.DestroySurface(vkSwapchain->Surface);
 
     _swapchains.erase(std::find_if(_swapchains.begin(), _swapchains.end(), [swapchain](const DSwapchainVulkan& s) { return &s == swapchain; }));
 }
 
 DFramebuffer
-VulkanContext::CreateSwapchainFramebuffer()
+VulkanContext::CreateSwapchainFramebuffer(DSwapchain swapchain)
 {
-    return nullptr;
+    return static_cast<DSwapchainVulkan*>(swapchain)->Framebuffers;
 }
 
 void
 VulkanContext::DestroyFramebuffer(DFramebuffer framebuffer)
 {
+    DFramebufferVulkan* fboVulkan = static_cast<DFramebufferVulkan*>(framebuffer);
+    _deferDestruction([this, fboVulkan]() {
+        std::for_each(fboVulkan->Framebuffers.begin(), fboVulkan->Framebuffers.end(), [this](const VkFramebuffer& framebuffer) { Device.DestroyFramebuffer(framebuffer); });
+        fboVulkan->Framebuffers.clear();
+
+        _framebuffers.erase(std::find_if(_framebuffers.begin(), _framebuffers.end(), [fboVulkan](const DFramebufferVulkan& s) { return &s == fboVulkan; }));
+    });
 }
 
 DBuffer
@@ -362,6 +419,9 @@ VulkanContext::CreateImage(EFormat format, uint32_t width, uint32_t height, uint
             throw std::runtime_error(VkUtils::VkErrorString(result));
         }
 
+    // Create default sampler
+    image.Sampler = Device.CreateSampler(VK_FILTER_NEAREST, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT, 0, mipMapCount, VK_SAMPLER_MIPMAP_MODE_NEAREST, true, 16);
+
     _images.emplace_back(std::move(image));
 
     return &_images.back();
@@ -375,8 +435,125 @@ VulkanContext::DestroyImage(DImage image)
     _deferDestruction([this, image, imageVulkan]() {
         Device.DestroyImageView(imageVulkan->View);
         Device.DestroyImage(imageVulkan->Image);
+        Device.DestroySampler(imageVulkan->Sampler);
 
         _images.erase(std::find_if(_images.begin(), _images.end(), [imageVulkan](const DImageVulkan& b) { return &b == imageVulkan; }));
+    });
+}
+
+DVertexInputLayout
+VulkanContext::CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)
+{
+    DVertexInputLayoutVulkan input;
+    input.VertexInputAttributes.reserve(info.size());
+
+    unsigned int location = 0;
+    for (const auto& i : info)
+        {
+            VkVertexInputAttributeDescription attr{};
+            attr.location = location++; // uint32_t
+            attr.binding  = 0; // uint32_t
+            attr.format   = VkUtils::convertFormat(i.Format); // VkFormat
+            attr.offset   = i.ByteOffset; // uint32_t
+
+            // Emplace
+            input.VertexInputAttributes.emplace_back(std::move(attr));
+        }
+    // Not vulkan pointers so no need to delete, just a POD struct
+    _vertexLayouts.emplace_back(std::move(input));
+    return &_vertexLayouts.back();
+}
+
+DPipeline
+VulkanContext::CreatePipeline(const ShaderSource& shader, const PipelineFormat& format)
+{
+    constexpr uint32_t MAX_SETS_PER_POOL = 100; // Temporary, should not have a limit pool of pools
+
+    std::vector<VkDescriptorSetLayout>        descriptorSetLayout;
+    std::map<uint32_t, VkDescriptorSetLayout> setIndexToSetLayout;
+    for (const auto& setPair : shader.SetsLayout.SetsLayout)
+        {
+            const auto descriptorSetBindings = VkUtils::convertDescriptorBindings(setPair.second);
+            descriptorSetLayout.push_back(Device.CreateDescriptorSetLayout(descriptorSetBindings));
+            setIndexToSetLayout[setPair.first] = descriptorSetLayout.back();
+        }
+    // Can return already cached pipeline layout if exists
+    VkPipelineLayout pipelineLayout = Device.CreatePipelineLayout(descriptorSetLayout, {});
+
+    // Cache all descriptor sets layouts for this given pipeline layout
+    auto pipelineLayoutCacheIt = _pipelineLayoutToSetIndexDescriptorSetLayout.find(pipelineLayout);
+    if (pipelineLayoutCacheIt == _pipelineLayoutToSetIndexDescriptorSetLayout.end())
+        {
+            _pipelineLayoutToSetIndexDescriptorSetLayout[pipelineLayout] = setIndexToSetLayout;
+
+            // Create per frame descriptor pool for this pipeline layout
+            const auto poolDimensions = VkUtils::computeDescriptorSetsPoolSize(shader.SetsLayout.SetsLayout);
+            for (auto i = 0; i < NUM_OF_FRAMES_IN_FLIGHT; i++)
+                {
+                    auto poolManager = std::make_shared<RIDescriptorPoolManager>(Device.Device, poolDimensions, MAX_SETS_PER_POOL);
+                    auto pair        = std::make_pair(pipelineLayout, std::move(poolManager));
+                    _pipelineLayoutToDescriptorPool[i].emplace(std::move(pair));
+                }
+        }
+
+    // Create the shaders
+    std::vector<VkPipelineShaderStageCreateInfo> shaderStageCreateInfo;
+    {
+        {
+            VkShaderModule vertex{};
+            const VkResult result = VkUtils::createShaderModule(Device.Device, shader.SourceCode.VertexShader, &vertex);
+            if (VKFAILED(result))
+                {
+                    throw std::runtime_error(VkUtils::VkErrorString(result));
+                }
+            shaderStageCreateInfo.push_back(VkUtils::createShaderStageInfo(VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, vertex));
+        }
+        {
+            VkShaderModule pixel{};
+            const VkResult result = VkUtils::createShaderModule(Device.Device, shader.SourceCode.PixelShader, &pixel);
+            if (VKFAILED(result))
+                {
+                    throw std::runtime_error(VkUtils::VkErrorString(result));
+                }
+            shaderStageCreateInfo.push_back(VkUtils::createShaderStageInfo(VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, pixel));
+        }
+    }
+
+    // Create render pass
+    DRenderPassAttachments att; // default color format, not important, what matters is the color attachment
+    att.Attachments.push_back(DRenderPassAttachment(EFormat::R8G8B8A8_UNORM,
+    ESampleBit::COUNT_1_BIT,
+    ERenderPassLoad::Clear,
+    ERenderPassStore::Store,
+    ERenderPassLayout::Undefined,
+    ERenderPassLayout::Present,
+    EAttachmentReference::COLOR_ATTACHMENT));
+    const auto renderPass = _createRenderPass(att);
+
+    DPipelineVulkan pipeline{};
+    pipeline.Pipeline       = _createPipeline(pipelineLayout, renderPass, shaderStageCreateInfo, format);
+    pipeline.PipelineLayout = pipelineLayout;
+
+    // Free shader modules
+    for (const auto& stage : shaderStageCreateInfo)
+        {
+            vkDestroyShaderModule(Device.Device, stage.module, nullptr);
+        }
+
+    _pipelines.emplace_back(std::move(pipeline));
+    return &_pipelines.back();
+}
+
+void
+VulkanContext::DestroyPipeline(DPipeline pipeline)
+{
+    // We destroy only the pipeline, the pipeline layouts are destroyed with the device
+    DPipelineVulkan* pipelineVulkan = static_cast<DPipelineVulkan*>(pipeline);
+
+    _deferDestruction([this, pipelineVulkan]() {
+        Device.DestroyPipeline(pipelineVulkan->Pipeline);
+
+        _pipelines.erase(std::find_if(_pipelines.begin(), _pipelines.end(), [pipelineVulkan](const DPipelineVulkan& b) { return &b == pipelineVulkan; }));
     });
 }
 
@@ -398,9 +575,103 @@ VulkanContext::_deferDestruction(DeleteFn&& fn)
         }
 }
 
+VkPipeline
+VulkanContext::_createPipeline(VkPipelineLayout pipelineLayout, VkRenderPass renderPass, const std::vector<VkPipelineShaderStageCreateInfo>& shaderStages, const PipelineFormat& format)
+{
+    // Create pipeline
+    VkPipeline graphicsPipeline{};
+    {
+        // Binding
+        check(format.VertexInput != nullptr);
+        const auto vertexInputAttributes = static_cast<DVertexInputLayoutVulkan*>(format.VertexInput)->VertexInputAttributes;
+
+        VkVertexInputBindingDescription inputBinding{};
+        inputBinding.binding   = 0;
+        inputBinding.stride    = format.VertexStrideBytes;
+        inputBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+        // Attributes
+        RIVulkanPipelineBuilder pipe(shaderStages, { inputBinding }, vertexInputAttributes, pipelineLayout, renderPass);
+        pipe.AddViewport({});
+        pipe.AddScissor({});
+        pipe.SetDynamicState({ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR });
+        switch (format.FillMode)
+            {
+                case EFillMode::FILL:
+                    pipe.SetPolygonMode(VK_POLYGON_MODE_FILL);
+                    break;
+                case EFillMode::LINE:
+                    pipe.SetPolygonMode(VK_POLYGON_MODE_FILL);
+                    break;
+                default:
+                    check(0);
+                    break;
+            }
+        switch (format.CullMode)
+            {
+                case ECullMode::NONE:
+                    pipe.SetCulling(VK_CULL_MODE_NONE);
+                    break;
+                case ECullMode::FRONT:
+                    pipe.SetCulling(VK_CULL_MODE_FRONT_BIT);
+                    break;
+                case ECullMode::BACK:
+                    pipe.SetCulling(VK_CULL_MODE_BACK_BIT);
+                    break;
+                default:
+                    check(0);
+                    break;
+            }
+        switch (format.DepthTestMode)
+            {
+                case EDepthTest::ALWAYS:
+                    pipe.SetDepthTestingOp(VK_COMPARE_OP_ALWAYS);
+                    break;
+                case EDepthTest::NEVER:
+                    pipe.SetDepthTestingOp(VK_COMPARE_OP_NEVER);
+                    break;
+                case EDepthTest::LESS:
+                    pipe.SetDepthTestingOp(VK_COMPARE_OP_LESS);
+                    break;
+                case EDepthTest::LESS_OR_EQUAL:
+                    pipe.SetDepthTestingOp(VK_COMPARE_OP_LESS_OR_EQUAL);
+                    break;
+                case EDepthTest::GREATER:
+                    pipe.SetDepthTestingOp(VK_COMPARE_OP_GREATER);
+                    break;
+                case EDepthTest::GREATER_OR_EQUAL:
+                    pipe.SetDepthTestingOp(VK_COMPARE_OP_GREATER_OR_EQUAL);
+                    break;
+                default:
+                    pipe.SetDepthTestingOp(VK_COMPARE_OP_LESS_OR_EQUAL);
+                    critical(0);
+                    break;
+            }
+        pipe.SetDepthTesting(format.DepthTest, format.DepthWrite);
+        pipe.SetDepthStencil(format.StencilTest);
+        pipe.SetDepthStencilOp(VkStencilOpState{ VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_LESS_OR_EQUAL, 0, 0, 0 });
+
+        switch (format.BlendMode)
+            {
+                case ERIBlendMode::Additive:
+                    {
+                        pipe.SetAlphaBlending();
+                    }
+                    break;
+                case ERIBlendMode::DefaultBlendMode:
+                default:
+                    break;
+            }
+
+        graphicsPipeline = Device.CreatePipeline(&pipe.PipelineCreateInfo);
+    }
+
+    return graphicsPipeline;
+}
+
 void
 VulkanContext::SubmitPass(RenderPassData&& data)
 {
+    _drawCommands.emplace_back(std::move(data));
 }
 
 void
@@ -412,6 +683,13 @@ VulkanContext::SubmitCopy(CopyDataCommand&& data)
 void
 VulkanContext::AdvanceFrame()
 {
+    // Wait for previous work to complete wait fence to signal
+    const VkResult result = vkWaitForFences(Device.Device, 1, &_fence[_frameIndex], VK_TRUE /*Wait all*/, MAX_FENCE_TIMEOUT);
+    if (VKFAILED(result))
+        {
+            throw std::runtime_error(VkUtils::VkErrorString(result));
+        }
+
     // Reset command pool
     auto& commandPool = _cmdPool[_frameIndex];
     commandPool.Reset();
@@ -419,7 +697,220 @@ VulkanContext::AdvanceFrame()
     _performDeletionQueue();
 
     _performCopyOperations();
+
+    // Acquire swapchain images
+    // Recreate swapchain if necessary
+    std::vector<VkSemaphore> imageAvailableSemaphores;
+    imageAvailableSemaphores.reserve(_swapchains.size());
+    std::vector<std::pair<VkSwapchainKHR, uint32_t>> swapchainImageIndex;
+    swapchainImageIndex.reserve(_swapchains.size());
+    {
+        for (auto& swapchain : _swapchains)
+            {
+                const VkResult result = Device.AcquireNextImage(swapchain.Swapchain, UINT64_MAX, &swapchain.CurrentImageIndex, swapchain.ImageAvailableSemaphore[_frameIndex], VK_NULL_HANDLE);
+                /*Spec: https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkQueueSubmit.html*/
+                /*
+                Return Codes
+
+                On success, this command returns
+                        VK_SUCCESS
+
+                        VK_TIMEOUT
+
+                        VK_NOT_READY
+
+                        VK_SUBOPTIMAL_KHR
+
+                On failure, this command returns
+                        VK_ERROR_OUT_OF_HOST_MEMORY
+
+                        VK_ERROR_OUT_OF_DEVICE_MEMORY
+
+                        VK_ERROR_DEVICE_LOST
+
+                        VK_ERROR_OUT_OF_DATE_KHR
+
+                        VK_ERROR_SURFACE_LOST_KHR
+
+                        VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT
+                */
+                switch (result)
+                    {
+                        case VK_SUCCESS:
+                        case VK_NOT_READY:
+                            break;
+                        case VK_SUBOPTIMAL_KHR:
+                        case VK_ERROR_OUT_OF_DATE_KHR:
+                            {
+                                _recreateSwapchainBlocking(&swapchain);
+                                const VkResult lastResult =
+                                Device.AcquireNextImage(swapchain.Swapchain, UINT64_MAX, &swapchain.CurrentImageIndex, swapchain.ImageAvailableSemaphore[_frameIndex], VK_NULL_HANDLE);
+                                if (VKFAILED(lastResult))
+                                    {
+                                        throw std::runtime_error(VkUtils::VkErrorString(result));
+                                    }
+                            }
+                            break;
+                        case VK_TIMEOUT:
+                        default:
+                            throw std::runtime_error(VkUtils::VkErrorString(result));
+                            break;
+                    }
+
+                imageAvailableSemaphores.push_back(swapchain.ImageAvailableSemaphore[_frameIndex]);
+                swapchainImageIndex.push_back(std::make_pair(swapchain.Swapchain, swapchain.CurrentImageIndex));
+            }
+    }
+
+    // record drawing commands
+    {
+        for (const auto& pass : _drawCommands)
+            {
+                auto cmd = commandPool.Allocate()->Cmd;
+
+                VkCommandBufferBeginInfo beginInfo{};
+                beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+                beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+                vkBeginCommandBuffer(cmd, &beginInfo);
+                {
+                    // For each render pass bind all necessary
+                    {
+                        VkRenderPassBeginInfo renderPassInfo{};
+                        renderPassInfo.sType      = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+                        renderPassInfo.renderPass = _createRenderPass(pass.RenderPass);
+
+                        DFramebufferVulkan* framebufferVulkan = static_cast<DFramebufferVulkan*>(pass.Framebuffer);
+                        {
+                            // Bind framebuffer or swapchain framebuffer based on the current image index
+                            if (framebufferVulkan->Framebuffers.size() == 1)
+                                {
+                                    renderPassInfo.framebuffer = framebufferVulkan->Framebuffers.front();
+                                }
+                            else
+                                {
+                                    auto swapchain = std::find_if(
+                                    _swapchains.begin(), _swapchains.end(), [framebufferVulkan](const DSwapchainVulkan& swapchain) { return swapchain.Framebuffers == framebufferVulkan; });
+                                    check(swapchain != _swapchains.end());
+                                    renderPassInfo.framebuffer = framebufferVulkan->Framebuffers[swapchain->CurrentImageIndex];
+                                }
+                        }
+
+                        renderPassInfo.renderArea.offset = { 0, 0 };
+                        renderPassInfo.renderArea.extent = { (uint32_t)pass.Viewport.w, (uint32_t)pass.Viewport.h };
+                        // Convert clear values to vkClearValues
+                        std::vector<VkClearValue> vkClearValues;
+                        std::transform(pass.ClearValues.begin(), pass.ClearValues.end(), std::back_inserter(vkClearValues), [](const DClearValue& v) {
+                            VkClearValue value;
+                            //@TODO Risky copy of union, find a better way to handle this
+                            memcpy(value.color.float32, v.color.float32, sizeof(VkClearValue));
+                            return value;
+                        });
+
+                        renderPassInfo.clearValueCount = (uint32_t)vkClearValues.size();
+                        renderPassInfo.pClearValues    = vkClearValues.data();
+                        vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+                    }
+                    {
+                        VkViewport viewport{ pass.Viewport.x, pass.Viewport.y, pass.Viewport.w, pass.Viewport.h, pass.Viewport.znear, pass.Viewport.zfar };
+                        vkCmdSetViewport(cmd, 0, 1, &viewport);
+                        VkRect2D scissor{ 0, 0, pass.Viewport.w, pass.Viewport.h };
+                        vkCmdSetScissor(cmd, 0, 1, &scissor);
+                    }
+                    // for each draw command
+                    {
+                        for (const auto& draw : pass.DrawCommands)
+                            {
+                                DPipelineVulkan* pipelineVulkan = static_cast<DPipelineVulkan*>(draw.Pipeline);
+                                // Bind pipeline
+                                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineVulkan->Pipeline);
+                                // find descriptor set from cache and bind them
+                                auto descriptorPoolManager = _pipelineLayoutToDescriptorPool[_frameIndex].find(pipelineVulkan->PipelineLayout)->second;
+
+                                // For each set to bind
+                                for (const auto& set : draw.DescriptorSetBindings)
+                                    {
+                                        // Get descriptor set layout for this set
+                                        auto descriptorSetLayout = _pipelineLayoutToSetIndexDescriptorSetLayout.find(pipelineVulkan->PipelineLayout)->second[set.first];
+
+                                        auto binder = descriptorPoolManager->CreateDescriptorSetBinder();
+                                        for (const auto& bindingPair : set.second)
+                                            {
+                                                const auto  bindingIndex = bindingPair.first;
+                                                const auto& binding      = bindingPair.second;
+                                                switch (binding.Type)
+                                                    {
+                                                        case EBindingType::UNIFORM_BUFFER_OBJECT:
+                                                            {
+                                                                check(binding.Buffers.size() == 1);
+                                                                const auto&    b      = binding.Buffers.front();
+                                                                DBufferVulkan* buffer = static_cast<DBufferVulkan*>(b);
+                                                                binder.BindUniformBuffer(bindingIndex, buffer->Buffer.Buffer, 0, VK_WHOLE_SIZE);
+                                                            }
+                                                            break;
+                                                        case EBindingType::SAMPLER:
+                                                            {
+                                                                std::vector<std::pair<VkImageView, VkSampler>> pair;
+
+                                                                std::transform(binding.Images.begin(), binding.Images.end(), std::back_inserter(pair), [](const DImage i) {
+                                                                    DImageVulkan* image = static_cast<DImageVulkan*>(i);
+                                                                    return std::make_pair(image->View, image->Sampler);
+                                                                });
+
+                                                                binder.BindCombinedImageSamplerArray(bindingIndex, pair);
+                                                            }
+                                                            break;
+                                                        default:
+                                                            check(0);
+                                                            break;
+                                                    }
+                                            }
+
+                                        binder.BindDescriptorSet(cmd, pipelineVulkan->PipelineLayout, descriptorSetLayout, set.first);
+                                    }
+
+                                // draw call
+                                DBufferVulkan* vertexBuffer = static_cast<DBufferVulkan*>(draw.VertexBuffer);
+                                VkDeviceSize   offset{ 0 };
+                                vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer->Buffer.Buffer, &offset);
+                                vkCmdDraw(cmd, draw.VerticesCount, 1, draw.BeginVertex, 0);
+                            }
+                    }
+
+                    // end renderpass
+                    vkCmdEndRenderPass(cmd);
+                }
+
+                vkEndCommandBuffer(cmd);
+            }
+
+        // Clear draw commands vector
+        _drawCommands.clear();
+    }
+
     _submitCommands();
+
+    // Present
+    {
+        auto recordedCommandBuffers = commandPool.GetRecorded();
+
+        if (recordedCommandBuffers.size() > 0 && _swapchains.size() > 0)
+            {
+                std::vector<VkResult> presentError = Device.Present(swapchainImageIndex, { _workFinishedSemaphores[_frameIndex] });
+                for (size_t i = 0; i < presentError.size(); i++)
+                    {
+                        if (presentError[i] != VK_SUCCESS)
+                            {
+                                const VkSwapchainKHR swapchainInErrorState = swapchainImageIndex[i].first;
+                                auto                 found =
+                                std::find_if(_swapchains.begin(), _swapchains.end(), [swapchainInErrorState](DSwapchainVulkan swapchain) { return swapchain.Swapchain == swapchainInErrorState; });
+
+                                _recreateSwapchainBlocking(&(*found));
+                                // throw std::runtime_error(VkErrorString(presentError[i]));
+                            }
+                    }
+            }
+    }
 
     // Increment the frame index
     _frameIndex = (_frameIndex + 1) % NUM_OF_FRAMES_IN_FLIGHT;
@@ -642,6 +1133,67 @@ VulkanContext::_performDeletionQueue()
     std::for_each(_deletionQueue.begin(), _deletionQueue.end(), [this](FramesWaitToDeletionList& pair) { pair.first--; });
 }
 
+void
+VulkanContext::_recreateSwapchainBlocking(DSwapchainVulkan* swapchain)
+{
+    // We must be sure that the framebuffer is not used anymore before destroying it
+    // This can be a valid approach since a game doesn't resize very often
+    vkDeviceWaitIdle(Device.Device);
+
+    // Destroy all framebuffers
+    std::for_each(swapchain->Framebuffers->Framebuffers.begin(), swapchain->Framebuffers->Framebuffers.end(), [this](const VkFramebuffer& framebuffer) { Device.DestroyFramebuffer(framebuffer); });
+    swapchain->Framebuffers->Framebuffers.clear();
+
+    // Destroy all image views
+    std::for_each(swapchain->ImageViews.begin(), swapchain->ImageViews.end(), [this](const VkImageView& imageView) { Device.DestroyImageView(imageView); });
+    swapchain->ImageViews.clear();
+
+    // Create from old
+    {
+        VkSwapchainKHR oldSwapchain = swapchain->Swapchain;
+
+        const VkResult result = Device.CreateSwapchainFromSurface(swapchain->Surface, swapchain->Format, swapchain->PresentMode, swapchain->Capabilities, &swapchain->Swapchain, oldSwapchain);
+        if (VKFAILED(result))
+            {
+                throw std::runtime_error(VkUtils::VkErrorString(result));
+            }
+        Device.DestroySwapchain(oldSwapchain);
+        swapchain->Images.clear();
+    }
+
+    // Get image views
+    swapchain->Images = Device.GetSwapchainImages(swapchain->Swapchain);
+
+    // Create image views
+    std::transform(swapchain->Images.begin(), swapchain->Images.end(), std::back_inserter(swapchain->ImageViews), [this, format = swapchain->Format.format](const VkImage& image) {
+        VkImageView imageView{};
+        const auto  result = Device.CreateImageView(format, image, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, &imageView);
+        if (VKFAILED(result))
+            {
+                throw std::runtime_error("Failed to create swapchain imageView " + std::string(VkUtils::VkErrorString(result)));
+            }
+        return imageView;
+    });
+
+    // Create a framebuffer
+
+    DRenderPassAttachments attachments;
+    DRenderPassAttachment  color(VkUtils::convertVkFormat(swapchain->Format.format),
+    ESampleBit::COUNT_1_BIT,
+    ERenderPassLoad::Clear,
+    ERenderPassStore::Store,
+    ERenderPassLayout::Undefined,
+    ERenderPassLayout::Present,
+    EAttachmentReference::COLOR_ATTACHMENT);
+    attachments.Attachments.emplace_back(color);
+
+    VkRenderPass renderPass = _createRenderPass(attachments);
+
+    std::transform(swapchain->ImageViews.begin(), swapchain->ImageViews.end(), std::back_inserter(swapchain->Framebuffers->Framebuffers), [this, swapchain, renderPass](VkImageView view) {
+        return Device.CreateFramebuffer({ view }, swapchain->Capabilities.currentExtent.width, swapchain->Capabilities.currentExtent.height, renderPass);
+    });
+}
+
 VkRenderPass
 VulkanContext::_createRenderPass(const DRenderPassAttachments& attachments)
 {
@@ -855,5 +1407,4 @@ VulkanContext::WaitDeviceIdle()
 {
     vkDeviceWaitIdle(Device.Device);
 }
-
 }
