@@ -83,9 +83,10 @@ main()
             }
 
         // Create vertex layout
-        Fox::VertexLayoutInfo   info("SV_POSITION", Fox::EFormat::R8G8B8_UNORM, 0, Fox::EVertexInputClassification::PER_VERTEX_DATA);
-        Fox::DVertexInputLayout vertexLayout = context->CreateVertexLayout({ info });
-        constexpr uint32_t      stride       = 3 * sizeof(float);
+        Fox::VertexLayoutInfo   position("SV_POSITION", Fox::EFormat::R32G32B32_FLOAT, 0, Fox::EVertexInputClassification::PER_VERTEX_DATA);
+        Fox::VertexLayoutInfo   color("Color0", Fox::EFormat::R32G32B32A32_FLOAT, 3 * sizeof(float), Fox::EVertexInputClassification::PER_VERTEX_DATA);
+        Fox::DVertexInputLayout vertexLayout = context->CreateVertexLayout({ position, color });
+        constexpr uint32_t      stride       = 7 * sizeof(float);
         Fox::PipelineFormat     psoFormat(vertexLayout, stride);
 
         Fox::ShaderSource shaderSource;
@@ -94,9 +95,18 @@ main()
 
         Fox::DPipeline pipeline = context->CreatePipeline(shaderSource, psoFormat);
 
-        constexpr std::array<float, 9> ndcTriangle{ -1, -1, 0.5, 3, -1, 0.5, -1, 3, 0.5 };
-        constexpr size_t               bufSize  = sizeof(float) * ndcTriangle.size();
-        Fox::DBuffer                   triangle = context->CreateVertexBuffer(bufSize);
+        // clang-format off
+        constexpr std::array<float, 21> ndcTriangle{            
+            -1, -1, 0.5,//pos
+            0, 1, 0, 1,// color
+            1, -1, 0.5,//pos
+            0, 0, 1, 1,// color
+            0, 1, 0.5,//pos
+            0, 1, 1, 1// color
+        };
+        // clang-format on
+        constexpr size_t bufSize  = sizeof(float) * ndcTriangle.size();
+        Fox::DBuffer     triangle = context->CreateVertexBuffer(bufSize);
 
         Fox::CopyDataCommand copy;
         copy.CopyVertex(triangle, 0, (void*)ndcTriangle.data(), bufSize);

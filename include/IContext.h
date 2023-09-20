@@ -82,6 +82,10 @@ enum class EFormat
 {
     R8_UNORM,
     R8G8B8_UNORM,
+    R32_FLOAT,
+    R32G32_FLOAT,
+    R32G32B32_FLOAT,
+    R32G32B32A32_FLOAT,
     R8G8B8A8_UNORM,
     B8G8R8_UNORM,
     B8G8R8A8_UNORM,
@@ -526,7 +530,7 @@ class IContext
     virtual void DestroySwapchain(const DSwapchain swapchain)                                                                        = 0;
 
     virtual DFramebuffer CreateSwapchainFramebuffer(DSwapchain swapchain) = 0;
-    virtual void         DestroyFramebuffer(DFramebuffer framebuffer) = 0;
+    virtual void         DestroyFramebuffer(DFramebuffer framebuffer)     = 0;
 
     virtual DBuffer            CreateVertexBuffer(uint32_t size)                                                  = 0;
     virtual void               DestroyVertexBuffer(DBuffer buffer)                                                = 0;

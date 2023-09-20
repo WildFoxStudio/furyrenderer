@@ -131,6 +131,14 @@ convertVkFormat(const VkFormat format)
                 return Fox::EFormat::DEPTH24_UNORM_STENCIL8_UINT;
             case VK_FORMAT_D32_SFLOAT_S8_UINT:
                 return Fox::EFormat::DEPTH32_FLOAT_STENCIL8_UINT;
+            case VK_FORMAT_R32_SFLOAT:
+                return Fox::EFormat::R32_FLOAT;
+            case VK_FORMAT_R32G32_SFLOAT:
+                return Fox::EFormat::R32G32_FLOAT;
+            case VK_FORMAT_R32G32B32_SFLOAT:
+                return Fox::EFormat::R32G32B32_FLOAT;
+            case VK_FORMAT_R32G32B32A32_SFLOAT:
+                return Fox::EFormat::R32G32B32A32_FLOAT;
         }
 
     check(0);
@@ -162,6 +170,14 @@ convertFormat(const Fox::EFormat format)
                 return VK_FORMAT_D24_UNORM_S8_UINT;
             case Fox::EFormat::DEPTH32_FLOAT_STENCIL8_UINT:
                 return VK_FORMAT_D32_SFLOAT_S8_UINT;
+            case Fox::EFormat::R32_FLOAT:
+                return VK_FORMAT_R32_SFLOAT;
+            case Fox::EFormat::R32G32_FLOAT:
+                return VK_FORMAT_R32G32_SFLOAT;
+            case Fox::EFormat::R32G32B32_FLOAT:
+                return VK_FORMAT_R32G32B32_SFLOAT;
+            case Fox::EFormat::R32G32B32A32_FLOAT:
+                return VK_FORMAT_R32G32B32A32_SFLOAT;
         }
 
     check(0);
