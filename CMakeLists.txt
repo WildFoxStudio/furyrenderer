@@ -100,6 +100,7 @@ option(BUILD_EXAMPLES "Build examples" ON)
 if(BUILD_EXAMPLES)
     set(LIB_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/include")
     add_subdirectory("examples/HelloTriangle")
+    add_subdirectory("examples/SpinningTriangle")
 endif()
 
 if(BUILD_TESTS)

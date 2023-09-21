@@ -36,8 +36,8 @@ struct DRIDescriptorSetAllocator
 
     VkDescriptorSet Allocate(VkDescriptorSetLayout layout)
     {
-        const uint32_t poolIndex = (uint32_t)std::floor(_countAllocated / (double)_maxSetPerPool) + 1;
-        if (poolIndex > _pools.size())
+        const uint32_t poolIndex = (uint32_t)std::floor(_countAllocated / (double)_maxSetPerPool);
+        if (poolIndex+1 > _pools.size())
             {
                 VkDescriptorPoolCreateInfo poolInfo{};
                 poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -89,7 +89,7 @@ struct DRIDescriptorSetAllocator
     const std::vector<VkDescriptorPoolSize> _poolDimensions;
     const uint32_t                          _maxSetPerPool;
     std::vector<VkDescriptorPool>           _pools{};
-    uint32_t                                _countAllocated;
+    uint32_t                                _countAllocated{ 0 };
 };
 
 /**

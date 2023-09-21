@@ -841,7 +841,7 @@ VulkanContext::AdvanceFrame()
                                                                 check(binding.Buffers.size() == 1);
                                                                 const auto&    b      = binding.Buffers.front();
                                                                 DBufferVulkan* buffer = static_cast<DBufferVulkan*>(b);
-                                                                binder.BindUniformBuffer(bindingIndex, buffer->Buffer.Buffer, 0, VK_WHOLE_SIZE);
+                                                                binder.BindUniformBuffer(bindingIndex, buffer->Buffer.Buffer, 0, buffer->Size);
                                                             }
                                                             break;
                                                         case EBindingType::SAMPLER:
