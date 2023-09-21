@@ -32,7 +32,10 @@ VkResult RIVulkanDevice13::CreateRenderPass(const RIVkRenderPassInfo& info, VkRe
     createInfo.pDependencies   = info.SubpassDependency.data();
 
     const VkResult result = vkCreateRenderPass(Device, &createInfo, nullptr, renderPass);
-    _renderPassMap.Add(info, *renderPass);
+    if (!VKFAILED(result))
+        {
+            _renderPassMap.Add(std::move(info), *renderPass);
+        }
 
     return result;
 }

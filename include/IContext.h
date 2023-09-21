@@ -174,7 +174,7 @@ struct PipelineFormat
 
 struct DViewport
 {
-    unsigned int x, y, w, h, znear, zfar;
+    float x, y, w, h, znear, zfar;
 };
 
 struct DImage_T
@@ -532,15 +532,15 @@ class IContext
     virtual DFramebuffer CreateSwapchainFramebuffer(DSwapchain swapchain) = 0;
     virtual void         DestroyFramebuffer(DFramebuffer framebuffer)     = 0;
 
-    virtual DBuffer            CreateVertexBuffer(uint32_t size)                                                  = 0;
-    virtual void               DestroyVertexBuffer(DBuffer buffer)                                                = 0;
-    virtual DBuffer            CreateUniformBuffer(uint32_t size)                                                 = 0;
-    virtual void               DestroyUniformBuffer(DBuffer buffer)                                               = 0;
-    virtual DImage             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) = 0;
-    virtual void               DestroyImage(DImage image)                                                         = 0;
-    virtual DVertexInputLayout CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)                      = 0;
-    virtual DPipeline          CreatePipeline(const ShaderSource& shader, const PipelineFormat& format)           = 0;
-    virtual void               DestroyPipeline(DPipeline pipeline)                                                = 0;
+    virtual DBuffer            CreateVertexBuffer(uint32_t size)                                                                                 = 0;
+    virtual void               DestroyVertexBuffer(DBuffer buffer)                                                                               = 0;
+    virtual DBuffer            CreateUniformBuffer(uint32_t size)                                                                                = 0;
+    virtual void               DestroyUniformBuffer(DBuffer buffer)                                                                              = 0;
+    virtual DImage             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount)                                = 0;
+    virtual void               DestroyImage(DImage image)                                                                                        = 0;
+    virtual DVertexInputLayout CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)                                                     = 0;
+    virtual DPipeline          CreatePipeline(const ShaderSource& shader, const PipelineFormat& format, const std::vector<EFormat>& attachments) = 0;
+    virtual void               DestroyPipeline(DPipeline pipeline)                                                                               = 0;
 
     virtual void SubmitPass(RenderPassData&& data)  = 0;
     virtual void SubmitCopy(CopyDataCommand&& data) = 0;

@@ -34,7 +34,8 @@ RIVulkanDevice9::CreatePipelineLayout(const std::vector<VkDescriptorSetLayout>& 
             throw std::runtime_error(VkUtils::VkErrorString(result));
         }
 
-    _pipelineLayoutCache.Add(RIPipelineLayoutInfo{ descriptorSetLayout, pushConstantRange }, pipelineLayout);
+    RIPipelineLayoutInfo pipelineInfo{ descriptorSetLayout, pushConstantRange };
+    _pipelineLayoutCache.Add(std::move(pipelineInfo), pipelineLayout);
 
     return pipelineLayout;
 }

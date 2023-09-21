@@ -14,11 +14,11 @@ template<typename Key, class Value, typename HashFn, typename EqualFn>
 class RICacheMap
 {
   public:
-    void Add(const Key& key, const Value& value)
+    void Add(const Key& key, const Value value)
     {
         check(Find(key) == nullptr); // element is already contained
-
-        _map.emplace(key, value);
+        auto pair = std::make_pair(key, value);
+        _map.insert(std::move(pair));
     }
 
     Value Find(const Key& key)

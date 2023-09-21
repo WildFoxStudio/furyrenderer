@@ -56,6 +56,7 @@ main()
 
     Fox::DContextConfig config;
     config.logOutputFunction = &Log;
+    config.warningFunction   = &Log;
 
     Fox::IContext* context = Fox::CreateVulkanContext(&config);
 
@@ -93,7 +94,7 @@ main()
         shaderSource.SourceCode.VertexShader = ReadBlobUnsafe("vertex.spv");
         shaderSource.SourceCode.PixelShader  = ReadBlobUnsafe("fragment.spv");
 
-        Fox::DPipeline pipeline = context->CreatePipeline(shaderSource, psoFormat);
+        Fox::DPipeline pipeline = context->CreatePipeline(shaderSource, psoFormat, { format });
 
         // clang-format off
         constexpr std::array<float, 21> ndcTriangle{            
@@ -112,8 +113,8 @@ main()
         copy.CopyVertex(triangle, 0, (void*)ndcTriangle.data(), bufSize);
         context->SubmitCopy(std::move(copy));
 
-        Fox::DFramebuffer           swapchainFbo = context->CreateSwapchainFramebuffer(swapchain);
-        Fox::DViewport              viewport{ 0, 0, 640, 480, 0.f, 1.f };
+        Fox::DFramebuffer swapchainFbo = context->CreateSwapchainFramebuffer(swapchain);
+
         Fox::DRenderPassAttachment  colorAttachment(format,
         Fox::ESampleBit::COUNT_1_BIT,
         Fox::ERenderPassLoad::Clear,
@@ -128,6 +129,10 @@ main()
             {
                 // Keep running
                 glfwPollEvents();
+
+                int w, h;
+                glfwGetWindowSize(window, &w, &h);
+                Fox::DViewport viewport{ 0, 0, w, h, 0.f, 1.f };
 
                 Fox::RenderPassData draw(swapchainFbo, viewport, renderPass);
                 draw.ClearColor(1, 0, 0, 1);

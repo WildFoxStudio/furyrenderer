@@ -121,12 +121,10 @@ VkSwapchainKHR                                           oldSwapchain)
     swapchainInfo.oldSwapchain          = oldSwapchain;
 
     const VkResult result = vkCreateSwapchainKHR(Device, &swapchainInfo, NULL, outSwapchain);
-    if (VKFAILED(result))
+    if (!VKFAILED(result))
         {
-            throw std::runtime_error(VkUtils::VkErrorString(result));
+            _swapchains.insert(*outSwapchain);
         }
-
-    _swapchains.insert(*outSwapchain);
 
     return result;
 }

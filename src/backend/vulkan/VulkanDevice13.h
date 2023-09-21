@@ -84,17 +84,17 @@ struct VkSubpassDescriptionHashFn
         seed ^= std::hash<uint32_t>{}(subpassDesc.flags) ^ 0x9e3779b9;
         seed += std::hash<VkPipelineBindPoint>{}(subpassDesc.pipelineBindPoint) ^ 0x9e3779b1;
         seed ^= std::hash<uint32_t>{}(subpassDesc.inputAttachmentCount);
-        for (uint32_t i = 0; i < subpassDesc.inputAttachmentCount; i++)
-            {
-                const VkAttachmentReference* ref = subpassDesc.pInputAttachments + i;
-                seed ^= VkAttachmentReferenceHashFn{}(*ref);
-            }
+        // for (uint32_t i = 0; i < subpassDesc.inputAttachmentCount; i++)
+        //     {
+        //         const VkAttachmentReference* ref = subpassDesc.pInputAttachments + i;
+        //         seed ^= VkAttachmentReferenceHashFn{}(*ref);
+        //     }
         seed += std::hash<uint32_t>{}(subpassDesc.colorAttachmentCount) ^ 0x9e3779b9;
-        for (uint32_t i = 0; i < subpassDesc.colorAttachmentCount; i++)
-            {
-                const VkAttachmentReference* ref = subpassDesc.pColorAttachments + i;
-                seed ^= VkAttachmentReferenceHashFn{}(*ref);
-            }
+        // for (uint32_t i = 0; i < subpassDesc.colorAttachmentCount; i++)
+        //     {
+        //         const VkAttachmentReference* ref = subpassDesc.pColorAttachments + i;
+        //         seed ^= VkAttachmentReferenceHashFn{}(*ref);
+        //     }
         if (subpassDesc.pResolveAttachments != nullptr)
             {
                 const auto hash = VkAttachmentReferenceHashFn{}(*subpassDesc.pResolveAttachments);
@@ -108,11 +108,11 @@ struct VkSubpassDescriptionHashFn
             }
 
         seed += std::hash<uint32_t>{}(subpassDesc.preserveAttachmentCount) ^ 0x9e3779b9;
-        for (uint32_t i = 0; i < subpassDesc.preserveAttachmentCount; i++)
-            {
-                const uint32_t* ref = subpassDesc.pPreserveAttachments + i;
-                seed ^= std::hash<uint32_t>{}(*ref);
-            }
+        // for (uint32_t i = 0; i < subpassDesc.preserveAttachmentCount; i++)
+        //     {
+        //         const uint32_t* ref = subpassDesc.pPreserveAttachments + i;
+        //         seed ^= std::hash<uint32_t>{}(*ref);
+        //     }
 
         return seed;
     }
@@ -140,44 +140,44 @@ struct VkSubpassDescriptionEqualFn
         // Compare input attachments
         for (uint32_t i = 0; i < lhs.inputAttachmentCount; ++i)
             {
-                if (!VkAttachmentReferenceEqualFn{}(lhs.pInputAttachments[i], rhs.pInputAttachments[i]))
-                    {
-                        return false;
-                    }
+                // if (!VkAttachmentReferenceEqualFn{}(lhs.pInputAttachments[i], rhs.pInputAttachments[i]))
+                //     {
+                //         return false;
+                //     }
             }
 
         // Compare color attachments
         for (uint32_t i = 0; i < lhs.colorAttachmentCount; ++i)
             {
-                if (!VkAttachmentReferenceEqualFn{}(lhs.pColorAttachments[i], rhs.pColorAttachments[i]))
-                    {
-                        return false;
-                    }
-                if (lhs.pResolveAttachments != nullptr && rhs.pResolveAttachments != nullptr)
-                    {
-                        if (!VkAttachmentReferenceEqualFn{}(lhs.pResolveAttachments[i], rhs.pResolveAttachments[i]))
-                            {
-                                return false;
-                            }
-                    }
+                // if (!VkAttachmentReferenceEqualFn{}(lhs.pColorAttachments[i], rhs.pColorAttachments[i]))
+                //     {
+                //         return false;
+                //     }
+                // if (lhs.pResolveAttachments != nullptr && rhs.pResolveAttachments != nullptr)
+                //     {
+                //         if (!VkAttachmentReferenceEqualFn{}(lhs.pResolveAttachments[i], rhs.pResolveAttachments[i]))
+                //             {
+                //                 return false;
+                //             }
+                //     }
             }
 
         // Compare depth/stencil attachment
         if (lhs.pDepthStencilAttachment != nullptr && rhs.pDepthStencilAttachment != nullptr)
             {
-                if (!VkAttachmentReferenceEqualFn{}(*lhs.pDepthStencilAttachment, *rhs.pDepthStencilAttachment))
-                    {
-                        return false;
-                    }
+                // if (!VkAttachmentReferenceEqualFn{}(*lhs.pDepthStencilAttachment, *rhs.pDepthStencilAttachment))
+                //     {
+                //         return false;
+                //     }
             }
 
-        for (uint32_t i = 0; i < lhs.preserveAttachmentCount; ++i)
-            {
-                if (lhs.pPreserveAttachments[i] != rhs.pPreserveAttachments[i])
-                    {
-                        return false;
-                    }
-            }
+        // for (uint32_t i = 0; i < lhs.preserveAttachmentCount; ++i)
+        //     {
+        //         if (lhs.pPreserveAttachments[i] != rhs.pPreserveAttachments[i])
+        //             {
+        //                 return false;
+        //             }
+        //     }
         return true;
     }
 };
@@ -220,7 +220,15 @@ struct RIRenderPassInfoHashFn
             {
                 hash ^= VkAttachmentDescriptionHashFn{}(desc);
             }
-        // Already internally hashes the attachment references
+        for (const VkAttachmentReference& desc : lhs.ColorAttachmentReference)
+            {
+                hash ^= VkAttachmentReferenceHashFn{}(desc);
+            }
+        for (const VkAttachmentReference& desc : lhs.DepthStencilAttachmentReference)
+            {
+                hash ^= VkAttachmentReferenceHashFn{}(desc);
+            }
+
         for (const VkSubpassDescription& desc : lhs.SubpassDescription)
             {
                 hash ^= VkSubpassDescriptionHashFn{}(desc);

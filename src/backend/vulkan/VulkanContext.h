@@ -21,6 +21,8 @@ struct DFramebufferVulkan : public DFramebuffer_T
 {
     /*Per frame or single framebuffer*/
     std::vector<VkFramebuffer> Framebuffers;
+    uint32_t                   Width, Height;
+    RIVkRenderPassInfo         RenderPassInfo;
 };
 
 struct DSwapchainVulkan : public DSwapchain_T
@@ -59,8 +61,9 @@ struct DVertexInputLayoutVulkan : public DVertexInputLayout_T
 
 struct DPipelineVulkan : public DPipeline_T
 {
-    VkPipeline       Pipeline{};
-    VkPipelineLayout PipelineLayout{};
+    VkPipeline           Pipeline{};
+    VkPipelineLayout     PipelineLayout{};
+    std::vector<EFormat> Attachments;
 };
 
 class VulkanContext final : public IContext
@@ -84,7 +87,7 @@ class VulkanContext final : public IContext
     DImage             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount);
     void               DestroyImage(DImage image);
     DVertexInputLayout CreateVertexLayout(const std::vector<VertexLayoutInfo>& info);
-    DPipeline          CreatePipeline(const ShaderSource& shader, const PipelineFormat& format);
+    DPipeline          CreatePipeline(const ShaderSource& shader, const PipelineFormat& format, const std::vector<EFormat>& attachments);
     void               DestroyPipeline(DPipeline pipeline);
 
     void SubmitPass(RenderPassData&& data) override;
@@ -101,9 +104,9 @@ class VulkanContext final : public IContext
 #pragma endregion
 
   private:
-    static constexpr uint64_t MAX_FENCE_TIMEOUT = 0xffffffffffffffff; // nanoseconds
-    RIVulkanInstance Instance;
-    RIVulkanDevice13 Device;
+    static constexpr uint64_t MAX_FENCE_TIMEOUT = 0xffff; // 0xffffffffffffffff; // nanoseconds
+    RIVulkanInstance          Instance;
+    RIVulkanDevice13          Device;
 
     void (*_warningOutput)(const char*);
     void (*_logOutput)(const char*);
@@ -167,6 +170,7 @@ class VulkanContext final : public IContext
 
     const std::vector<const char*> _deviceExtensionNames = { VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
+        "VK_KHR_Maintenance1", // passing negative viewport heights
         "VK_KHR_maintenance4",
         "VK_KHR_dedicated_allocation",
         "VK_KHR_bind_memory2" };
@@ -182,18 +186,20 @@ class VulkanContext final : public IContext
     void _initializeStagingBuffer(uint32_t stagingBufferSize);
     void _deinitializeStagingBuffer();
 
-    void       _performDeletionQueue();
-    void       _performCopyOperations();
-    void       _submitCommands();
-    void       _deferDestruction(DeleteFn&& fn);
-    VkPipeline _createPipeline(VkPipelineLayout pipelineLayout, VkRenderPass renderPass, const std::vector<VkPipelineShaderStageCreateInfo>& shaderStages, const PipelineFormat& format);
-    void       _recreateSwapchainBlocking(DSwapchainVulkan* swapchain);
+    void               _performDeletionQueue();
+    void               _performCopyOperations();
+    void               _submitCommands(const std::vector<VkSemaphore>& imageAvailableSemaphores);
+    void               _deferDestruction(DeleteFn&& fn);
+    VkPipeline         _createPipeline(VkPipelineLayout pipelineLayout, VkRenderPass renderPass, const std::vector<VkPipelineShaderStageCreateInfo>& shaderStages, const PipelineFormat& format);
+    void               _recreateSwapchainBlocking(DSwapchainVulkan* swapchain);
+    RIVkRenderPassInfo _computeFramebufferAttachmentsRenderPassInfo(const std::vector<VkFormat>& attachmentFormat);
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL _vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT                                                                   messageType,
     const VkDebugUtilsMessengerCallbackDataEXT*                                                       pCallbackData,
     void*                                                                                             pUserData);
     VkRenderPass                          _createRenderPass(const DRenderPassAttachments& attachments);
+    VkRenderPass                          _createRenderPassFromInfo(const RIVkRenderPassInfo& info);
     std::vector<const char*>              _getInstanceSupportedExtensions(const std::vector<const char*>& extentions);
     std::vector<const char*>              _getInstanceSupportedValidationLayers(const std::vector<const char*>& validationLayers);
     VkPhysicalDevice                      _queryBestPhysicalDevice();
