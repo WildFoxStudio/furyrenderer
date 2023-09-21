@@ -165,6 +165,7 @@ main()
             }
 
         context->DestroyVertexBuffer(triangle);
+        context->DestroyUniformBuffer(transformUniformBuffer);
         context->DestroyPipeline(pipeline);
 
         context->DestroySwapchain(swapchain);
