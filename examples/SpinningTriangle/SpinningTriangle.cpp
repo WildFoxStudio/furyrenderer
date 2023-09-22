@@ -88,15 +88,17 @@ main()
         Fox::VertexLayoutInfo   color("Color0", Fox::EFormat::R32G32B32A32_FLOAT, 3 * sizeof(float), Fox::EVertexInputClassification::PER_VERTEX_DATA);
         Fox::DVertexInputLayout vertexLayout = context->CreateVertexLayout({ position, color });
         constexpr uint32_t      stride       = 7 * sizeof(float);
-        Fox::PipelineFormat     psoFormat(vertexLayout, stride);
 
         Fox::ShaderSource shaderSource;
+        shaderSource.VertexLayout            = vertexLayout;
+        shaderSource.VertexStride            = stride;
         shaderSource.SourceCode.VertexShader = ReadBlobUnsafe("vertex.spv");
         shaderSource.SourceCode.PixelShader  = ReadBlobUnsafe("fragment.spv");
+        shaderSource.ColorAttachments.push_back(format);
 
         shaderSource.SetsLayout.SetsLayout[0].insert({ 0, Fox::ShaderDescriptorBindings("MatrixUbo", Fox::EBindingType::UNIFORM_BUFFER_OBJECT, sizeof(float) * 16, 1, Fox::EShaderStage::VERTEX) });
 
-        Fox::DPipeline pipeline = context->CreatePipeline(shaderSource, psoFormat, { format });
+        Fox::DShader shader = context->CreateShader(shaderSource);
 
         // clang-format off
         constexpr std::array<float, 21> ndcTriangle{            
@@ -153,7 +155,7 @@ main()
                 Fox::RenderPassData draw(swapchainFbo, viewport, renderPass);
                 draw.ClearColor(1, 0, 0, 1);
 
-                Fox::DrawCommand drawTriangle(pipeline);
+                Fox::DrawCommand drawTriangle(shader);
                 drawTriangle.BindBufferUniformBuffer(0, 0, transformUniformBuffer);
                 drawTriangle.Draw(triangle, 0, 3);
 
@@ -163,10 +165,9 @@ main()
 
                 context->AdvanceFrame();
             }
-
+        context->DestroyShader(shader);
         context->DestroyVertexBuffer(triangle);
         context->DestroyUniformBuffer(transformUniformBuffer);
-        context->DestroyPipeline(pipeline);
 
         context->DestroySwapchain(swapchain);
 

@@ -223,7 +223,6 @@ main()
         Fox::VertexLayoutInfo   color("Color0", Fox::EFormat::R32G32B32A32_FLOAT, 3 * sizeof(float), Fox::EVertexInputClassification::PER_VERTEX_DATA);
         Fox::DVertexInputLayout vertexLayout = context->CreateVertexLayout({ position, color });
         constexpr uint32_t      stride       = 7 * sizeof(float);
-        Fox::PipelineFormat     psoFormat(vertexLayout, stride);
 
         Fox::ShaderSource shaderSource;
         shaderSource.VertexLayout            = vertexLayout;
@@ -237,8 +236,6 @@ main()
         shaderSource.ColorAttachments.push_back(format);
 
         Fox::DShader shader = context->CreateShader(shaderSource);
-
-        // Fox::DPipeline pipeline = context->CreatePipeline(shaderSource, psoFormat, { format });
 
         // clang-format off
         constexpr std::array<float, 42> ndcQuad{            
@@ -325,8 +322,6 @@ main()
         context->DestroyImage(texture);
         context->DestroyVertexBuffer(quad);
         context->DestroyUniformBuffer(transformUniformBuffer);
-        // context->DestroyPipeline(pipeline);
-
         context->DestroySwapchain(swapchain);
 
         glfwDestroyWindow(window);
