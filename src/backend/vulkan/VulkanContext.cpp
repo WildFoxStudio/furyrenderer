@@ -206,16 +206,16 @@ VulkanContext::~VulkanContext()
     _workFinishedSemaphores.clear();
 
     // Free pipeline layouts and their descriptor set layouts used to create them
-    for (const auto& pair : _pipelineLayoutToSetIndexDescriptorSetLayout)
-        {
-            Device.DestroyPipelineLayout(pair.first);
+    // for (const auto& pair : _pipelineLayoutToSetIndexDescriptorSetLayout)
+    //    {
+    //        Device.DestroyPipelineLayout(pair.first);
 
-            for (const auto& p : pair.second)
-                {
-                    Device.DestroyDescriptorSetLayout(p.second);
-                }
-        }
-    _pipelineLayoutToSetIndexDescriptorSetLayout.clear();
+    //        for (const auto& p : pair.second)
+    //            {
+    //                Device.DestroyDescriptorSetLayout(p.second);
+    //            }
+    //    }
+    //_pipelineLayoutToSetIndexDescriptorSetLayout.clear();
 
     // Destroy all descriptor pools managers
     _pipelineLayoutToDescriptorPool.clear();
@@ -459,11 +459,153 @@ VulkanContext::CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)
     return &_vertexLayouts.back();
 }
 
+DShader
+VulkanContext::CreateShader(const ShaderSource& source)
+{
+    constexpr uint32_t MAX_SETS_PER_POOL = 100; // Temporary, should not have a limit pool of pools
+
+    check(source.ColorAttachments.size() > 0);
+
+    DShaderVulkan shader;
+    shader.VertexLayout = static_cast<DVertexInputLayoutVulkan*>(source.VertexLayout);
+    shader.VertexStride = source.VertexStride;
+
+    // Create the shaders
+    {
+
+        { const VkResult result = VkUtils::createShaderModule(Device.Device, source.SourceCode.VertexShader, &shader.VertexShaderModule);
+    if (VKFAILED(result))
+        {
+            throw std::runtime_error(VkUtils::VkErrorString(result));
+        }
+    shader.ShaderStageCreateInfo.push_back(VkUtils::createShaderStageInfo(VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, shader.VertexShaderModule));
+}
+
+{
+
+    const VkResult result = VkUtils::createShaderModule(Device.Device, source.SourceCode.PixelShader, &shader.PixelShaderModule);
+    if (VKFAILED(result))
+        {
+            throw std::runtime_error(VkUtils::VkErrorString(result));
+        }
+    shader.ShaderStageCreateInfo.push_back(VkUtils::createShaderStageInfo(VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, shader.PixelShaderModule));
+}
+}
+
+// Create render pass attachments
+{
+    for (const auto format : source.ColorAttachments)
+        {
+            shader.RenderPassAttachments.Attachments.push_back(DRenderPassAttachment(
+            format, ESampleBit::COUNT_1_BIT, ERenderPassLoad::Clear, ERenderPassStore::Store, ERenderPassLayout::Undefined, ERenderPassLayout::Present, EAttachmentReference::COLOR_ATTACHMENT));
+        }
+    if (source.DepthStencilAttachment)
+        {
+            shader.RenderPassAttachments.Attachments.push_back(DRenderPassAttachment(source.DepthStencilAttachment.value(),
+            ESampleBit::COUNT_1_BIT,
+            ERenderPassLoad::Clear,
+            ERenderPassStore::Store,
+            ERenderPassLayout::Undefined,
+            ERenderPassLayout::AsAttachment,
+            EAttachmentReference::DEPTH_STENCIL_ATTACHMENT));
+        }
+}
+
+// Create a descriptor set layouts
+{
+    std::vector<VkDescriptorSetLayout>        descriptorSetLayout;
+    std::map<uint32_t, VkDescriptorSetLayout> setIndexToSetLayout;
+    for (const auto& setPair : source.SetsLayout.SetsLayout)
+        {
+            const auto descriptorSetBindings = VkUtils::convertDescriptorBindings(setPair.second);
+            descriptorSetLayout.push_back(Device.CreateDescriptorSetLayout(descriptorSetBindings));
+            setIndexToSetLayout[setPair.first] = descriptorSetLayout.back();
+        }
+
+    shader.DescriptorSetLayouts = std::move(descriptorSetLayout);
+
+    // Can return already cached pipeline layout if exists
+    shader.PipelineLayout = Device.CreatePipelineLayout(shader.DescriptorSetLayouts, {});
+
+    // Cache all descriptor sets layouts for this given pipeline layout
+    auto pipelineLayoutCacheIt = _pipelineLayoutToSetIndexDescriptorSetLayout.find(shader.PipelineLayout);
+    if (pipelineLayoutCacheIt == _pipelineLayoutToSetIndexDescriptorSetLayout.end())
+        {
+            _pipelineLayoutToSetIndexDescriptorSetLayout[shader.PipelineLayout] = setIndexToSetLayout;
+
+            // Create per frame descriptor pool for this pipeline layout
+            const auto poolDimensions = VkUtils::computeDescriptorSetsPoolSize(source.SetsLayout.SetsLayout);
+            for (auto i = 0; i < NUM_OF_FRAMES_IN_FLIGHT; i++)
+                {
+                    auto poolManager = std::make_shared<RIDescriptorPoolManager>(Device.Device, poolDimensions, MAX_SETS_PER_POOL);
+                    auto pair        = std::make_pair(shader.PipelineLayout, std::move(poolManager));
+                    _pipelineLayoutToDescriptorPool[i].emplace(std::move(pair));
+                }
+        }
+}
+// Create a pipeline for this shader with default states
+{
+    const PipelineFormat defaultFormat(shader.VertexLayout, shader.VertexStride);
+
+    DPipelineAndLayoutVulkan pipeline{};
+    pipeline.Pipeline       = _createPipeline(shader.PipelineLayout, _createRenderPass(shader.RenderPassAttachments), shader.ShaderStageCreateInfo, defaultFormat);
+    pipeline.PipelineLayout = shader.PipelineLayout;
+
+    _shaders.emplace_back(std::move(shader));
+    _shaderPtrToPipeline[&_shaders.back()] = std::move(pipeline);
+}
+
+return &_shaders.back();
+}
+
+void
+VulkanContext::DestroyShader(const DShader shader)
+{
+    DShaderVulkan* shaderVulkan = static_cast<DShaderVulkan*>(shader);
+
+    _deferDestruction([this, shaderVulkan]() {
+        vkDestroyShaderModule(Device.Device, shaderVulkan->VertexShaderModule, nullptr);
+        vkDestroyShaderModule(Device.Device, shaderVulkan->PixelShaderModule, nullptr);
+
+        // Destroy pipeline, this is unique
+        const auto pipelineIt = _shaderPtrToPipeline.find(shaderVulkan);
+        check(pipelineIt != _shaderPtrToPipeline.end());
+        Device.DestroyPipeline(pipelineIt->second.Pipeline);
+        _shaderPtrToPipeline.erase(pipelineIt);
+
+        // Find if other shaders share the same pipeline layout
+        const auto foundIt =
+        std::find_if(_shaders.begin(), _shaders.end(), [shaderVulkan](const DShaderVulkan& shader) { return (&shader != shaderVulkan) && (shader.PipelineLayout == shaderVulkan->PipelineLayout); });
+        // If not found means that no other shader use the same pipeline layout
+        if (foundIt == _shaders.end())
+            {
+                Device.DestroyPipelineLayout(shaderVulkan->PipelineLayout);
+
+                // If no pipeline layout reference these descriptor set we can safely delete them
+                for (const auto& descSet : shaderVulkan->DescriptorSetLayouts)
+                    {
+                        // Count how many other shaders have this descriptor set layout
+                        const auto useCount = std::count_if(_shaders.begin(), _shaders.end(), [&descSet](const DShaderVulkan& shader) {
+                            return std::count_if(shader.DescriptorSetLayouts.begin(), shader.DescriptorSetLayouts.end(), [&descSet](const VkDescriptorSetLayout layout) { return descSet == layout; });
+                        });
+                        // If this is unique them destroy it
+                        if (useCount == 1)
+                            {
+                                Device.DestroyDescriptorSetLayout(descSet);
+                            }
+                    }
+            }
+        // Remove from the list
+        _shaders.erase(std::find_if(_shaders.begin(), _shaders.end(), [shaderVulkan](const DShaderVulkan& b) { return &b == shaderVulkan; }));
+    });
+}
+
 DPipeline
 VulkanContext::CreatePipeline(const ShaderSource& shader, const PipelineFormat& format, const std::vector<EFormat>& attachments)
 {
     constexpr uint32_t MAX_SETS_PER_POOL = 100; // Temporary, should not have a limit pool of pools
     check(attachments.size() > 0);
+    check(shader.ColorAttachments.size() > 0);
 
     std::vector<VkDescriptorSetLayout>        descriptorSetLayout;
     std::map<uint32_t, VkDescriptorSetLayout> setIndexToSetLayout;
@@ -517,11 +659,22 @@ VulkanContext::CreatePipeline(const ShaderSource& shader, const PipelineFormat& 
 
     // Create render pass
     DRenderPassAttachments att; // default color format, not important, what matters is the color attachment
-    for (const auto format : attachments)
+    for (const auto format : shader.ColorAttachments)
         {
             att.Attachments.push_back(DRenderPassAttachment(
             format, ESampleBit::COUNT_1_BIT, ERenderPassLoad::Clear, ERenderPassStore::Store, ERenderPassLayout::Undefined, ERenderPassLayout::Present, EAttachmentReference::COLOR_ATTACHMENT));
         }
+    if (shader.DepthStencilAttachment)
+        {
+            att.Attachments.push_back(DRenderPassAttachment(shader.DepthStencilAttachment.value(),
+            ESampleBit::COUNT_1_BIT,
+            ERenderPassLoad::Clear,
+            ERenderPassStore::Store,
+            ERenderPassLayout::Undefined,
+            ERenderPassLayout::AsAttachment,
+            EAttachmentReference::DEPTH_STENCIL_ATTACHMENT));
+        }
+
     const auto renderPass = _createRenderPass(att);
 
     DPipelineVulkan pipeline{};
@@ -817,7 +970,11 @@ VulkanContext::AdvanceFrame()
                     {
                         for (const auto& draw : pass.DrawCommands)
                             {
-                                DPipelineVulkan* pipelineVulkan = static_cast<DPipelineVulkan*>(draw.Pipeline);
+                                auto pipelineIt = _shaderPtrToPipeline.find(static_cast<DShaderVulkan*>(draw.Shader));
+                                check(pipelineIt != _shaderPtrToPipeline.end());
+
+                                DPipelineAndLayoutVulkan* pipelineVulkan = static_cast<DPipelineAndLayoutVulkan*>(&pipelineIt->second);
+
                                 // Bind pipeline
                                 vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineVulkan->Pipeline);
                                 // find descriptor set from cache and bind them

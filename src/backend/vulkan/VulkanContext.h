@@ -66,6 +66,24 @@ struct DPipelineVulkan : public DPipeline_T
     std::vector<EFormat> Attachments;
 };
 
+struct DPipelineAndLayoutVulkan
+{
+    VkPipeline       Pipeline{};
+    VkPipelineLayout PipelineLayout{};
+};
+
+struct DShaderVulkan : public DShader_T
+{
+    DVertexInputLayoutVulkan*                    VertexLayout{};
+    uint32_t                                     VertexStride{};
+    VkShaderModule                               VertexShaderModule{};
+    VkShaderModule                               PixelShaderModule{};
+    std::vector<VkPipelineShaderStageCreateInfo> ShaderStageCreateInfo;
+    DRenderPassAttachments                       RenderPassAttachments;
+    std::vector<VkDescriptorSetLayout>           DescriptorSetLayouts;
+    VkPipelineLayout                             PipelineLayout{};
+};
+
 class VulkanContext final : public IContext
 {
     inline static constexpr uint32_t NUM_OF_FRAMES_IN_FLIGHT{ 2 };
@@ -80,13 +98,15 @@ class VulkanContext final : public IContext
     DFramebuffer CreateSwapchainFramebuffer(DSwapchain swapchain) override;
     void         DestroyFramebuffer(DFramebuffer framebuffer) override;
 
-    DBuffer            CreateVertexBuffer(uint32_t size);
-    void               DestroyVertexBuffer(DBuffer buffer);
+    DBuffer            CreateVertexBuffer(uint32_t size) override;
+    void               DestroyVertexBuffer(DBuffer buffer) override;
     DBuffer            CreateUniformBuffer(uint32_t size) override;
     void               DestroyUniformBuffer(DBuffer buffer) override;
-    DImage             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount);
-    void               DestroyImage(DImage image);
-    DVertexInputLayout CreateVertexLayout(const std::vector<VertexLayoutInfo>& info);
+    DImage             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) override;
+    void               DestroyImage(DImage image) override;
+    DVertexInputLayout CreateVertexLayout(const std::vector<VertexLayoutInfo>& info) override;
+    DShader            CreateShader(const ShaderSource& source) override;
+    void               DestroyShader(const DShader shader) override;
     DPipeline          CreatePipeline(const ShaderSource& shader, const PipelineFormat& format, const std::vector<EFormat>& attachments);
     void               DestroyPipeline(DPipeline pipeline);
 
@@ -134,6 +154,10 @@ class VulkanContext final : public IContext
     std::list<DPipelineVulkan>          _pipelines;
     // Framebuffers
     std::list<DFramebufferVulkan> _framebuffers;
+    // Shader list
+    std::list<DShaderVulkan> _shaders;
+    // Shader pointer to pipeline map
+    std::unordered_map<DShaderVulkan*, DPipelineAndLayoutVulkan> _shaderPtrToPipeline;
 
     // Pipeline layout to map of descriptor set layout - used to retrieve the correct VkDescriptorSetLayout when creating descriptor set
     std::unordered_map<VkPipelineLayout, std::map<uint32_t, VkDescriptorSetLayout>> _pipelineLayoutToSetIndexDescriptorSetLayout;

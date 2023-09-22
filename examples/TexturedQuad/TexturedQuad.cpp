@@ -226,13 +226,19 @@ main()
         Fox::PipelineFormat     psoFormat(vertexLayout, stride);
 
         Fox::ShaderSource shaderSource;
+        shaderSource.VertexLayout            = vertexLayout;
+        shaderSource.VertexStride            = stride;
         shaderSource.SourceCode.VertexShader = ReadBlobUnsafe("vertex.spv");
         shaderSource.SourceCode.PixelShader  = ReadBlobUnsafe("fragment.spv");
 
         shaderSource.SetsLayout.SetsLayout[0].insert({ 0, Fox::ShaderDescriptorBindings("MatrixUbo", Fox::EBindingType::UNIFORM_BUFFER_OBJECT, sizeof(float) * 16, 1, Fox::EShaderStage::VERTEX) });
         shaderSource.SetsLayout.SetsLayout[1].insert({ 0, Fox::ShaderDescriptorBindings("MyTexture", Fox::EBindingType::SAMPLER, 1, 1, Fox::EShaderStage::FRAGMENT) });
 
-        Fox::DPipeline pipeline = context->CreatePipeline(shaderSource, psoFormat, { format });
+        shaderSource.ColorAttachments.push_back(format);
+
+        Fox::DShader shader = context->CreateShader(shaderSource);
+
+        // Fox::DPipeline pipeline = context->CreatePipeline(shaderSource, psoFormat, { format });
 
         // clang-format off
         constexpr std::array<float, 42> ndcQuad{            
@@ -251,8 +257,8 @@ main()
             0, 1, 1, 1// color
         };
         // clang-format on
-        constexpr size_t bufSize  = sizeof(float) * ndcQuad.size();
-        Fox::DBuffer     quad = context->CreateVertexBuffer(bufSize);
+        constexpr size_t bufSize = sizeof(float) * ndcQuad.size();
+        Fox::DBuffer     quad    = context->CreateVertexBuffer(bufSize);
 
         Fox::CopyDataCommand copy;
         copy.CopyVertex(quad, 0, (void*)ndcQuad.data(), bufSize);
@@ -290,7 +296,7 @@ main()
                 Fox::DViewport viewport{ 0, 0, w, h, 0.f, 1.f };
 
                 {
-                    //yaw += 0.01f;
+                    // yaw += 0.01f;
                     const float sinA = std::sin(yaw);
                     const float cosA = std::cos(yaw);
 
@@ -303,7 +309,7 @@ main()
                 Fox::RenderPassData draw(swapchainFbo, viewport, renderPass);
                 draw.ClearColor(1, 0, 0, 1);
 
-                Fox::DrawCommand drawTriangle(pipeline);
+                Fox::DrawCommand drawTriangle(shader);
                 drawTriangle.BindBufferUniformBuffer(0, 0, transformUniformBuffer);
                 drawTriangle.BindImageArray(1, 0, { texture });
                 drawTriangle.Draw(quad, 0, 6);
@@ -315,10 +321,11 @@ main()
                 context->AdvanceFrame();
             }
 
+        context->DestroyShader(shader);
         context->DestroyImage(texture);
         context->DestroyVertexBuffer(quad);
         context->DestroyUniformBuffer(transformUniformBuffer);
-        context->DestroyPipeline(pipeline);
+        // context->DestroyPipeline(pipeline);
 
         context->DestroySwapchain(swapchain);
 
