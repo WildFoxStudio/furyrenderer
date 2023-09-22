@@ -289,21 +289,6 @@ VulkanContext::CreateSwapchain(const WindowData* windowData, EPresentMode& prese
 
     std::generate_n(std::back_inserter(swapchainVulkan.ImageAvailableSemaphore), NUM_OF_FRAMES_IN_FLIGHT, [this]() { return Device.CreateVkSemaphore(); });
 
-    // Define a render pass using the image views to be bound to the framebuffer
-    DFramebufferVulkan vulkanFramebuffer;
-    vulkanFramebuffer.RenderPassInfo = _computeFramebufferAttachmentsRenderPassInfo({ swapchainVulkan.Format.format });
-
-    VkRenderPass renderPass = _createRenderPassFromInfo(vulkanFramebuffer.RenderPassInfo);
-
-    std::transform(swapchainVulkan.ImageViews.begin(), swapchainVulkan.ImageViews.end(), std::back_inserter(vulkanFramebuffer.Framebuffers), [this, &capabilities, renderPass](VkImageView view) {
-        return Device.CreateFramebuffer({ view }, capabilities.currentExtent.width, capabilities.currentExtent.height, renderPass);
-    });
-    vulkanFramebuffer.Width  = capabilities.currentExtent.width;
-    vulkanFramebuffer.Height = capabilities.currentExtent.height;
-
-    _framebuffers.emplace_back(std::move(vulkanFramebuffer));
-    swapchainVulkan.Framebuffers = &_framebuffers.back();
-
     _swapchains.emplace_back(std::move(swapchainVulkan));
 
     *swapchain = &_swapchains.back();
@@ -316,8 +301,6 @@ VulkanContext::DestroySwapchain(const DSwapchain swapchain)
     vkDeviceWaitIdle(Device.Device);
 
     DSwapchainVulkan* vkSwapchain = static_cast<DSwapchainVulkan*>(swapchain);
-
-    DestroyFramebuffer(vkSwapchain->Framebuffers);
 
     std::for_each(vkSwapchain->ImageViews.begin(), vkSwapchain->ImageViews.end(), [this](const VkImageView& imageView) { Device.DestroyImageView(imageView); });
     vkSwapchain->ImageViews.clear();
@@ -332,8 +315,42 @@ VulkanContext::DestroySwapchain(const DSwapchain swapchain)
 }
 
 DFramebuffer
-VulkanContext::CreateSwapchainFramebuffer(DSwapchain swapchain)
+VulkanContext::CreateSwapchainFramebuffer(DSwapchain swapchain, DImage depth)
 {
+    check(static_cast<DSwapchainVulkan*>(swapchain)->Framebuffers == nullptr);
+
+    const auto  swapchainFormat     = static_cast<DSwapchainVulkan*>(swapchain)->Format.format;
+    const auto& swapchainImageViews = static_cast<DSwapchainVulkan*>(swapchain)->ImageViews;
+    const auto& capabilities        = static_cast<DSwapchainVulkan*>(swapchain)->Capabilities;
+
+    std::vector<VkFormat> attachments{ swapchainFormat };
+    if (depth)
+        {
+            attachments.push_back(static_cast<DImageVulkan*>(depth)->Image.Format);
+        }
+
+    DFramebufferVulkan vulkanFramebuffer;
+    vulkanFramebuffer.RenderPassInfo = _computeFramebufferAttachmentsRenderPassInfo(attachments);
+
+    VkRenderPass renderPass = _createRenderPassFromInfo(vulkanFramebuffer.RenderPassInfo);
+
+    std::transform(swapchainImageViews.begin(), swapchainImageViews.end(), std::back_inserter(vulkanFramebuffer.Framebuffers), [this, &capabilities, renderPass, depth](VkImageView view) {
+        std::vector<VkImageView> views{ view };
+        if (depth)
+            {
+                views.push_back(static_cast<DImageVulkan*>(depth)->View);
+            }
+
+        return Device.CreateFramebuffer(views, capabilities.currentExtent.width, capabilities.currentExtent.height, renderPass);
+    });
+    vulkanFramebuffer.Width  = capabilities.currentExtent.width;
+    vulkanFramebuffer.Height = capabilities.currentExtent.height;
+
+    _framebuffers.emplace_back(std::move(vulkanFramebuffer));
+
+    // Assign swapchain the framebuffer
+    static_cast<DSwapchainVulkan*>(swapchain)->Framebuffers = &_framebuffers.back();
+
     return static_cast<DSwapchainVulkan*>(swapchain)->Framebuffers;
 }
 
@@ -405,10 +422,11 @@ VulkanContext::CreateImage(EFormat format, uint32_t width, uint32_t height, uint
 
     const auto vkFormat = VkUtils::convertFormat(format);
 
-    image.Image = Device.CreateImageDeviceLocal(
-    width, height, mipMapCount, vkFormat, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+    const VkImageUsageFlags fomatAttachment = VkUtils::isColorFormat(vkFormat) ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    image.Image = Device.CreateImageDeviceLocal(width, height, mipMapCount, vkFormat, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | fomatAttachment | VK_IMAGE_USAGE_SAMPLED_BIT);
 
-    const VkResult result = Device.CreateImageView(vkFormat, image.Image.Image, VK_IMAGE_ASPECT_COLOR_BIT, 0, mipMapCount, &image.View);
+    VkImageAspectFlags imageAspect = VkUtils::isColorFormat(vkFormat) ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
+    const VkResult     result      = Device.CreateImageView(vkFormat, image.Image.Image, imageAspect, 0, mipMapCount, &image.View);
     if (VKFAILED(result))
         {
             throw std::runtime_error(VkUtils::VkErrorString(result));
@@ -946,6 +964,11 @@ VulkanContext::AdvanceFrame()
 
                         renderPassInfo.renderArea.offset = { 0, 0 };
                         renderPassInfo.renderArea.extent = { framebufferVulkan->Width, framebufferVulkan->Height };
+
+                        check(pass.ClearValues.size() >= std::count_if(pass.RenderPass.Attachments.begin(), pass.RenderPass.Attachments.end(), [](const DRenderPassAttachment& att) {
+                            return att.LoadOP == ERenderPassLoad::Clear;
+                        })); // Need same number of clear for each clear layout attachament
+
                         // Convert clear values to vkClearValues
                         std::vector<VkClearValue> vkClearValues;
                         std::transform(pass.ClearValues.begin(), pass.ClearValues.end(), std::back_inserter(vkClearValues), [](const DClearValue& v) {

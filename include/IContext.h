@@ -538,7 +538,7 @@ class IContext
     virtual bool CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat, DSwapchain* swapchain) = 0;
     virtual void DestroySwapchain(const DSwapchain swapchain)                                                                        = 0;
 
-    virtual DFramebuffer CreateSwapchainFramebuffer(DSwapchain swapchain) = 0;
+    virtual DFramebuffer CreateSwapchainFramebuffer(DSwapchain swapchain, DImage depth = nullptr) = 0;
     virtual void         DestroyFramebuffer(DFramebuffer framebuffer)     = 0;
 
     virtual DBuffer            CreateVertexBuffer(uint32_t size)                                                  = 0;

@@ -95,7 +95,7 @@ class VulkanContext final : public IContext
     bool CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat, DSwapchain* swapchain) override;
     void DestroySwapchain(const DSwapchain swapchain) override;
 
-    DFramebuffer CreateSwapchainFramebuffer(DSwapchain swapchain) override;
+    DFramebuffer CreateSwapchainFramebuffer(DSwapchain swapchain, DImage depth = nullptr) override;
     void         DestroyFramebuffer(DFramebuffer framebuffer) override;
 
     DBuffer            CreateVertexBuffer(uint32_t size) override;

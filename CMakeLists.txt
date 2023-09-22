@@ -23,6 +23,7 @@ add_library(${PROJECT_NAME} STATIC
 add_subdirectory("thirdparty/volk")
 add_subdirectory("thirdparty/VulkanMemoryAllocator")
 add_subdirectory("thirdparty/glfw")
+add_subdirectory("thirdparty/glm")
 
 target_link_libraries(${PROJECT_NAME} PRIVATE volk VulkanMemoryAllocator)
 
@@ -102,6 +103,7 @@ if(BUILD_EXAMPLES)
     add_subdirectory("examples/HelloTriangle")
     add_subdirectory("examples/SpinningTriangle")
     add_subdirectory("examples/TexturedQuad")
+    add_subdirectory("examples/DepthBuffer")
 endif()
 
 if(BUILD_TESTS)
