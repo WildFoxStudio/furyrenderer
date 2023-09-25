@@ -21,8 +21,10 @@ namespace Fox
 // SHOULD BE PRIVATE
 enum EResourceType : uint8_t
 {
-    VERTEX_INPUT_LAYOUT = 1 << 1,
-    SHADER = 1 << 2,
+    VERTEX_INPUT_LAYOUT = 1,
+    SHADER              = 2,
+    VERTEX_INDEX_BUFFER = 3,
+    UNIFORM_BUFFER      = 4,
 };
 // SHOULD BE PRIVATE
 
@@ -79,6 +81,8 @@ struct DBuffer_T
 };
 
 typedef DBuffer_T* DBuffer;
+
+typedef uint32_t BufferId;
 
 struct DPipeline_T
 {
@@ -402,9 +406,9 @@ typedef uint32_t ShaderId;
 struct SetBinding
 {
     /* Only a buffer or image is a valid at once*/
-    EBindingType         Type{};
-    std::vector<DBuffer> Buffers;
-    std::vector<DImage>  Images;
+    EBindingType          Type{};
+    std::vector<BufferId> Buffers;
+    std::vector<DImage>   Images;
 };
 
 struct DrawCommand
@@ -414,14 +418,14 @@ struct DrawCommand
     // Bind... functions
     std::map<uint32_t /*set*/, std::map<uint32_t /*binding*/, SetBinding>> DescriptorSetBindings;
     // Draw... functions
-    DBuffer  VertexBuffer{};
-    DBuffer  IndexBuffer{}; // optional
+    BufferId VertexBuffer{};
+    BufferId IndexBuffer{}; // optional
     uint32_t BeginVertex{};
     uint32_t VerticesCount{};
 
     DrawCommand(ShaderId shader) : Shader(shader) {}
 
-    inline void BindBufferUniformBuffer(uint32_t set, uint32_t bindingIndex, DBuffer buffer)
+    inline void BindBufferUniformBuffer(uint32_t set, uint32_t bindingIndex, BufferId buffer)
     {
         SetBinding binding{ EBindingType::UNIFORM_BUFFER_OBJECT, { buffer } };
         DescriptorSetBindings[set][bindingIndex] = (std::move(binding));
@@ -433,7 +437,7 @@ struct DrawCommand
         DescriptorSetBindings[set][bindingIndex] = (std::move(binding));
     }
 
-    inline void Draw(DBuffer vertexBuffer, uint32_t start, uint32_t count)
+    inline void Draw(BufferId vertexBuffer, uint32_t start, uint32_t count)
     {
         VertexBuffer  = vertexBuffer;
         BeginVertex   = start;
@@ -457,14 +461,14 @@ struct CopyImageCommand
 
 struct CopyVertexCommand
 {
-    DBuffer                    Destination{};
+    BufferId                   Destination{};
     uint32_t                   DestOffset{};
     std::vector<unsigned char> Data;
 };
 
 struct CopyUniformBufferCommand
 {
-    DBuffer                    Destination{};
+    BufferId                   Destination{};
     uint32_t                   DestOffset{};
     std::vector<unsigned char> Data;
 };
@@ -475,7 +479,7 @@ struct CopyDataCommand
     std::optional<CopyImageCommand>         ImageCommand;
     std::optional<CopyUniformBufferCommand> UniformCommand;
 
-    inline void CopyVertex(DBuffer destination, uint32_t destinationOffset, void* data, uint32_t bytes)
+    inline void CopyVertex(BufferId destination, uint32_t destinationOffset, void* data, uint32_t bytes)
     {
         // check(!VertexCommand.has_value());
         //  check(!ImageCommand.has_value());
@@ -486,7 +490,7 @@ struct CopyDataCommand
         VertexCommand = CopyVertexCommand{ destination, destinationOffset, std::move(blob) };
     };
 
-    inline void CopyUniformBuffer(DBuffer ubo, void* data, uint32_t bytes)
+    inline void CopyUniformBuffer(BufferId ubo, void* data, uint32_t bytes)
     {
         // check(!VertexCommand.has_value());
         //  check(!ImageCommand.has_value());
@@ -553,10 +557,9 @@ class IContext
     virtual DFramebuffer CreateSwapchainFramebuffer(DSwapchain swapchain, DImage depth = nullptr) = 0;
     virtual void         DestroyFramebuffer(DFramebuffer framebuffer)                             = 0;
 
-    virtual DBuffer             CreateVertexBuffer(uint32_t size)                                                  = 0;
-    virtual void                DestroyVertexBuffer(DBuffer buffer)                                                = 0;
-    virtual DBuffer             CreateUniformBuffer(uint32_t size)                                                 = 0;
-    virtual void                DestroyUniformBuffer(DBuffer buffer)                                               = 0;
+    virtual BufferId            CreateVertexBuffer(uint32_t size)                                                  = 0;
+    virtual BufferId            CreateUniformBuffer(uint32_t size)                                                 = 0;
+    virtual void                DestroyBuffer(BufferId buffer)                                                     = 0;
     virtual DImage              CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) = 0;
     virtual void                DestroyImage(DImage image)                                                         = 0;
     virtual VertexInputLayoutId CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)                      = 0;

@@ -255,7 +255,7 @@ main()
         };
         // clang-format on
         constexpr size_t bufSize = sizeof(float) * ndcQuad.size();
-        Fox::DBuffer     quad    = context->CreateVertexBuffer(bufSize);
+        Fox::BufferId    quad    = context->CreateVertexBuffer(bufSize);
 
         Fox::CopyDataCommand copy;
         copy.CopyVertex(quad, 0, (void*)ndcQuad.data(), bufSize);
@@ -273,8 +273,8 @@ main()
         Fox::DRenderPassAttachments renderPass;
         renderPass.Attachments.push_back(colorAttachment);
 
-        Fox::DBuffer transformUniformBuffer = context->CreateUniformBuffer(sizeof(float) * 16);
-        float        yaw{ 0 };
+        Fox::BufferId transformUniformBuffer = context->CreateUniformBuffer(sizeof(float) * 16);
+        float         yaw{ 0 };
 
         Fox::DImage texture = context->CreateImage(Fox::EFormat::R8G8B8A8_UNORM, imageWidth, imageHeight, 1);
         {
@@ -320,8 +320,8 @@ main()
 
         context->DestroyShader(shader);
         context->DestroyImage(texture);
-        context->DestroyVertexBuffer(quad);
-        context->DestroyUniformBuffer(transformUniformBuffer);
+        context->DestroyBuffer(quad);
+        context->DestroyBuffer(transformUniformBuffer);
         context->DestroySwapchain(swapchain);
 
         glfwDestroyWindow(window);

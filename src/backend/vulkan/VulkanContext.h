@@ -9,7 +9,6 @@
 #include "VulkanDevice13.h"
 #include "VulkanInstance.h"
 
-
 #include <array>
 #include <functional>
 #include <list>
@@ -47,10 +46,9 @@ struct DSwapchainVulkan : public DSwapchain_T
     uint32_t                 CurrentImageIndex{};
 };
 
-struct DBufferVulkan : public DBuffer_T
+struct DBufferVulkan : public DResourceId
 {
-    DBufferVulkan(EBufferType type, uint32_t size) : DBuffer_T{ type }, Size(size){};
-    const uint32_t Size;
+    uint32_t       Size;
     RIVulkanBuffer Buffer;
 };
 
@@ -110,10 +108,9 @@ class VulkanContext final : public IContext
     DFramebuffer CreateSwapchainFramebuffer(DSwapchain swapchain, DImage depth = nullptr) override;
     void         DestroyFramebuffer(DFramebuffer framebuffer) override;
 
-    DBuffer             CreateVertexBuffer(uint32_t size) override;
-    void                DestroyVertexBuffer(DBuffer buffer) override;
-    DBuffer             CreateUniformBuffer(uint32_t size) override;
-    void                DestroyUniformBuffer(DBuffer buffer) override;
+    BufferId            CreateVertexBuffer(uint32_t size) override;
+    BufferId            CreateUniformBuffer(uint32_t size) override;
+    void                DestroyBuffer(BufferId buffer) override;
     DImage              CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) override;
     void                DestroyImage(DImage image) override;
     VertexInputLayoutId CreateVertexLayout(const std::vector<VertexLayoutInfo>& info) override;
@@ -144,11 +141,11 @@ class VulkanContext final : public IContext
     void (*_warningOutput)(const char*);
     void (*_logOutput)(const char*);
 
-    std::list<DSwapchainVulkan>      _swapchains;
-    std::list<DBufferVulkan>         _vertexBuffers;
-    std::list<DBufferVulkan>         _uniformBuffers;
-    std::list<DImageVulkan>          _images;
-    std::unordered_set<VkRenderPass> _renderPasses;
+    std::list<DSwapchainVulkan>              _swapchains;
+    std::array<DBufferVulkan, MAX_RESOURCES> _vertexBuffers;
+    std::array<DBufferVulkan, MAX_RESOURCES> _uniformBuffers;
+    std::list<DImageVulkan>                  _images;
+    std::unordered_set<VkRenderPass>         _renderPasses;
     using DeleteFn                 = std::function<void()>;
     using FramesWaitToDeletionList = std::pair<uint32_t, std::vector<DeleteFn>>;
     uint32_t                              _frameIndex{};
@@ -167,7 +164,7 @@ class VulkanContext final : public IContext
     // Framebuffers
     std::list<DFramebufferVulkan> _framebuffers;
     // Shader list
-    std::array<DShaderVulkan, 4096> _shaders;
+    std::array<DShaderVulkan, MAX_RESOURCES> _shaders;
 
     // Pipeline layout to map of descriptor set layout - used to retrieve the correct VkDescriptorSetLayout when creating descriptor set
     std::unordered_map<VkPipelineLayout, std::map<uint32_t, VkDescriptorSetLayout>> _pipelineLayoutToSetIndexDescriptorSetLayout;
@@ -220,7 +217,8 @@ class VulkanContext final : public IContext
     void _initializeStagingBuffer(uint32_t stagingBufferSize);
     void _deinitializeStagingBuffer();
 
-
+    void               _createVertexBuffer(uint32_t size, DBufferVulkan& buffer);
+    void               _createUniformBuffer(uint32_t size, DBufferVulkan& buffer);
     void               _createShader(const ShaderSource& source, DShaderVulkan& shader);
     void               _performDeletionQueue();
     void               _performCopyOperations();

@@ -38,7 +38,7 @@ GenIdentifier()
         return a;
     };
     static size_t counter = 0;
-    const auto    value       = hash(counter++);
+    const auto    value   = hash(counter++);
     check(value != 0);
     return (uint8_t)value;
 }
@@ -52,6 +52,7 @@ AllocResource(std::array<T, maxSize>& container)
             T& element = container.at(i);
             if (element.Id == NULL)
                 {
+                    memset(&element, NULL, sizeof(T));
                     element.Id = GenIdentifier();
                     return i;
                 }
@@ -91,6 +92,8 @@ VulkanContext::VulkanContext(const DContextConfig* const config) : _warningOutpu
     _vertexLayouts.reserve(1024);
 
     memset(_shaders.data(), NULL, sizeof(_shaders));
+    memset(_vertexBuffers.data(), NULL, sizeof(_vertexBuffers));
+    memset(_uniformBuffers.data(), NULL, sizeof(_uniformBuffers));
 }
 
 void
@@ -421,52 +424,63 @@ VulkanContext::DestroyFramebuffer(DFramebuffer framebuffer)
     });
 }
 
-DBuffer
+BufferId
 VulkanContext::CreateVertexBuffer(uint32_t size)
 {
-    DBufferVulkan buf{ EBufferType::VERTEX_INDEX_BUFFER, size };
+    const auto     index  = AllocResource<DBufferVulkan, MAX_RESOURCES>(_vertexBuffers);
+    DBufferVulkan& buffer = _vertexBuffers.at(index);
 
-    buf.Buffer = Device.CreateBufferDeviceLocalTransferBit(size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    _createVertexBuffer(size, buffer);
 
-    _vertexBuffers.emplace_back(std::move(buf));
-
-    return &_vertexBuffers.back();
+    return *ResourceId(EResourceType::VERTEX_INDEX_BUFFER, buffer.Id, index);
 }
 
 void
-VulkanContext::DestroyVertexBuffer(DBuffer buffer)
+VulkanContext::_createVertexBuffer(uint32_t size, DBufferVulkan& buffer)
 {
-    check(buffer->Type == EBufferType::VERTEX_INDEX_BUFFER);
-    DBufferVulkan* bufferVulkan = static_cast<DBufferVulkan*>(buffer);
-
-    _deferDestruction([this, buffer, bufferVulkan]() {
-        Device.DestroyBuffer(bufferVulkan->Buffer);
-        _vertexBuffers.erase(std::find_if(_vertexBuffers.begin(), _vertexBuffers.end(), [buffer](const DBufferVulkan& b) { return &b == buffer; }));
-    });
+    buffer.Size   = size;
+    buffer.Buffer = Device.CreateBufferDeviceLocalTransferBit(size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
 }
 
-DBuffer
+BufferId
 VulkanContext::CreateUniformBuffer(uint32_t size)
 {
     check(size <= 16000); // MAX 16KB limitation
-    DBufferVulkan buf{ EBufferType::UNIFORM_BUFFER_OBJECT, size };
+    const auto     index  = AllocResource<DBufferVulkan, MAX_RESOURCES>(_uniformBuffers);
+    DBufferVulkan& buffer = _uniformBuffers.at(index);
 
-    buf.Buffer = Device.CreateBufferDeviceLocalTransferBit(size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    _createUniformBuffer(size, buffer);
 
-    _uniformBuffers.emplace_back(std::move(buf));
-
-    return &_uniformBuffers.back();
+    return *ResourceId(EResourceType::UNIFORM_BUFFER, buffer.Id, index);
 }
 
 void
-VulkanContext::DestroyUniformBuffer(DBuffer buffer)
+VulkanContext::_createUniformBuffer(uint32_t size, DBufferVulkan& buffer)
 {
-    check(buffer->Type == EBufferType::UNIFORM_BUFFER_OBJECT);
-    DBufferVulkan* bufferVulkan = static_cast<DBufferVulkan*>(buffer);
+    buffer.Size   = size;
+    buffer.Buffer = Device.CreateBufferDeviceLocalTransferBit(size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+}
 
-    _deferDestruction([this, buffer, bufferVulkan]() {
-        Device.DestroyBuffer(bufferVulkan->Buffer);
-        _uniformBuffers.erase(std::find_if(_uniformBuffers.begin(), _uniformBuffers.end(), [buffer](const DBufferVulkan& b) { return &b == buffer; }));
+void
+VulkanContext::DestroyBuffer(BufferId buffer)
+{
+    ResourceId resource(buffer);
+    check(resource.First() == EResourceType::VERTEX_INDEX_BUFFER || resource.First() == EResourceType::UNIFORM_BUFFER);
+    check(_vertexBuffers.at(resource.Value()).Id == resource.Second() || _uniformBuffers.at(resource.Value()).Id == resource.Second());
+
+    _deferDestruction([this, resource]() {
+        if (resource.Second() == EResourceType::UNIFORM_BUFFER)
+            {
+                DBufferVulkan& buffer = _uniformBuffers.at(resource.Value());
+                Device.DestroyBuffer(buffer.Buffer);
+                buffer.Id = 0;
+            }
+        else if (resource.Second() == EResourceType::VERTEX_INDEX_BUFFER)
+            {
+                DBufferVulkan& buffer = _vertexBuffers.at(resource.Value());
+                Device.DestroyBuffer(buffer.Buffer);
+                buffer.Id = 0;
+            }
     });
 }
 
@@ -1085,8 +1099,8 @@ VulkanContext::AdvanceFrame()
                                                             {
                                                                 check(binding.Buffers.size() == 1);
                                                                 const auto&    b      = binding.Buffers.front();
-                                                                DBufferVulkan* buffer = static_cast<DBufferVulkan*>(b);
-                                                                binder.BindUniformBuffer(bindingIndex, buffer->Buffer.Buffer, 0, buffer->Size);
+                                                                DBufferVulkan& buffer = GetResource<DBufferVulkan, EResourceType::UNIFORM_BUFFER, MAX_RESOURCES>(_uniformBuffers, b);
+                                                                binder.BindUniformBuffer(bindingIndex, buffer.Buffer.Buffer, 0, buffer.Size);
                                                             }
                                                             break;
                                                         case EBindingType::SAMPLER:
@@ -1111,9 +1125,9 @@ VulkanContext::AdvanceFrame()
                                     }
 
                                 // draw call
-                                DBufferVulkan* vertexBuffer = static_cast<DBufferVulkan*>(draw.VertexBuffer);
+                                DBufferVulkan& vertexBuffer = GetResource<DBufferVulkan, EResourceType::VERTEX_INDEX_BUFFER, MAX_RESOURCES>(_vertexBuffers, draw.VertexBuffer);
                                 VkDeviceSize   offset{ 0 };
-                                vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer->Buffer.Buffer, &offset);
+                                vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer.Buffer.Buffer, &offset);
                                 vkCmdDraw(cmd, draw.VerticesCount, 1, draw.BeginVertex, 0);
                             }
                     }
@@ -1254,13 +1268,13 @@ VulkanContext::_performCopyOperations()
                         uint32_t*                         offset{};
                         if (it->VertexCommand.has_value())
                             {
-                                destination = static_cast<DBufferVulkan*>(it->VertexCommand.value().Destination);
+                                destination = &GetResource<DBufferVulkan, EResourceType::VERTEX_INDEX_BUFFER, MAX_RESOURCES>(_vertexBuffers, it->VertexCommand.value().Destination);
                                 data        = &it->VertexCommand.value().Data;
                                 offset      = &it->VertexCommand.value().DestOffset;
                             }
                         if (it->UniformCommand.has_value())
                             {
-                                destination = static_cast<DBufferVulkan*>(it->UniformCommand.value().Destination);
+                                destination = &GetResource<DBufferVulkan, EResourceType::UNIFORM_BUFFER, MAX_RESOURCES>(_uniformBuffers, it->UniformCommand.value().Destination);
                                 data        = &it->UniformCommand.value().Data;
                                 offset      = &it->UniformCommand.value().DestOffset;
                             }
