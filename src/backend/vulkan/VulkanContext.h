@@ -8,7 +8,7 @@
 #include "RingBufferManager.h"
 #include "VulkanDevice13.h"
 #include "VulkanInstance.h"
-#include "ResourceId.h"
+
 
 #include <array>
 #include <functional>
@@ -220,19 +220,11 @@ class VulkanContext final : public IContext
     void _initializeStagingBuffer(uint32_t stagingBufferSize);
     void _deinitializeStagingBuffer();
 
+    /*generate a random number identitier to be used for resources*/
     uint8_t _genIdentifier();
     size_t  _findFirstFreeShaderIndex();
 
-    template<class T, EResourceType type, size_t maxSize>
-    inline T& _getResource(std::array<T, maxSize>& container, uint32_t id)
-    {
-        const auto resourceId = ResourceId(id);
-        check(resourceId.First() == type); // Invalid resource id
-        check(resourceId.Value() < maxSize); // Must be less than array size
-        T& element = container.at(resourceId.Value());
-        check(element.Id != NULL); // The object must have not been destroyed
-        return element;
-    };
+
     void               _createShader(const ShaderSource& source, DShaderVulkan& shader);
     void               _performDeletionQueue();
     void               _performCopyOperations();

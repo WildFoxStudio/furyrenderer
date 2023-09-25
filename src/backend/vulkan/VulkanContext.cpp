@@ -1,6 +1,7 @@
 
 #include "VulkanContext.h"
 
+#include "ResourceId.h"
 #include "ResourceTransfer.h"
 #include "UtilsVK.h"
 
@@ -10,6 +11,17 @@
 
 namespace Fox
 {
+template<class T, EResourceType type, size_t maxSize>
+inline T&
+_getResource(std::array<T, maxSize>& container, uint32_t id)
+{
+    const auto resourceId = ResourceId(id);
+    check(resourceId.First() == type); // Invalid resource id
+    check(resourceId.Value() < maxSize); // Must be less than array size
+    T& element = container.at(resourceId.Value());
+    check(element.Id != NULL); // The object must have not been destroyed
+    return element;
+};
 
 VulkanContext::VulkanContext(const DContextConfig* const config) : _warningOutput(config->warningFunction), _logOutput(config->logOutputFunction)
 {
@@ -1310,6 +1322,8 @@ VulkanContext::_submitCommands(const std::vector<VkSemaphore>& imageAvailableSem
 uint8_t
 VulkanContext::_genIdentifier()
 {
+    // It can hash collide, but is not happening in our case because we're also checking the resource type enum
+    // This must be used only to non trivial checking if the resource has been reallocated should have a different id
     auto hash = [](uint32_t a) {
         a = (a ^ 61) ^ (a >> 16);
         a = a + (a << 3);
@@ -1318,8 +1332,8 @@ VulkanContext::_genIdentifier()
         a = a ^ (a >> 15);
         return a;
     };
-
-    const auto h = hash(_vertexLayouts.size() + _frameIndex) + hash(_frameIndex);
+    static size_t counter = 0;
+    const auto    h       = hash(counter++ + _frameIndex) + hash(counter - _frameIndex);
     check(h != 0);
     return h;
 }
