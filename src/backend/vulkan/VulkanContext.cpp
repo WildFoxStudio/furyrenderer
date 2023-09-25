@@ -13,7 +13,7 @@ namespace Fox
 {
 template<class T, EResourceType type, size_t maxSize>
 inline T&
-_getResource(std::array<T, maxSize>& container, uint32_t id)
+GetResource(std::array<T, maxSize>& container, uint32_t id)
 {
     const auto resourceId = ResourceId(id);
     check(resourceId.First() == type); // Invalid resource id
@@ -22,6 +22,44 @@ _getResource(std::array<T, maxSize>& container, uint32_t id)
     check(element.Id != NULL); // The object must have not been destroyed
     return element;
 };
+
+/*generate a random number identitier to be used for resources*/
+static uint8_t
+GenIdentifier()
+{
+    // It can hash collide, but is not happening in our case because we're also checking the resource type enum
+    // This must be used only to non trivial checking if the resource has been reallocated should have a different id
+    auto hash = [](uint32_t a) {
+        a = (a ^ 61) ^ (a >> 16);
+        a = a + (a << 3);
+        a = a ^ (a >> 4);
+        a = a * 0x27d4eb2d;
+        a = a ^ (a >> 15);
+        return a;
+    };
+    static size_t counter = 0;
+    const auto    value       = hash(counter++);
+    check(value != 0);
+    return (uint8_t)value;
+}
+
+template<class T, size_t maxSize>
+inline size_t
+AllocResource(std::array<T, maxSize>& container)
+{
+    for (size_t i = 0; i < maxSize; i++)
+        {
+            T& element = container.at(i);
+            if (element.Id == NULL)
+                {
+                    element.Id = GenIdentifier();
+                    return i;
+                }
+        }
+
+    throw std::runtime_error("Failed to allocate!");
+    return {};
+}
 
 VulkanContext::VulkanContext(const DContextConfig* const config) : _warningOutput(config->warningFunction), _logOutput(config->logOutputFunction)
 {
@@ -474,7 +512,7 @@ VulkanContext::DestroyImage(DImage image)
 VertexInputLayoutId
 VulkanContext::CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)
 {
-    const uint8_t id = _genIdentifier();
+    const uint8_t id = GenIdentifier();
 
     DVertexInputLayoutVulkan input;
     input.Id = id;
@@ -503,9 +541,9 @@ VulkanContext::CreateShader(const ShaderSource& source)
 {
     check(source.ColorAttachments.size() > 0);
 
-    const auto     index  = _findFirstFreeShaderIndex();
+    const auto     index  = AllocResource<DShaderVulkan, MAX_RESOURCES>(_shaders);
     DShaderVulkan& shader = _shaders.at(index);
-    shader.Id             = _genIdentifier();
+    shader.Id             = GenIdentifier();
 
     _createShader(source, _shaders.at(index));
 
@@ -1021,7 +1059,7 @@ VulkanContext::AdvanceFrame()
                     {
                         for (const auto& draw : pass.DrawCommands)
                             {
-                                auto shader         = _getResource<DShaderVulkan, EResourceType::SHADER, MAX_RESOURCES>(_shaders, draw.Shader);
+                                auto shader         = GetResource<DShaderVulkan, EResourceType::SHADER, MAX_RESOURCES>(_shaders, draw.Shader);
                                 auto pipeline       = shader.Pipelines;
                                 auto pipelineLayout = shader.PipelineLayout;
 
@@ -1317,40 +1355,6 @@ VulkanContext::_submitCommands(const std::vector<VkSemaphore>& imageAvailableSem
 
             Device.SubmitToMainQueue(recordedCommandBuffers, imageAvailableSemaphores, _workFinishedSemaphores[_frameIndex], _fence[_frameIndex]);
         }
-}
-
-uint8_t
-VulkanContext::_genIdentifier()
-{
-    // It can hash collide, but is not happening in our case because we're also checking the resource type enum
-    // This must be used only to non trivial checking if the resource has been reallocated should have a different id
-    auto hash = [](uint32_t a) {
-        a = (a ^ 61) ^ (a >> 16);
-        a = a + (a << 3);
-        a = a ^ (a >> 4);
-        a = a * 0x27d4eb2d;
-        a = a ^ (a >> 15);
-        return a;
-    };
-    static size_t counter = 0;
-    const auto    h       = hash(counter++ + _frameIndex) + hash(counter - _frameIndex);
-    check(h != 0);
-    return h;
-}
-
-size_t
-VulkanContext::_findFirstFreeShaderIndex()
-{
-    for (size_t i = 0; i < _shaders.size(); i++)
-        {
-            if (_shaders.at(i).Id == NULL)
-                {
-                    return i;
-                }
-        }
-
-    Warning("Cannot allocate more shader count > " + std::to_string(_shaders.size()));
-    return _shaders.size();
 }
 
 void

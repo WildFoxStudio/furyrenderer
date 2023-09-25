@@ -220,10 +220,6 @@ class VulkanContext final : public IContext
     void _initializeStagingBuffer(uint32_t stagingBufferSize);
     void _deinitializeStagingBuffer();
 
-    /*generate a random number identitier to be used for resources*/
-    uint8_t _genIdentifier();
-    size_t  _findFirstFreeShaderIndex();
-
 
     void               _createShader(const ShaderSource& source, DShaderVulkan& shader);
     void               _performDeletionQueue();
