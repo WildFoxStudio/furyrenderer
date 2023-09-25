@@ -8,7 +8,9 @@
 #include "RingBufferManager.h"
 #include "VulkanDevice13.h"
 #include "VulkanInstance.h"
+#include "ResourceId.h"
 
+#include <array>
 #include <functional>
 #include <list>
 #include <tuple>
@@ -16,6 +18,11 @@
 
 namespace Fox
 {
+
+struct DResourceId
+{
+    uint8_t Id;
+};
 
 struct DFramebufferVulkan : public DFramebuffer_T
 {
@@ -54,7 +61,7 @@ struct DImageVulkan : public DImage_T
     VkSampler     Sampler{};
 };
 
-struct DVertexInputLayoutVulkan : public DVertexInputLayout_T
+struct DVertexInputLayoutVulkan : public DResourceId
 {
     std::vector<VkVertexInputAttributeDescription> VertexInputAttributes;
 };
@@ -72,16 +79,21 @@ struct DPipelineAndLayoutVulkan
     VkPipelineLayout PipelineLayout{};
 };
 
-struct DShaderVulkan : public DShader_T
+struct DShaderVulkan : public DResourceId
 {
-    DVertexInputLayoutVulkan*                    VertexLayout{};
+    VertexInputLayoutId                          VertexLayout{};
     uint32_t                                     VertexStride{};
     VkShaderModule                               VertexShaderModule{};
     VkShaderModule                               PixelShaderModule{};
     std::vector<VkPipelineShaderStageCreateInfo> ShaderStageCreateInfo;
     DRenderPassAttachments                       RenderPassAttachments;
-    std::vector<VkDescriptorSetLayout>           DescriptorSetLayouts;
-    VkPipelineLayout                             PipelineLayout{};
+    /*Since VkDescriptorSetLayout are cached it can be used by multiple shaders, be careful when deleting*/
+    std::vector<VkDescriptorSetLayout> DescriptorSetLayouts;
+    /*Since pipeline layouts are cached it can be used by multiple shaders, be careful when deleting*/
+    VkPipelineLayout PipelineLayout{};
+
+    // Hash to pipeline map
+    VkPipeline Pipelines;
 };
 
 class VulkanContext final : public IContext
@@ -98,17 +110,17 @@ class VulkanContext final : public IContext
     DFramebuffer CreateSwapchainFramebuffer(DSwapchain swapchain, DImage depth = nullptr) override;
     void         DestroyFramebuffer(DFramebuffer framebuffer) override;
 
-    DBuffer            CreateVertexBuffer(uint32_t size) override;
-    void               DestroyVertexBuffer(DBuffer buffer) override;
-    DBuffer            CreateUniformBuffer(uint32_t size) override;
-    void               DestroyUniformBuffer(DBuffer buffer) override;
-    DImage             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) override;
-    void               DestroyImage(DImage image) override;
-    DVertexInputLayout CreateVertexLayout(const std::vector<VertexLayoutInfo>& info) override;
-    DShader            CreateShader(const ShaderSource& source) override;
-    void               DestroyShader(const DShader shader) override;
-    DPipeline          CreatePipeline(const ShaderSource& shader, const PipelineFormat& format, const std::vector<EFormat>& attachments);
-    void               DestroyPipeline(DPipeline pipeline);
+    DBuffer             CreateVertexBuffer(uint32_t size) override;
+    void                DestroyVertexBuffer(DBuffer buffer) override;
+    DBuffer             CreateUniformBuffer(uint32_t size) override;
+    void                DestroyUniformBuffer(DBuffer buffer) override;
+    DImage              CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) override;
+    void                DestroyImage(DImage image) override;
+    VertexInputLayoutId CreateVertexLayout(const std::vector<VertexLayoutInfo>& info) override;
+    ShaderId            CreateShader(const ShaderSource& source) override;
+    void                DestroyShader(const ShaderId shader) override;
+    DPipeline           CreatePipeline(const ShaderSource& shader, const PipelineFormat& format, const std::vector<EFormat>& attachments);
+    void                DestroyPipeline(DPipeline pipeline);
 
     void SubmitPass(RenderPassData&& data) override;
     void SubmitCopy(CopyDataCommand&& data) override;
@@ -124,6 +136,7 @@ class VulkanContext final : public IContext
 #pragma endregion
 
   private:
+    static constexpr uint32_t MAX_RESOURCES     = 4096;
     static constexpr uint64_t MAX_FENCE_TIMEOUT = 0xffff; // 0xffffffffffffffff; // nanoseconds
     RIVulkanInstance          Instance;
     RIVulkanDevice13          Device;
@@ -150,14 +163,11 @@ class VulkanContext final : public IContext
     RIVulkanBuffer                     _stagingBuffer;
     std::unique_ptr<RingBufferManager> _stagingBufferManager;
     // No need to delete them, are POD structs
-    std::list<DVertexInputLayoutVulkan> _vertexLayouts;
-    std::list<DPipelineVulkan>          _pipelines;
+    std::vector<DVertexInputLayoutVulkan> _vertexLayouts;
     // Framebuffers
     std::list<DFramebufferVulkan> _framebuffers;
     // Shader list
-    std::list<DShaderVulkan> _shaders;
-    // Shader pointer to pipeline map
-    std::unordered_map<DShaderVulkan*, DPipelineAndLayoutVulkan> _shaderPtrToPipeline;
+    std::array<DShaderVulkan, 4096> _shaders;
 
     // Pipeline layout to map of descriptor set layout - used to retrieve the correct VkDescriptorSetLayout when creating descriptor set
     std::unordered_map<VkPipelineLayout, std::map<uint32_t, VkDescriptorSetLayout>> _pipelineLayoutToSetIndexDescriptorSetLayout;
@@ -210,6 +220,20 @@ class VulkanContext final : public IContext
     void _initializeStagingBuffer(uint32_t stagingBufferSize);
     void _deinitializeStagingBuffer();
 
+    uint8_t _genIdentifier();
+    size_t  _findFirstFreeShaderIndex();
+
+    template<class T, EResourceType type, size_t maxSize>
+    inline T& _getResource(std::array<T, maxSize>& container, uint32_t id)
+    {
+        const auto resourceId = ResourceId(id);
+        check(resourceId.First() == type); // Invalid resource id
+        check(resourceId.Value() < maxSize); // Must be less than array size
+        T& element = container.at(resourceId.Value());
+        check(element.Id != NULL); // The object must have not been destroyed
+        return element;
+    };
+    void               _createShader(const ShaderSource& source, DShaderVulkan& shader);
     void               _performDeletionQueue();
     void               _performCopyOperations();
     void               _submitCommands(const std::vector<VkSemaphore>& imageAvailableSemaphores);

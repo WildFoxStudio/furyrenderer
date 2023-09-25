@@ -219,10 +219,10 @@ main()
             }
 
         // Create vertex layout
-        Fox::VertexLayoutInfo   position("SV_POSITION", Fox::EFormat::R32G32B32_FLOAT, 0, Fox::EVertexInputClassification::PER_VERTEX_DATA);
-        Fox::VertexLayoutInfo   color("Color0", Fox::EFormat::R32G32B32A32_FLOAT, 3 * sizeof(float), Fox::EVertexInputClassification::PER_VERTEX_DATA);
-        Fox::DVertexInputLayout vertexLayout = context->CreateVertexLayout({ position, color });
-        constexpr uint32_t      stride       = 7 * sizeof(float);
+        Fox::VertexLayoutInfo    position("SV_POSITION", Fox::EFormat::R32G32B32_FLOAT, 0, Fox::EVertexInputClassification::PER_VERTEX_DATA);
+        Fox::VertexLayoutInfo    color("Color0", Fox::EFormat::R32G32B32A32_FLOAT, 3 * sizeof(float), Fox::EVertexInputClassification::PER_VERTEX_DATA);
+        Fox::VertexInputLayoutId vertexLayout = context->CreateVertexLayout({ position, color });
+        constexpr uint32_t       stride       = 7 * sizeof(float);
 
         Fox::ShaderSource shaderSource;
         shaderSource.VertexLayout            = vertexLayout;
@@ -235,7 +235,7 @@ main()
 
         shaderSource.ColorAttachments.push_back(format);
 
-        Fox::DShader shader = context->CreateShader(shaderSource);
+        Fox::ShaderId shader = context->CreateShader(shaderSource);
 
         // clang-format off
         constexpr std::array<float, 42> ndcQuad{            

@@ -18,6 +18,14 @@
 
 namespace Fox
 {
+// SHOULD BE PRIVATE
+enum EResourceType : uint8_t
+{
+    VERTEX_INPUT_LAYOUT = 1 << 1,
+    SHADER = 1 << 2,
+};
+// SHOULD BE PRIVATE
+
 struct DContextConfig
 {
     uint32_t stagingBufferSize{ 64 * 1024 * 1024 }; // 64mb
@@ -121,6 +129,8 @@ struct DVertexInputLayout_T
 
 typedef DVertexInputLayout_T* DVertexInputLayout;
 
+typedef uint32_t VertexInputLayoutId;
+
 enum class ETopology
 {
     TRIANGLE_LIST,
@@ -157,8 +167,8 @@ enum ERIBlendMode
 
 struct PipelineFormat
 {
-    DVertexInputLayout VertexInput;
-    uint32_t           VertexStrideBytes;
+    VertexInputLayoutId VertexInput;
+    uint32_t            VertexStrideBytes;
 
     ETopology    Topology{ ETopology::TRIANGLE_LIST };
     EFillMode    FillMode{ EFillMode::FILL };
@@ -169,7 +179,7 @@ struct PipelineFormat
     bool         StencilTest{ false };
     ERIBlendMode BlendMode{ ERIBlendMode::DefaultBlendMode };
 
-    PipelineFormat(DVertexInputLayout vertexLayout, uint32_t stride) : VertexInput(vertexLayout), VertexStrideBytes(stride){};
+    PipelineFormat(VertexInputLayoutId vertexLayout, uint32_t stride) : VertexInput(vertexLayout), VertexStrideBytes(stride){};
 };
 
 struct DViewport
@@ -376,7 +386,7 @@ struct ShaderSource
 {
     ShaderByteCode         SourceCode;
     ShaderLayout           SetsLayout;
-    DVertexInputLayout     VertexLayout{};
+    VertexInputLayoutId    VertexLayout{};
     uint32_t               VertexStride{};
     std::vector<EFormat>   ColorAttachments;
     std::optional<EFormat> DepthStencilAttachment{};
@@ -386,6 +396,8 @@ struct DShader_T
 {
 };
 typedef DShader_T* DShader;
+
+typedef uint32_t ShaderId;
 
 struct SetBinding
 {
@@ -398,7 +410,7 @@ struct SetBinding
 struct DrawCommand
 {
     // Ctor
-    DShader Shader;
+    ShaderId Shader;
     // Bind... functions
     std::map<uint32_t /*set*/, std::map<uint32_t /*binding*/, SetBinding>> DescriptorSetBindings;
     // Draw... functions
@@ -407,7 +419,7 @@ struct DrawCommand
     uint32_t BeginVertex{};
     uint32_t VerticesCount{};
 
-    DrawCommand(DShader shader) : Shader(shader) {}
+    DrawCommand(ShaderId shader) : Shader(shader) {}
 
     inline void BindBufferUniformBuffer(uint32_t set, uint32_t bindingIndex, DBuffer buffer)
     {
@@ -539,17 +551,17 @@ class IContext
     virtual void DestroySwapchain(const DSwapchain swapchain)                                                                        = 0;
 
     virtual DFramebuffer CreateSwapchainFramebuffer(DSwapchain swapchain, DImage depth = nullptr) = 0;
-    virtual void         DestroyFramebuffer(DFramebuffer framebuffer)     = 0;
+    virtual void         DestroyFramebuffer(DFramebuffer framebuffer)                             = 0;
 
-    virtual DBuffer            CreateVertexBuffer(uint32_t size)                                                  = 0;
-    virtual void               DestroyVertexBuffer(DBuffer buffer)                                                = 0;
-    virtual DBuffer            CreateUniformBuffer(uint32_t size)                                                 = 0;
-    virtual void               DestroyUniformBuffer(DBuffer buffer)                                               = 0;
-    virtual DImage             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) = 0;
-    virtual void               DestroyImage(DImage image)                                                         = 0;
-    virtual DVertexInputLayout CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)                      = 0;
-    virtual DShader            CreateShader(const ShaderSource& source)                                           = 0;
-    virtual void               DestroyShader(const DShader shader)                                                = 0;
+    virtual DBuffer             CreateVertexBuffer(uint32_t size)                                                  = 0;
+    virtual void                DestroyVertexBuffer(DBuffer buffer)                                                = 0;
+    virtual DBuffer             CreateUniformBuffer(uint32_t size)                                                 = 0;
+    virtual void                DestroyUniformBuffer(DBuffer buffer)                                               = 0;
+    virtual DImage              CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) = 0;
+    virtual void                DestroyImage(DImage image)                                                         = 0;
+    virtual VertexInputLayoutId CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)                      = 0;
+    virtual ShaderId            CreateShader(const ShaderSource& source)                                           = 0;
+    virtual void                DestroyShader(const ShaderId shader)                                               = 0;
 
     virtual void SubmitPass(RenderPassData&& data)  = 0;
     virtual void SubmitCopy(CopyDataCommand&& data) = 0;
