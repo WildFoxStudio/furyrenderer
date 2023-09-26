@@ -447,6 +447,13 @@ VulkanContext::_createFramebufferFromSwapchain(DSwapchainVulkan& swapchain)
     std::vector<VkFormat> attachments{ swapchainFormat };
 
     DFramebufferVulkan& framebuffer = GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, swapchain.Framebuffers);
+    framebuffer.Attachments.Attachments.push_back(DRenderPassAttachment(VkUtils::convertVkFormat(swapchainFormat),
+    ESampleBit::COUNT_1_BIT,
+    ERenderPassLoad::Load,
+    ERenderPassStore::DontCare,
+    ERenderPassLayout::Undefined,
+    ERenderPassLayout::Undefined,
+    EAttachmentReference::COLOR_ATTACHMENT));
 
     framebuffer.RenderPassInfo = _computeFramebufferAttachmentsRenderPassInfo(attachments);
 
@@ -626,7 +633,7 @@ VulkanContext::CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)
 ShaderId
 VulkanContext::CreateShader(const ShaderSource& source)
 {
-    check(source.ColorAttachments.size() > 0);
+    check(source.ColorAttachments > 0);
 
     const auto     index  = AllocResource<DShaderVulkan, MAX_RESOURCES>(_shaders);
     DShaderVulkan& shader = _shaders.at(index);
@@ -642,8 +649,10 @@ VulkanContext::_createShader(const ShaderSource& source, DShaderVulkan& shader)
 {
     constexpr uint32_t MAX_SETS_PER_POOL = 100; // Temporary, should not have a limit pool of pools
 
-    shader.VertexLayout = source.VertexLayout;
-    shader.VertexStride = source.VertexStride;
+    shader.VertexLayout           = source.VertexLayout;
+    shader.VertexStride           = source.VertexStride;
+    shader.ColorAttachments       = source.ColorAttachments;
+    shader.DepthStencilAttachment = source.DepthStencilAttachment;
 
     // Create the shaders
     {
@@ -668,23 +677,23 @@ VulkanContext::_createShader(const ShaderSource& source, DShaderVulkan& shader)
 }
 
 // Create render pass attachments
-{
-    for (const auto format : source.ColorAttachments)
-        {
-            shader.RenderPassAttachments.Attachments.push_back(DRenderPassAttachment(
-            format, ESampleBit::COUNT_1_BIT, ERenderPassLoad::Clear, ERenderPassStore::Store, ERenderPassLayout::Undefined, ERenderPassLayout::Present, EAttachmentReference::COLOR_ATTACHMENT));
-        }
-    if (source.DepthStencilAttachment)
-        {
-            shader.RenderPassAttachments.Attachments.push_back(DRenderPassAttachment(source.DepthStencilAttachment.value(),
-            ESampleBit::COUNT_1_BIT,
-            ERenderPassLoad::Clear,
-            ERenderPassStore::Store,
-            ERenderPassLayout::Undefined,
-            ERenderPassLayout::AsAttachment,
-            EAttachmentReference::DEPTH_STENCIL_ATTACHMENT));
-        }
-}
+//{
+//    for (const auto format : source.ColorAttachments)
+//        {
+//            shader.RenderPassAttachments.Attachments.push_back(DRenderPassAttachment(
+//            format, ESampleBit::COUNT_1_BIT, ERenderPassLoad::Clear, ERenderPassStore::Store, ERenderPassLayout::Undefined, ERenderPassLayout::Present, EAttachmentReference::COLOR_ATTACHMENT));
+//        }
+//    if (source.DepthStencilAttachment)
+//        {
+//            shader.RenderPassAttachments.Attachments.push_back(DRenderPassAttachment(source.DepthStencilAttachment.value(),
+//            ESampleBit::COUNT_1_BIT,
+//            ERenderPassLoad::Clear,
+//            ERenderPassStore::Store,
+//            ERenderPassLayout::Undefined,
+//            ERenderPassLayout::AsAttachment,
+//            EAttachmentReference::DEPTH_STENCIL_ATTACHMENT));
+//        }
+//}
 
 // Create a descriptor set layouts
 {
@@ -719,11 +728,11 @@ VulkanContext::_createShader(const ShaderSource& source, DShaderVulkan& shader)
         }
 }
 // Create a pipeline for this shader with default states
-{
-    const PipelineFormat defaultFormat(shader.VertexLayout, shader.VertexStride);
-
-    shader.Pipelines = _createPipeline(shader.PipelineLayout, _createRenderPass(shader.RenderPassAttachments), shader.ShaderStageCreateInfo, defaultFormat);
-}
+//{
+//    const PipelineFormat defaultFormat(shader.VertexLayout, shader.VertexStride);
+//
+//    shader.Pipelines = _createPipeline(shader.PipelineLayout, _createRenderPass(shader.RenderPassAttachments), shader.ShaderStageCreateInfo, defaultFormat);
+//}
 }
 
 void
@@ -741,7 +750,13 @@ VulkanContext::DestroyShader(const ShaderId shader)
         vkDestroyShaderModule(Device.Device, shaderVulkan.PixelShaderModule, nullptr);
 
         // Destroy pipeline, this is unique
-        Device.DestroyPipeline(shaderVulkan.Pipelines);
+        for (const auto& pair : shaderVulkan.RenderPassFormatToPipelinePermutationMap)
+            {
+                for (const auto& pipeline : pair.second.Pipeline)
+                    {
+                        Device.DestroyPipeline(pipeline.second);
+                    }
+            }
 
         // Find if other shaders share the same pipeline layout
         const auto foundIt =
@@ -772,111 +787,6 @@ VulkanContext::DestroyShader(const ShaderId shader)
     });
 }
 
-DPipeline
-VulkanContext::CreatePipeline(const ShaderSource& shader, const PipelineFormat& format, const std::vector<EFormat>& attachments)
-{
-    constexpr uint32_t MAX_SETS_PER_POOL = 100; // Temporary, should not have a limit pool of pools
-    check(attachments.size() > 0);
-    check(shader.ColorAttachments.size() > 0);
-
-    std::vector<VkDescriptorSetLayout>        descriptorSetLayout;
-    std::map<uint32_t, VkDescriptorSetLayout> setIndexToSetLayout;
-    for (const auto& setPair : shader.SetsLayout.SetsLayout)
-        {
-            const auto descriptorSetBindings = VkUtils::convertDescriptorBindings(setPair.second);
-            descriptorSetLayout.push_back(Device.CreateDescriptorSetLayout(descriptorSetBindings));
-            setIndexToSetLayout[setPair.first] = descriptorSetLayout.back();
-        }
-    // Can return already cached pipeline layout if exists
-    VkPipelineLayout pipelineLayout = Device.CreatePipelineLayout(descriptorSetLayout, {});
-
-    // Cache all descriptor sets layouts for this given pipeline layout
-    auto pipelineLayoutCacheIt = _pipelineLayoutToSetIndexDescriptorSetLayout.find(pipelineLayout);
-    if (pipelineLayoutCacheIt == _pipelineLayoutToSetIndexDescriptorSetLayout.end())
-        {
-            _pipelineLayoutToSetIndexDescriptorSetLayout[pipelineLayout] = setIndexToSetLayout;
-
-            // Create per frame descriptor pool for this pipeline layout
-            const auto poolDimensions = VkUtils::computeDescriptorSetsPoolSize(shader.SetsLayout.SetsLayout);
-            for (auto i = 0; i < NUM_OF_FRAMES_IN_FLIGHT; i++)
-                {
-                    auto poolManager = std::make_shared<RIDescriptorPoolManager>(Device.Device, poolDimensions, MAX_SETS_PER_POOL);
-                    auto pair        = std::make_pair(pipelineLayout, std::move(poolManager));
-                    _pipelineLayoutToDescriptorPool[i].emplace(std::move(pair));
-                }
-        }
-
-    // Create the shaders
-    std::vector<VkPipelineShaderStageCreateInfo> shaderStageCreateInfo;
-    {
-        {
-            VkShaderModule vertex{};
-            const VkResult result = VkUtils::createShaderModule(Device.Device, shader.SourceCode.VertexShader, &vertex);
-            if (VKFAILED(result))
-                {
-                    throw std::runtime_error(VkUtils::VkErrorString(result));
-                }
-            shaderStageCreateInfo.push_back(VkUtils::createShaderStageInfo(VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, vertex));
-        }
-        {
-            VkShaderModule pixel{};
-            const VkResult result = VkUtils::createShaderModule(Device.Device, shader.SourceCode.PixelShader, &pixel);
-            if (VKFAILED(result))
-                {
-                    throw std::runtime_error(VkUtils::VkErrorString(result));
-                }
-            shaderStageCreateInfo.push_back(VkUtils::createShaderStageInfo(VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, pixel));
-        }
-    }
-
-    // Create render pass
-    DRenderPassAttachments att; // default color format, not important, what matters is the color attachment
-    for (const auto format : shader.ColorAttachments)
-        {
-            att.Attachments.push_back(DRenderPassAttachment(
-            format, ESampleBit::COUNT_1_BIT, ERenderPassLoad::Clear, ERenderPassStore::Store, ERenderPassLayout::Undefined, ERenderPassLayout::Present, EAttachmentReference::COLOR_ATTACHMENT));
-        }
-    if (shader.DepthStencilAttachment)
-        {
-            att.Attachments.push_back(DRenderPassAttachment(shader.DepthStencilAttachment.value(),
-            ESampleBit::COUNT_1_BIT,
-            ERenderPassLoad::Clear,
-            ERenderPassStore::Store,
-            ERenderPassLayout::Undefined,
-            ERenderPassLayout::AsAttachment,
-            EAttachmentReference::DEPTH_STENCIL_ATTACHMENT));
-        }
-
-    const auto renderPass = _createRenderPass(att);
-
-    DPipelineVulkan pipeline{};
-    pipeline.Pipeline       = _createPipeline(pipelineLayout, renderPass, shaderStageCreateInfo, format);
-    pipeline.PipelineLayout = pipelineLayout;
-    pipeline.Attachments    = attachments;
-
-    // Free shader modules
-    for (const auto& stage : shaderStageCreateInfo)
-        {
-            vkDestroyShaderModule(Device.Device, stage.module, nullptr);
-        }
-
-    //_pipelines.emplace_back(std::move(pipeline));
-    return 0;
-}
-
-void
-VulkanContext::DestroyPipeline(DPipeline pipeline)
-{
-    // We destroy only the pipeline, the pipeline layouts are destroyed with the device
-    DPipelineVulkan* pipelineVulkan = static_cast<DPipelineVulkan*>(pipeline);
-
-    _deferDestruction([this, pipelineVulkan]() {
-        Device.DestroyPipeline(pipelineVulkan->Pipeline);
-
-        //_pipelines.erase(std::find_if(_pipelines.begin(), _pipelines.end(), [pipelineVulkan](const DPipelineVulkan& b) { return &b == pipelineVulkan; }));
-    });
-}
-
 void
 VulkanContext::_deferDestruction(DeleteFn&& fn)
 {
@@ -896,19 +806,22 @@ VulkanContext::_deferDestruction(DeleteFn&& fn)
 }
 
 VkPipeline
-VulkanContext::_createPipeline(VkPipelineLayout pipelineLayout, VkRenderPass renderPass, const std::vector<VkPipelineShaderStageCreateInfo>& shaderStages, const PipelineFormat& format)
+VulkanContext::_createPipeline(VkPipelineLayout     pipelineLayout,
+VkRenderPass                                        renderPass,
+const std::vector<VkPipelineShaderStageCreateInfo>& shaderStages,
+const PipelineFormat&                               format,
+const DVertexInputLayoutVulkan&                     vertexLayout,
+uint32_t                                            stride)
 {
     // Create pipeline
     VkPipeline graphicsPipeline{};
     {
         // Binding
-        check(format.VertexInput > 0);
-        check(_vertexLayouts.at(ResourceId(format.VertexInput).Value()).Id != NULL);
-        const auto vertexInputAttributes = _vertexLayouts.at(ResourceId(format.VertexInput).Value()).VertexInputAttributes;
+        const auto vertexInputAttributes = vertexLayout.VertexInputAttributes;
 
         VkVertexInputBindingDescription inputBinding{};
         inputBinding.binding   = 0;
-        inputBinding.stride    = format.VertexStrideBytes;
+        inputBinding.stride    = stride;
         inputBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
         // Attributes
         RIVulkanPipelineBuilder pipe(shaderStages, { inputBinding }, vertexInputAttributes, pipelineLayout, renderPass);
@@ -921,7 +834,7 @@ VulkanContext::_createPipeline(VkPipelineLayout pipelineLayout, VkRenderPass ren
                     pipe.SetPolygonMode(VK_POLYGON_MODE_FILL);
                     break;
                 case EFillMode::LINE:
-                    pipe.SetPolygonMode(VK_POLYGON_MODE_FILL);
+                    pipe.SetPolygonMode(VK_POLYGON_MODE_LINE);
                     break;
                 default:
                     check(0);
@@ -1153,8 +1066,9 @@ VulkanContext::AdvanceFrame()
                     {
                         for (const auto& draw : pass.DrawCommands)
                             {
-                                auto shader         = GetResource<DShaderVulkan, EResourceType::SHADER, MAX_RESOURCES>(_shaders, draw.Shader);
-                                auto pipeline       = shader.Pipelines;
+                                auto& shader = GetResource<DShaderVulkan, EResourceType::SHADER, MAX_RESOURCES>(_shaders, draw.Shader);
+
+                                auto pipeline       = _queryPipelineFromAttachmentsAndFormat(shader, pass.RenderPass, draw.PipelineFormat);
                                 auto pipelineLayout = shader.PipelineLayout;
 
                                 // Bind pipeline
@@ -1433,6 +1347,25 @@ VulkanContext::_performCopyOperations()
         // Clear all transfer commands we've processed
         _transferCommands.erase(_transferCommands.begin(), it);
     }
+}
+
+VkPipeline
+VulkanContext::_queryPipelineFromAttachmentsAndFormat(DShaderVulkan& shader, const DRenderPassAttachments& renderPass, const PipelineFormat& format)
+{
+    auto& permutationMap = shader.RenderPassFormatToPipelinePermutationMap[renderPass.Attachments];
+
+    auto foundPipeline = permutationMap.Pipeline.find(format);
+    if (foundPipeline != permutationMap.Pipeline.end())
+        {
+            return foundPipeline->second;
+        }
+
+    // Create on the fly
+    auto       renderPassVk         = _createRenderPass(renderPass);
+    auto&      vertexLayout         = GetResource<DVertexInputLayoutVulkan, EResourceType::VERTEX_INPUT_LAYOUT, MAX_RESOURCES>(_vertexLayouts, shader.VertexLayout);
+    VkPipeline pipeline             = _createPipeline(shader.PipelineLayout, renderPassVk, shader.ShaderStageCreateInfo, format, vertexLayout, shader.VertexStride);
+    permutationMap.Pipeline[format] = pipeline;
+    return pipeline;
 }
 
 void

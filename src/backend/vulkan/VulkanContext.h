@@ -41,6 +41,7 @@ struct DFramebufferVulkan : public DResource
     /*Per frame or single framebuffer*/
     std::vector<VkFramebuffer> Framebuffers;
     uint32_t                   Width{}, Height{};
+    DRenderPassAttachments     Attachments;
     RIVkRenderPassInfo         RenderPassInfo;
 };
 
@@ -70,10 +71,9 @@ struct DPipelineVulkan : public DPipeline_T
     std::vector<EFormat> Attachments;
 };
 
-struct DPipelineAndLayoutVulkan
+struct DPipelinePermutations
 {
-    VkPipeline       Pipeline{};
-    VkPipelineLayout PipelineLayout{};
+    std::unordered_map<PipelineFormat, VkPipeline, PipelineFormatHashFn, PipelineFormatEqualFn> Pipeline{};
 };
 
 struct DShaderVulkan : public DResource
@@ -83,14 +83,16 @@ struct DShaderVulkan : public DResource
     VkShaderModule                               VertexShaderModule{};
     VkShaderModule                               PixelShaderModule{};
     std::vector<VkPipelineShaderStageCreateInfo> ShaderStageCreateInfo;
-    DRenderPassAttachments                       RenderPassAttachments;
+    uint32_t                                     ColorAttachments{ 1 };
+    bool                                         DepthStencilAttachment{};
     /*Since VkDescriptorSetLayout are cached it can be used by multiple shaders, be careful when deleting*/
     std::vector<VkDescriptorSetLayout> DescriptorSetLayouts;
     /*Since pipeline layouts are cached it can be used by multiple shaders, be careful when deleting*/
     VkPipelineLayout PipelineLayout{};
 
     // Hash to pipeline map
-    VkPipeline Pipelines{};
+    std::unordered_map<std::vector<DRenderPassAttachment>, DPipelinePermutations, DRenderPassAttachmentsFormatsOnlyHashFn, DRenderPassAttachmentsFormatsOnlyEqualFn>
+    RenderPassFormatToPipelinePermutationMap;
 };
 
 class VulkanContext final : public IContext
@@ -115,8 +117,6 @@ class VulkanContext final : public IContext
     VertexInputLayoutId CreateVertexLayout(const std::vector<VertexLayoutInfo>& info) override;
     ShaderId            CreateShader(const ShaderSource& source) override;
     void                DestroyShader(const ShaderId shader) override;
-    DPipeline           CreatePipeline(const ShaderSource& shader, const PipelineFormat& format, const std::vector<EFormat>& attachments);
-    void                DestroyPipeline(DPipeline pipeline);
 
     void SubmitPass(RenderPassData&& data) override;
     void SubmitCopy(CopyDataCommand&& data) override;
@@ -223,9 +223,15 @@ class VulkanContext final : public IContext
     void               _performCopyOperations();
     void               _submitCommands(const std::vector<VkSemaphore>& imageAvailableSemaphores);
     void               _deferDestruction(DeleteFn&& fn);
-    VkPipeline         _createPipeline(VkPipelineLayout pipelineLayout, VkRenderPass renderPass, const std::vector<VkPipelineShaderStageCreateInfo>& shaderStages, const PipelineFormat& format);
+    VkPipeline         _createPipeline(VkPipelineLayout         pipelineLayout,
+            VkRenderPass                                        renderPass,
+            const std::vector<VkPipelineShaderStageCreateInfo>& shaderStages,
+            const PipelineFormat&                               format,
+            const DVertexInputLayoutVulkan&                     vertexLayout,
+            uint32_t                                            stride);
     void               _recreateSwapchainBlocking(DSwapchainVulkan& swapchain);
     RIVkRenderPassInfo _computeFramebufferAttachmentsRenderPassInfo(const std::vector<VkFormat>& attachmentFormat);
+    VkPipeline         _queryPipelineFromAttachmentsAndFormat(DShaderVulkan& shader, const DRenderPassAttachments& renderPass, const PipelineFormat& format);
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL _vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT                                                                   messageType,

@@ -151,9 +151,6 @@ enum ERIBlendMode
 
 struct PipelineFormat
 {
-    VertexInputLayoutId VertexInput;
-    uint32_t            VertexStrideBytes;
-
     ETopology    Topology{ ETopology::TRIANGLE_LIST };
     EFillMode    FillMode{ EFillMode::FILL };
     ECullMode    CullMode{ ECullMode::NONE };
@@ -162,8 +159,40 @@ struct PipelineFormat
     EDepthTest   DepthTestMode{ EDepthTest::ALWAYS };
     bool         StencilTest{ false };
     ERIBlendMode BlendMode{ ERIBlendMode::DefaultBlendMode };
+};
 
-    PipelineFormat(VertexInputLayoutId vertexLayout, uint32_t stride) : VertexInput(vertexLayout), VertexStrideBytes(stride){};
+struct PipelineFormatHashFn
+{
+    size_t operator()(const PipelineFormat& lhs) const
+    {
+        size_t seed{};
+
+        seed = std::hash<uint32_t>{}((uint32_t)lhs.Topology);
+        seed += std::hash<uint32_t>{}((uint32_t)lhs.FillMode);
+        seed += std::hash<uint32_t>{}((uint32_t)lhs.CullMode);
+        seed ^= (uint32_t)lhs.DepthTest + (uint32_t)lhs.DepthWrite;
+        seed ^= std::hash<uint32_t>{}((uint32_t)lhs.DepthTestMode + 1);
+        seed += lhs.StencilTest;
+        seed ^= std::hash<uint32_t>{}((uint32_t)lhs.BlendMode + 1);
+        return seed;
+    };
+};
+
+struct PipelineFormatEqualFn
+{
+    bool operator()(const PipelineFormat& lhs, const PipelineFormat& rhs) const
+    {
+        const bool topology      = lhs.Topology == rhs.Topology;
+        const bool fillMode      = lhs.FillMode == rhs.FillMode;
+        const bool cullMode      = lhs.CullMode == rhs.CullMode;
+        const bool depthTest     = lhs.DepthTest == rhs.DepthTest;
+        const bool depthWrite    = lhs.DepthWrite == rhs.DepthWrite;
+        const bool depthTestMode = lhs.DepthTestMode == rhs.DepthTestMode;
+        const bool stencilTest   = lhs.StencilTest == rhs.StencilTest;
+        const bool blendMode     = lhs.BlendMode == rhs.BlendMode;
+
+        return topology && fillMode && cullMode && depthTest && depthWrite && depthTestMode && stencilTest && blendMode;
+    };
 };
 
 struct DViewport
@@ -248,6 +277,70 @@ struct DRenderPassAttachment
     ERenderPassLayout             finalLayout,
     EAttachmentReference          attachmentReferenceLayout)
       : Format(format), Samples(sampleBit), LoadOP(loadOp), StoreOP(storeOp), InitialLayout(initLayout), FinalLayout(finalLayout), AttachmentReferenceLayout(attachmentReferenceLayout){};
+};
+
+struct DRenderPassAttachmentHashFn
+{
+    size_t operator()(const DRenderPassAttachment& lhs) const
+    {
+        size_t seed{};
+
+        seed ^= std::hash<size_t>{}((size_t)lhs.Format);
+        seed += std::hash<size_t>{}((size_t)lhs.Samples);
+        seed ^= std::hash<size_t>{}((size_t)lhs.LoadOP) + std::hash<size_t>{}((size_t)lhs.StoreOP);
+        seed ^= std::hash<size_t>{}((size_t)lhs.InitialLayout) + std::hash<size_t>{}((size_t)lhs.FinalLayout);
+        seed += std::hash<size_t>{}((size_t)lhs.AttachmentReferenceLayout);
+        return seed;
+    };
+};
+
+struct DRenderPassAttachmentsFormatsOnlyHashFn
+{
+    size_t operator()(const std::vector<DRenderPassAttachment>& lhs) const
+    {
+        size_t seed{ lhs.size() };
+        for (const auto& format : lhs)
+            {
+                seed ^= std::hash<size_t>{}((size_t)format.Format * lhs.size());
+            }
+        return seed;
+    };
+};
+
+struct DRenderPassAttachmentsEqualFn
+{
+    bool operator()(const DRenderPassAttachment& lhs, const DRenderPassAttachment& rhs) const
+    {
+        const bool format                    = lhs.Format == rhs.Format;
+        const bool samples                   = lhs.Samples == rhs.Samples;
+        const bool loadOP                    = lhs.LoadOP == rhs.LoadOP;
+        const bool storeOP                   = lhs.StoreOP == rhs.StoreOP;
+        const bool initialLayout             = lhs.InitialLayout == rhs.InitialLayout;
+        const bool finalLayout               = lhs.FinalLayout == rhs.FinalLayout;
+        const bool attachmentReferenceLayout = lhs.AttachmentReferenceLayout == rhs.AttachmentReferenceLayout;
+        return format && samples && loadOP && storeOP && initialLayout && finalLayout && attachmentReferenceLayout;
+    };
+};
+
+struct DRenderPassAttachmentsFormatsOnlyEqualFn
+{
+    bool operator()(const std::vector<DRenderPassAttachment>& lhs, const std::vector<DRenderPassAttachment>& rhs) const
+    {
+        if (lhs.size() != rhs.size())
+            {
+                return false;
+            }
+
+        for (size_t i = 0; i < lhs.size(); i++)
+            {
+                if (lhs[i].Format != rhs[i].Format)
+                    {
+                        return false;
+                    }
+            }
+
+        return true;
+    };
 };
 
 struct DRenderPassAttachments
@@ -365,12 +458,12 @@ struct ShaderByteCode
 
 struct ShaderSource
 {
-    ShaderByteCode         SourceCode;
-    ShaderLayout           SetsLayout;
-    VertexInputLayoutId    VertexLayout{};
-    uint32_t               VertexStride{};
-    std::vector<EFormat>   ColorAttachments;
-    std::optional<EFormat> DepthStencilAttachment{};
+    ShaderByteCode      SourceCode;
+    ShaderLayout        SetsLayout;
+    VertexInputLayoutId VertexLayout{};
+    uint32_t            VertexStride{};
+    uint32_t            ColorAttachments{};
+    bool                DepthStencilAttachment{};
 };
 
 struct SetBinding
@@ -384,7 +477,8 @@ struct SetBinding
 struct DrawCommand
 {
     // Ctor
-    ShaderId Shader;
+    ShaderId       Shader;
+    PipelineFormat PipelineFormat;
     // Bind... functions
     std::map<uint32_t /*set*/, std::map<uint32_t /*binding*/, SetBinding>> DescriptorSetBindings;
     // Draw... functions

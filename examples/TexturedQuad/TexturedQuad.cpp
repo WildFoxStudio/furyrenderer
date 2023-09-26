@@ -234,7 +234,8 @@ main()
         shaderSource.SetsLayout.SetsLayout[0].insert({ 0, Fox::ShaderDescriptorBindings("MatrixUbo", Fox::EBindingType::UNIFORM_BUFFER_OBJECT, sizeof(float) * 16, 1, Fox::EShaderStage::VERTEX) });
         shaderSource.SetsLayout.SetsLayout[1].insert({ 0, Fox::ShaderDescriptorBindings("MyTexture", Fox::EBindingType::SAMPLER, 1, 1, Fox::EShaderStage::FRAGMENT) });
 
-        shaderSource.ColorAttachments.push_back(format);
+        shaderSource.ColorAttachments       = 1;
+        shaderSource.DepthStencilAttachment = false;
 
         Fox::ShaderId shader = context->CreateShader(shaderSource);
 
@@ -284,10 +285,16 @@ main()
             context->SubmitCopy(std::move(copy));
         }
 
+        bool wireFrame{};
         while (!glfwWindowShouldClose(window))
             {
                 // Keep running
                 glfwPollEvents();
+
+                if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+                    {
+                        wireFrame = !wireFrame;
+                    }
 
                 int w, h;
                 glfwGetWindowSize(window, &w, &h);
@@ -308,6 +315,7 @@ main()
                 draw.ClearColor(1, 0, 0, 1);
 
                 Fox::DrawCommand drawTriangle(shader);
+                drawTriangle.PipelineFormat.FillMode = wireFrame ? Fox::EFillMode::LINE : Fox::EFillMode::FILL;
                 drawTriangle.BindBufferUniformBuffer(0, 0, transformUniformBuffer);
                 drawTriangle.BindImageArray(1, 0, { texture });
                 drawTriangle.Draw(quad, 0, 6);
