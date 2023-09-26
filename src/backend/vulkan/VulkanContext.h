@@ -54,7 +54,6 @@ struct DSwapchainVulkan : public DResource
     std::vector<VkImage>     Images;
     std::vector<VkImageView> ImageViews;
     FramebufferId            Framebuffers{};
-    // std::vector<VkFramebuffer> Framebuffers;
     std::vector<VkSemaphore> ImageAvailableSemaphore;
     uint32_t                 CurrentImageIndex{};
 };
