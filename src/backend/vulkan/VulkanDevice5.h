@@ -16,11 +16,11 @@ struct RIVulkanImage
 {
     VkImage           Image{};
     VmaAllocation     Allocation{};
-    VkFormat          Format;
-    uint32_t          Width;
-    uint32_t          Height;
-    uint32_t          MipLevels;
-    VkImageUsageFlags UsageFlags;
+    VkFormat          Format{};
+    uint32_t          Width{};
+    uint32_t          Height{};
+    uint32_t          MipLevels{};
+    VkImageUsageFlags UsageFlags{};
 };
 
 class RIVulkanImageHasher

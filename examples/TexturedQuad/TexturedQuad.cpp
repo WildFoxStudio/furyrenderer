@@ -210,10 +210,11 @@ main()
         windowData._hwnd     = glfwGetWin32Window(window);
         windowData._instance = GetModuleHandle(NULL);
 
-        Fox::DSwapchain swapchain;
-        auto            presentMode = Fox::EPresentMode::IMMEDIATE_KHR;
-        auto            format      = Fox::EFormat::B8G8R8A8_UNORM;
-        if (!context->CreateSwapchain(&windowData, presentMode, format, &swapchain))
+        Fox::SwapchainId swapchain;
+        auto             presentMode = Fox::EPresentMode::IMMEDIATE_KHR;
+        auto             format      = Fox::EFormat::B8G8R8A8_UNORM;
+        swapchain                    = context->CreateSwapchain(&windowData, presentMode, format);
+        if (swapchain == NULL)
             {
                 throw std::runtime_error("Failed to CreateSwapchain");
             }
@@ -261,7 +262,7 @@ main()
         copy.CopyVertex(quad, 0, (void*)ndcQuad.data(), bufSize);
         context->SubmitCopy(std::move(copy));
 
-        Fox::DFramebuffer swapchainFbo = context->CreateSwapchainFramebuffer(swapchain);
+        Fox::FramebufferId swapchainFbo = context->CreateSwapchainFramebuffer(swapchain);
 
         Fox::DRenderPassAttachment  colorAttachment(format,
         Fox::ESampleBit::COUNT_1_BIT,
@@ -322,6 +323,7 @@ main()
         context->DestroyImage(texture);
         context->DestroyBuffer(quad);
         context->DestroyBuffer(transformUniformBuffer);
+        context->DestroyFramebuffer(swapchainFbo);
         context->DestroySwapchain(swapchain);
 
         glfwDestroyWindow(window);

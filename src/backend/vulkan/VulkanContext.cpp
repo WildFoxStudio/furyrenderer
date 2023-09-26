@@ -11,6 +11,16 @@
 
 namespace Fox
 {
+
+static constexpr uint8_t PENDING_DESTROY = 0xFF;
+static constexpr uint8_t FREE            = 0x00;
+
+static bool
+IsValidId(uint8_t id)
+{
+    return id != FREE && id != PENDING_DESTROY;
+};
+
 template<class T, EResourceType type, size_t maxSize>
 inline T&
 GetResource(std::array<T, maxSize>& container, uint32_t id)
@@ -19,7 +29,19 @@ GetResource(std::array<T, maxSize>& container, uint32_t id)
     check(resourceId.First() == type); // Invalid resource id
     check(resourceId.Value() < maxSize); // Must be less than array size
     T& element = container.at(resourceId.Value());
-    check(element.Id != NULL); // The object must have not been destroyed
+    check(IsValidId(element.Id)); // The object must be in valid state
+    check(element.Id == resourceId.Second()); // The object must have not been destroyed previously and reallocated
+    return element;
+};
+
+template<class T, EResourceType type, size_t maxSize>
+inline T&
+GetResourceUnsafe(std::array<T, maxSize>& container, uint32_t id)
+{
+    const auto resourceId = ResourceId(id);
+    check(resourceId.First() == type); // Invalid resource id
+    check(resourceId.Value() < maxSize); // Must be less than array size
+    T& element = container.at(resourceId.Value());
     return element;
 };
 
@@ -52,7 +74,7 @@ AllocResource(std::array<T, maxSize>& container)
             T& element = container.at(i);
             if (element.Id == NULL)
                 {
-                    memset(&element, NULL, sizeof(T));
+                    // memset(&element, NULL, sizeof(T));//Only works with POD style
                     element.Id = GenIdentifier();
                     return i;
                 }
@@ -90,10 +112,6 @@ VulkanContext::VulkanContext(const DContextConfig* const config) : _warningOutpu
 
     // Avoid reallocations as much as possible
     _vertexLayouts.reserve(1024);
-
-    memset(_shaders.data(), NULL, sizeof(_shaders));
-    memset(_vertexBuffers.data(), NULL, sizeof(_vertexBuffers));
-    memset(_uniformBuffers.data(), NULL, sizeof(_uniformBuffers));
 }
 
 void
@@ -241,7 +259,19 @@ VulkanContext::_deinitializeStagingBuffer()
 
 VulkanContext::~VulkanContext()
 {
-    check(_swapchains.size() == 0);
+#if _DEBUG
+    const auto validSwapchainsCount = std::count_if(_swapchains.begin(), _swapchains.end(), [](const DSwapchainVulkan& swapchain) { return IsValidId(swapchain.Id); });
+    check(validSwapchainsCount == 0);
+    const auto validVertexBufferCount = std::count_if(_vertexBuffers.begin(), _vertexBuffers.end(), [](const DBufferVulkan& buffer) { return IsValidId(buffer.Id); });
+    check(validVertexBufferCount == 0);
+    const auto validUniformBufferCount = std::count_if(_uniformBuffers.begin(), _uniformBuffers.end(), [](const DBufferVulkan& buffer) { return IsValidId(buffer.Id); });
+    check(validUniformBufferCount == 0);
+    const auto validFramebufferCount = std::count_if(_framebuffers.begin(), _framebuffers.end(), [](const DFramebufferVulkan& buffer) { return IsValidId(buffer.Id); });
+    check(validFramebufferCount == 0);
+    const auto validShaderCount = std::count_if(_shaders.begin(), _shaders.end(), [](const DShaderVulkan& shader) { return IsValidId(shader.Id); });
+    check(validShaderCount == 0);
+#endif
+
     vkDeviceWaitIdle(Device.Device);
 
     // Wait for all fences to signal
@@ -292,8 +322,19 @@ VulkanContext::~VulkanContext()
     Instance.Deinit();
 }
 
-bool
-VulkanContext::CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat, DSwapchain* swapchain)
+SwapchainId
+VulkanContext::CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat)
+{
+    const auto        index     = AllocResource<DSwapchainVulkan, MAX_RESOURCES>(_swapchains);
+    DSwapchainVulkan& swapchain = _swapchains.at(index);
+
+    _createSwapchain(swapchain, windowData, presentMode, outFormat);
+
+    return *ResourceId(EResourceType::SWAPCHAIN, swapchain.Id, index);
+}
+
+void
+VulkanContext::_createSwapchain(DSwapchainVulkan& swapchain, const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat)
 {
     VkSurfaceKHR surface{};
     {
@@ -327,15 +368,14 @@ VulkanContext::CreateSwapchain(const WindowData* windowData, EPresentMode& prese
             }
     }
 
-    DSwapchainVulkan swapchainVulkan{};
-    swapchainVulkan.Surface      = surface;
-    swapchainVulkan.Capabilities = capabilities;
-    swapchainVulkan.Format       = formats.at(0);
-    swapchainVulkan.PresentMode  = vkPresentMode;
-    swapchainVulkan.Swapchain    = vkSwapchain;
-    swapchainVulkan.Images       = Device.GetSwapchainImages(vkSwapchain);
+    swapchain.Surface      = surface;
+    swapchain.Capabilities = capabilities;
+    swapchain.Format       = formats.at(0);
+    swapchain.PresentMode  = vkPresentMode;
+    swapchain.Swapchain    = vkSwapchain;
+    swapchain.Images       = Device.GetSwapchainImages(vkSwapchain);
 
-    std::transform(swapchainVulkan.Images.begin(), swapchainVulkan.Images.end(), std::back_inserter(swapchainVulkan.ImageViews), [this, format = swapchainVulkan.Format.format](const VkImage& image) {
+    std::transform(swapchain.Images.begin(), swapchain.Images.end(), std::back_inserter(swapchain.ImageViews), [this, format = swapchain.Format.format](const VkImage& image) {
         VkImageView imageView{};
         const auto  result = Device.CreateImageView(format, image, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, &imageView);
         if (VKFAILED(result))
@@ -345,41 +385,58 @@ VulkanContext::CreateSwapchain(const WindowData* windowData, EPresentMode& prese
         return imageView;
     });
 
-    std::generate_n(std::back_inserter(swapchainVulkan.ImageAvailableSemaphore), NUM_OF_FRAMES_IN_FLIGHT, [this]() { return Device.CreateVkSemaphore(); });
-
-    _swapchains.emplace_back(std::move(swapchainVulkan));
-
-    *swapchain = &_swapchains.back();
-    return true;
+    std::generate_n(std::back_inserter(swapchain.ImageAvailableSemaphore), NUM_OF_FRAMES_IN_FLIGHT, [this]() { return Device.CreateVkSemaphore(); });
 }
 
 void
-VulkanContext::DestroySwapchain(const DSwapchain swapchain)
+VulkanContext::DestroySwapchain(SwapchainId swapchainId)
 {
-    vkDeviceWaitIdle(Device.Device);
+    ResourceId resource(swapchainId);
 
-    DSwapchainVulkan* vkSwapchain = static_cast<DSwapchainVulkan*>(swapchain);
+    check(resource.First() == EResourceType::SWAPCHAIN);
 
-    std::for_each(vkSwapchain->ImageViews.begin(), vkSwapchain->ImageViews.end(), [this](const VkImageView& imageView) { Device.DestroyImageView(imageView); });
-    vkSwapchain->ImageViews.clear();
+    DSwapchainVulkan& swapchain = GetResource<DSwapchainVulkan, EResourceType::SWAPCHAIN, MAX_RESOURCES>(_swapchains, swapchainId);
 
-    std::for_each(vkSwapchain->ImageAvailableSemaphore.begin(), vkSwapchain->ImageAvailableSemaphore.end(), [this](const VkSemaphore& semaphore) { Device.DestroyVkSemaphore(semaphore); });
-    vkSwapchain->ImageAvailableSemaphore.clear();
+    check(swapchain.Framebuffers == NULL); // Must destroy framebuffer first
+    {
+        vkDeviceWaitIdle(Device.Device);
 
-    Device.DestroySwapchain(vkSwapchain->Swapchain);
-    Instance.DestroySurface(vkSwapchain->Surface);
+        swapchain.Images.clear();
 
-    _swapchains.erase(std::find_if(_swapchains.begin(), _swapchains.end(), [swapchain](const DSwapchainVulkan& s) { return &s == swapchain; }));
+        std::for_each(swapchain.ImageViews.begin(), swapchain.ImageViews.end(), [this](const VkImageView& imageView) { Device.DestroyImageView(imageView); });
+        swapchain.ImageViews.clear();
+
+        std::for_each(swapchain.ImageAvailableSemaphore.begin(), swapchain.ImageAvailableSemaphore.end(), [this](const VkSemaphore& semaphore) { Device.DestroyVkSemaphore(semaphore); });
+        swapchain.ImageAvailableSemaphore.clear();
+
+        Device.DestroySwapchain(swapchain.Swapchain);
+        Instance.DestroySurface(swapchain.Surface);
+
+        swapchain.Id = NULL;
+    }
 }
 
-DFramebuffer
-VulkanContext::CreateSwapchainFramebuffer(DSwapchain swapchain, DImage depth)
+FramebufferId
+VulkanContext::CreateSwapchainFramebuffer(SwapchainId swapchainId, DImage depth)
 {
-    check(static_cast<DSwapchainVulkan*>(swapchain)->Framebuffers == nullptr);
 
-    const auto  swapchainFormat     = static_cast<DSwapchainVulkan*>(swapchain)->Format.format;
-    const auto& swapchainImageViews = static_cast<DSwapchainVulkan*>(swapchain)->ImageViews;
-    const auto& capabilities        = static_cast<DSwapchainVulkan*>(swapchain)->Capabilities;
+    const auto          index       = AllocResource<DFramebufferVulkan, MAX_RESOURCES>(_framebuffers);
+    DFramebufferVulkan& framebuffer = _framebuffers.at(index);
+
+    DSwapchainVulkan& swapchain = GetResource<DSwapchainVulkan, EResourceType::SWAPCHAIN, MAX_RESOURCES>(_swapchains, swapchainId);
+    swapchain.Framebuffers      = *ResourceId(EResourceType::FRAMEBUFFER, framebuffer.Id, index);
+
+    _createFramebufferFromSwapchain(swapchain, depth);
+
+    return swapchain.Framebuffers;
+}
+
+void
+VulkanContext::_createFramebufferFromSwapchain(DSwapchainVulkan& swapchain, DImage depth)
+{
+    const auto  swapchainFormat     = swapchain.Format.format;
+    const auto& swapchainImageViews = swapchain.ImageViews;
+    const auto& capabilities        = swapchain.Capabilities;
 
     std::vector<VkFormat> attachments{ swapchainFormat };
     if (depth)
@@ -387,12 +444,14 @@ VulkanContext::CreateSwapchainFramebuffer(DSwapchain swapchain, DImage depth)
             attachments.push_back(static_cast<DImageVulkan*>(depth)->Image.Format);
         }
 
-    DFramebufferVulkan vulkanFramebuffer;
-    vulkanFramebuffer.RenderPassInfo = _computeFramebufferAttachmentsRenderPassInfo(attachments);
+    DFramebufferVulkan& framebuffer = GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, swapchain.Framebuffers);
+    framebuffer.Depth               = static_cast<DImageVulkan*>(depth);
 
-    VkRenderPass renderPass = _createRenderPassFromInfo(vulkanFramebuffer.RenderPassInfo);
+    framebuffer.RenderPassInfo = _computeFramebufferAttachmentsRenderPassInfo(attachments);
 
-    std::transform(swapchainImageViews.begin(), swapchainImageViews.end(), std::back_inserter(vulkanFramebuffer.Framebuffers), [this, &capabilities, renderPass, depth](VkImageView view) {
+    VkRenderPass renderPass = _createRenderPassFromInfo(framebuffer.RenderPassInfo);
+
+    std::transform(swapchainImageViews.begin(), swapchainImageViews.end(), std::back_inserter(framebuffer.Framebuffers), [this, &capabilities, renderPass, depth](VkImageView view) {
         std::vector<VkImageView> views{ view };
         if (depth)
             {
@@ -401,26 +460,31 @@ VulkanContext::CreateSwapchainFramebuffer(DSwapchain swapchain, DImage depth)
 
         return Device.CreateFramebuffer(views, capabilities.currentExtent.width, capabilities.currentExtent.height, renderPass);
     });
-    vulkanFramebuffer.Width  = capabilities.currentExtent.width;
-    vulkanFramebuffer.Height = capabilities.currentExtent.height;
-
-    _framebuffers.emplace_back(std::move(vulkanFramebuffer));
-
-    // Assign swapchain the framebuffer
-    static_cast<DSwapchainVulkan*>(swapchain)->Framebuffers = &_framebuffers.back();
-
-    return static_cast<DSwapchainVulkan*>(swapchain)->Framebuffers;
+    framebuffer.Width  = capabilities.currentExtent.width;
+    framebuffer.Height = capabilities.currentExtent.height;
 }
 
 void
-VulkanContext::DestroyFramebuffer(DFramebuffer framebuffer)
+VulkanContext::DestroyFramebuffer(FramebufferId framebufferId)
 {
-    DFramebufferVulkan* fboVulkan = static_cast<DFramebufferVulkan*>(framebuffer);
-    _deferDestruction([this, fboVulkan]() {
-        std::for_each(fboVulkan->Framebuffers.begin(), fboVulkan->Framebuffers.end(), [this](const VkFramebuffer& framebuffer) { Device.DestroyFramebuffer(framebuffer); });
-        fboVulkan->Framebuffers.clear();
+    auto& framebuffer = GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, framebufferId);
+    check(IsValidId(framebuffer.Id));
+    framebuffer.Id = PENDING_DESTROY;
 
-        _framebuffers.erase(std::find_if(_framebuffers.begin(), _framebuffers.end(), [fboVulkan](const DFramebufferVulkan& s) { return &s == fboVulkan; }));
+    // Find if the framebuffer is from a swapchain, remove it from the swapchain
+    auto foundSwapchain = std::find_if(_swapchains.begin(), _swapchains.end(), [framebufferId](const DSwapchainVulkan& swapchain) { return swapchain.Framebuffers == framebufferId; });
+    if (foundSwapchain != _swapchains.end())
+        {
+            foundSwapchain->Framebuffers = NULL;
+        }
+
+    _deferDestruction([this, framebufferId]() {
+        DFramebufferVulkan& framebuffer = GetResourceUnsafe<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, framebufferId);
+
+        std::for_each(framebuffer.Framebuffers.begin(), framebuffer.Framebuffers.end(), [this](const VkFramebuffer& framebuffer) { Device.DestroyFramebuffer(framebuffer); });
+        framebuffer.Framebuffers.clear();
+
+        framebuffer.Id = FREE;
     });
 }
 
@@ -468,18 +532,31 @@ VulkanContext::DestroyBuffer(BufferId buffer)
     check(resource.First() == EResourceType::VERTEX_INDEX_BUFFER || resource.First() == EResourceType::UNIFORM_BUFFER);
     check(_vertexBuffers.at(resource.Value()).Id == resource.Second() || _uniformBuffers.at(resource.Value()).Id == resource.Second());
 
+    if (resource.First() == EResourceType::UNIFORM_BUFFER)
+        {
+            DBufferVulkan& buffer = _uniformBuffers.at(resource.Value());
+            check(IsValidId(buffer.Id));
+            buffer.Id = PENDING_DESTROY;
+        }
+    else if (resource.First() == EResourceType::VERTEX_INDEX_BUFFER)
+        {
+            DBufferVulkan& buffer = _vertexBuffers.at(resource.Value());
+            check(IsValidId(buffer.Id));
+            buffer.Id = PENDING_DESTROY;
+        }
+
     _deferDestruction([this, resource]() {
-        if (resource.Second() == EResourceType::UNIFORM_BUFFER)
+        if (resource.First() == EResourceType::UNIFORM_BUFFER)
             {
                 DBufferVulkan& buffer = _uniformBuffers.at(resource.Value());
                 Device.DestroyBuffer(buffer.Buffer);
-                buffer.Id = 0;
+                buffer.Id = FREE;
             }
-        else if (resource.Second() == EResourceType::VERTEX_INDEX_BUFFER)
+        else if (resource.First() == EResourceType::VERTEX_INDEX_BUFFER)
             {
                 DBufferVulkan& buffer = _vertexBuffers.at(resource.Value());
                 Device.DestroyBuffer(buffer.Buffer);
-                buffer.Id = 0;
+                buffer.Id = FREE;
             }
     });
 }
@@ -658,6 +735,8 @@ VulkanContext::DestroyShader(const ShaderId shader)
 {
     check(ResourceId(shader).First() == EResourceType::SHADER);
     const auto index = ResourceId(shader).Value();
+    check(IsValidId(_shaders.at(index).Id));
+    _shaders.at(index).Id = PENDING_DESTROY;
 
     _deferDestruction([this, index]() {
         DShaderVulkan& shaderVulkan = _shaders.at(index);
@@ -670,7 +749,7 @@ VulkanContext::DestroyShader(const ShaderId shader)
 
         // Find if other shaders share the same pipeline layout
         const auto foundIt =
-        std::find_if(_shaders.begin(), _shaders.end(), [shaderVulkan](const DShaderVulkan& shader) { return (&shader != &shaderVulkan) && (shader.PipelineLayout == shaderVulkan.PipelineLayout); });
+        std::find_if(_shaders.begin(), _shaders.end(), [shaderVulkan](const DShaderVulkan& shader) { return IsValidId(shader.Id) && (shader.PipelineLayout == shaderVulkan.PipelineLayout); });
 
         // If not found means that no other shader use the same pipeline layout
         if (foundIt == _shaders.end())
@@ -693,7 +772,7 @@ VulkanContext::DestroyShader(const ShaderId shader)
                     }
             }
 
-        _shaders.at(index).Id = NULL;
+        _shaders.at(index).Id = FREE;
     });
 }
 
@@ -953,6 +1032,11 @@ VulkanContext::AdvanceFrame()
     {
         for (auto& swapchain : _swapchains)
             {
+                if (swapchain.Id == NULL)
+                    {
+                        continue;
+                    }
+
                 const VkResult result = Device.AcquireNextImage(swapchain.Swapchain, UINT64_MAX, &swapchain.CurrentImageIndex, swapchain.ImageAvailableSemaphore[_frameIndex], VK_NULL_HANDLE);
                 /*Spec: https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkQueueSubmit.html*/
                 /*
@@ -988,7 +1072,7 @@ VulkanContext::AdvanceFrame()
                         case VK_SUBOPTIMAL_KHR:
                         case VK_ERROR_OUT_OF_DATE_KHR:
                             {
-                                _recreateSwapchainBlocking(&swapchain);
+                                _recreateSwapchainBlocking(swapchain);
                                 const VkResult lastResult =
                                 Device.AcquireNextImage(swapchain.Swapchain, UINT64_MAX, &swapchain.CurrentImageIndex, swapchain.ImageAvailableSemaphore[_frameIndex], VK_NULL_HANDLE);
                                 if (VKFAILED(lastResult))
@@ -1026,24 +1110,24 @@ VulkanContext::AdvanceFrame()
                         renderPassInfo.sType      = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
                         renderPassInfo.renderPass = _createRenderPass(pass.RenderPass);
 
-                        DFramebufferVulkan* framebufferVulkan = static_cast<DFramebufferVulkan*>(pass.Framebuffer);
+                        DFramebufferVulkan& framebuffer = GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, pass.Framebuffer);
                         {
                             // Bind framebuffer or swapchain framebuffer based on the current image index
-                            if (framebufferVulkan->Framebuffers.size() == 1)
+                            if (framebuffer.Framebuffers.size() == 1)
                                 {
-                                    renderPassInfo.framebuffer = framebufferVulkan->Framebuffers.front();
+                                    renderPassInfo.framebuffer = framebuffer.Framebuffers.front();
                                 }
                             else
                                 {
-                                    auto swapchain = std::find_if(
-                                    _swapchains.begin(), _swapchains.end(), [framebufferVulkan](const DSwapchainVulkan& swapchain) { return swapchain.Framebuffers == framebufferVulkan; });
+                                    auto swapchain =
+                                    std::find_if(_swapchains.begin(), _swapchains.end(), [id = pass.Framebuffer](const DSwapchainVulkan& swapchain) { return swapchain.Framebuffers == id; });
                                     check(swapchain != _swapchains.end());
-                                    renderPassInfo.framebuffer = framebufferVulkan->Framebuffers[swapchain->CurrentImageIndex];
+                                    renderPassInfo.framebuffer = framebuffer.Framebuffers[swapchain->CurrentImageIndex];
                                 }
                         }
 
                         renderPassInfo.renderArea.offset = { 0, 0 };
-                        renderPassInfo.renderArea.extent = { framebufferVulkan->Width, framebufferVulkan->Height };
+                        renderPassInfo.renderArea.extent = { framebuffer.Width, framebuffer.Height };
 
                         check(pass.ClearValues.size() >= std::count_if(pass.RenderPass.Attachments.begin(), pass.RenderPass.Attachments.end(), [](const DRenderPassAttachment& att) {
                             return att.LoadOP == ERenderPassLoad::Clear;
@@ -1160,7 +1244,7 @@ VulkanContext::AdvanceFrame()
                                 auto                 found =
                                 std::find_if(_swapchains.begin(), _swapchains.end(), [swapchainInErrorState](DSwapchainVulkan swapchain) { return swapchain.Swapchain == swapchainInErrorState; });
 
-                                _recreateSwapchainBlocking(&(*found));
+                                _recreateSwapchainBlocking(*found);
                                 // throw std::runtime_error(VkErrorString(presentError[i]));
                             }
                     }
@@ -1389,41 +1473,44 @@ VulkanContext::_performDeletionQueue()
 }
 
 void
-VulkanContext::_recreateSwapchainBlocking(DSwapchainVulkan* swapchain)
+VulkanContext::_recreateSwapchainBlocking(DSwapchainVulkan& swapchain)
 {
     // We must be sure that the framebuffer is not used anymore before destroying it
     // This can be a valid approach since a game doesn't resize very often
     vkDeviceWaitIdle(Device.Device);
 
+    DFramebufferVulkan& framebuffer = GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, swapchain.Framebuffers);
     // Destroy all framebuffers
-    std::for_each(swapchain->Framebuffers->Framebuffers.begin(), swapchain->Framebuffers->Framebuffers.end(), [this](const VkFramebuffer& framebuffer) { Device.DestroyFramebuffer(framebuffer); });
-    swapchain->Framebuffers->Framebuffers.clear();
+    {
+        std::for_each(framebuffer.Framebuffers.begin(), framebuffer.Framebuffers.end(), [this](const VkFramebuffer& framebuffer) { Device.DestroyFramebuffer(framebuffer); });
+        framebuffer.Framebuffers.clear();
+    }
 
     // Destroy all image views
-    std::for_each(swapchain->ImageViews.begin(), swapchain->ImageViews.end(), [this](const VkImageView& imageView) { Device.DestroyImageView(imageView); });
-    swapchain->ImageViews.clear();
+    std::for_each(swapchain.ImageViews.begin(), swapchain.ImageViews.end(), [this](const VkImageView& imageView) { Device.DestroyImageView(imageView); });
+    swapchain.ImageViews.clear();
 
     // Create from old
     {
         // Refresh capabilities
-        swapchain->Capabilities = Device.GetSurfaceCapabilities(swapchain->Surface);
+        swapchain.Capabilities = Device.GetSurfaceCapabilities(swapchain.Surface);
 
-        VkSwapchainKHR oldSwapchain = swapchain->Swapchain;
+        VkSwapchainKHR oldSwapchain = swapchain.Swapchain;
 
-        const VkResult result = Device.CreateSwapchainFromSurface(swapchain->Surface, swapchain->Format, swapchain->PresentMode, swapchain->Capabilities, &swapchain->Swapchain, oldSwapchain);
+        const VkResult result = Device.CreateSwapchainFromSurface(swapchain.Surface, swapchain.Format, swapchain.PresentMode, swapchain.Capabilities, &swapchain.Swapchain, oldSwapchain);
         if (VKFAILED(result))
             {
                 throw std::runtime_error(VkUtils::VkErrorString(result));
             }
         Device.DestroySwapchain(oldSwapchain);
-        swapchain->Images.clear();
+        swapchain.Images.clear();
     }
 
     // Get image views
-    swapchain->Images = Device.GetSwapchainImages(swapchain->Swapchain);
+    swapchain.Images = Device.GetSwapchainImages(swapchain.Swapchain);
 
     // Create image views
-    std::transform(swapchain->Images.begin(), swapchain->Images.end(), std::back_inserter(swapchain->ImageViews), [this, format = swapchain->Format.format](const VkImage& image) {
+    std::transform(swapchain.Images.begin(), swapchain.Images.end(), std::back_inserter(swapchain.ImageViews), [this, format = swapchain.Format.format](const VkImage& image) {
         VkImageView imageView{};
         const auto  result = Device.CreateImageView(format, image, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, &imageView);
         if (VKFAILED(result))
@@ -1434,15 +1521,7 @@ VulkanContext::_recreateSwapchainBlocking(DSwapchainVulkan* swapchain)
     });
 
     // Create a framebuffer
-    VkRenderPass renderPass = _createRenderPassFromInfo(swapchain->Framebuffers->RenderPassInfo);
-
-    std::transform(swapchain->ImageViews.begin(), swapchain->ImageViews.end(), std::back_inserter(swapchain->Framebuffers->Framebuffers), [this, swapchain, renderPass](VkImageView view) {
-        return Device.CreateFramebuffer({ view }, swapchain->Capabilities.currentExtent.width, swapchain->Capabilities.currentExtent.height, renderPass);
-    });
-
-    // Update size of FBO
-    swapchain->Framebuffers->Width  = swapchain->Capabilities.currentExtent.width;
-    swapchain->Framebuffers->Height = swapchain->Capabilities.currentExtent.height;
+    _createFramebufferFromSwapchain(swapchain, GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, swapchain.Framebuffers).Depth);
 }
 
 RIVkRenderPassInfo

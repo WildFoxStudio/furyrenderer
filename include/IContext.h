@@ -25,6 +25,8 @@ enum EResourceType : uint8_t
     SHADER              = 2,
     VERTEX_INDEX_BUFFER = 3,
     UNIFORM_BUFFER      = 4,
+    SWAPCHAIN           = 5,
+    FRAMEBUFFER         = 6,
 };
 // SHOULD BE PRIVATE
 
@@ -62,11 +64,15 @@ struct DSwapchain_T
 
 typedef DSwapchain_T* DSwapchain;
 
+typedef uint32_t SwapchainId;
+
 struct DFramebuffer_T
 {
 };
 
 typedef DFramebuffer_T* DFramebuffer;
+
+typedef uint32_t FramebufferId;
 
 enum class EBufferType
 {
@@ -525,13 +531,13 @@ struct CopyDataCommand
 
 struct RenderPassData
 {
-    DFramebuffer             Framebuffer{};
+    FramebufferId            Framebuffer{};
     DViewport                Viewport;
     DRenderPassAttachments   RenderPass;
     std::vector<DClearValue> ClearValues; // Equal to the RenderPass attachments with clear op
     std::vector<DrawCommand> DrawCommands;
 
-    RenderPassData(DFramebuffer fbo, DViewport viewport, DRenderPassAttachments renderPass) : Framebuffer(fbo), Viewport(viewport), RenderPass(renderPass) {}
+    RenderPassData(FramebufferId fbo, DViewport viewport, DRenderPassAttachments renderPass) : Framebuffer(fbo), Viewport(viewport), RenderPass(renderPass) {}
     inline void ClearColor(float r, float g, float b, float a = 1.f)
     {
         DClearColorValue col{ r, g, b, a };
@@ -551,11 +557,11 @@ class IContext
 {
   public:
     virtual ~IContext(){};
-    virtual bool CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat, DSwapchain* swapchain) = 0;
-    virtual void DestroySwapchain(const DSwapchain swapchain)                                                                        = 0;
+    virtual SwapchainId CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat) = 0;
+    virtual void        DestroySwapchain(SwapchainId swapchainId)                                                    = 0;
 
-    virtual DFramebuffer CreateSwapchainFramebuffer(DSwapchain swapchain, DImage depth = nullptr) = 0;
-    virtual void         DestroyFramebuffer(DFramebuffer framebuffer)                             = 0;
+    virtual FramebufferId CreateSwapchainFramebuffer(SwapchainId swapchainId, DImage depth = nullptr) = 0;
+    virtual void          DestroyFramebuffer(FramebufferId framebufferId)                             = 0;
 
     virtual BufferId            CreateVertexBuffer(uint32_t size)                                                  = 0;
     virtual BufferId            CreateUniformBuffer(uint32_t size)                                                 = 0;

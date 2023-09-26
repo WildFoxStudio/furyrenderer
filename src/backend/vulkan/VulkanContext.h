@@ -18,37 +18,14 @@
 namespace Fox
 {
 
-struct DResourceId
+struct DResource
 {
-    uint8_t Id;
+    uint8_t Id{};
 };
 
-struct DFramebufferVulkan : public DFramebuffer_T
+struct DBufferVulkan : public DResource
 {
-    /*Per frame or single framebuffer*/
-    std::vector<VkFramebuffer> Framebuffers;
-    uint32_t                   Width, Height;
-    RIVkRenderPassInfo         RenderPassInfo;
-};
-
-struct DSwapchainVulkan : public DSwapchain_T
-{
-    VkSurfaceKHR             Surface;
-    VkSurfaceCapabilitiesKHR Capabilities;
-    VkSurfaceFormatKHR       Format;
-    VkPresentModeKHR         PresentMode;
-    VkSwapchainKHR           Swapchain{};
-    std::vector<VkImage>     Images;
-    std::vector<VkImageView> ImageViews;
-    DFramebufferVulkan*      Framebuffers;
-    // std::vector<VkFramebuffer> Framebuffers;
-    std::vector<VkSemaphore> ImageAvailableSemaphore;
-    uint32_t                 CurrentImageIndex{};
-};
-
-struct DBufferVulkan : public DResourceId
-{
-    uint32_t       Size;
+    uint32_t       Size{};
     RIVulkanBuffer Buffer;
 };
 
@@ -59,7 +36,32 @@ struct DImageVulkan : public DImage_T
     VkSampler     Sampler{};
 };
 
-struct DVertexInputLayoutVulkan : public DResourceId
+struct DFramebufferVulkan : public DResource
+{
+    /*Per frame or single framebuffer*/
+    std::vector<VkFramebuffer> Framebuffers;
+    uint32_t                   Width{}, Height{};
+    RIVkRenderPassInfo         RenderPassInfo;
+    // Depth attachment
+    DImageVulkan* Depth{};
+};
+
+struct DSwapchainVulkan : public DResource
+{
+    VkSurfaceKHR             Surface{};
+    VkSurfaceCapabilitiesKHR Capabilities;
+    VkSurfaceFormatKHR       Format;
+    VkPresentModeKHR         PresentMode;
+    VkSwapchainKHR           Swapchain{};
+    std::vector<VkImage>     Images;
+    std::vector<VkImageView> ImageViews;
+    FramebufferId            Framebuffers{};
+    // std::vector<VkFramebuffer> Framebuffers;
+    std::vector<VkSemaphore> ImageAvailableSemaphore;
+    uint32_t                 CurrentImageIndex{};
+};
+
+struct DVertexInputLayoutVulkan : public DResource
 {
     std::vector<VkVertexInputAttributeDescription> VertexInputAttributes;
 };
@@ -77,7 +79,7 @@ struct DPipelineAndLayoutVulkan
     VkPipelineLayout PipelineLayout{};
 };
 
-struct DShaderVulkan : public DResourceId
+struct DShaderVulkan : public DResource
 {
     VertexInputLayoutId                          VertexLayout{};
     uint32_t                                     VertexStride{};
@@ -91,7 +93,7 @@ struct DShaderVulkan : public DResourceId
     VkPipelineLayout PipelineLayout{};
 
     // Hash to pipeline map
-    VkPipeline Pipelines;
+    VkPipeline Pipelines{};
 };
 
 class VulkanContext final : public IContext
@@ -102,11 +104,11 @@ class VulkanContext final : public IContext
     VulkanContext(const DContextConfig* const config);
     ~VulkanContext();
 
-    bool CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat, DSwapchain* swapchain) override;
-    void DestroySwapchain(const DSwapchain swapchain) override;
+    SwapchainId CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat) override;
+    void        DestroySwapchain(SwapchainId swapchainId) override;
 
-    DFramebuffer CreateSwapchainFramebuffer(DSwapchain swapchain, DImage depth = nullptr) override;
-    void         DestroyFramebuffer(DFramebuffer framebuffer) override;
+    FramebufferId CreateSwapchainFramebuffer(SwapchainId swapchainId, DImage depth = nullptr) override;
+    void          DestroyFramebuffer(FramebufferId framebufferId) override;
 
     BufferId            CreateVertexBuffer(uint32_t size) override;
     BufferId            CreateUniformBuffer(uint32_t size) override;
@@ -141,11 +143,14 @@ class VulkanContext final : public IContext
     void (*_warningOutput)(const char*);
     void (*_logOutput)(const char*);
 
-    std::list<DSwapchainVulkan>              _swapchains;
-    std::array<DBufferVulkan, MAX_RESOURCES> _vertexBuffers;
-    std::array<DBufferVulkan, MAX_RESOURCES> _uniformBuffers;
-    std::list<DImageVulkan>                  _images;
-    std::unordered_set<VkRenderPass>         _renderPasses;
+    std::array<DSwapchainVulkan, MAX_RESOURCES>   _swapchains;
+    std::array<DBufferVulkan, MAX_RESOURCES>      _vertexBuffers;
+    std::array<DBufferVulkan, MAX_RESOURCES>      _uniformBuffers;
+    std::array<DFramebufferVulkan, MAX_RESOURCES> _framebuffers;
+    std::array<DShaderVulkan, MAX_RESOURCES>      _shaders;
+
+    std::list<DImageVulkan>          _images;
+    std::unordered_set<VkRenderPass> _renderPasses;
     using DeleteFn                 = std::function<void()>;
     using FramesWaitToDeletionList = std::pair<uint32_t, std::vector<DeleteFn>>;
     uint32_t                              _frameIndex{};
@@ -162,9 +167,7 @@ class VulkanContext final : public IContext
     // No need to delete them, are POD structs
     std::vector<DVertexInputLayoutVulkan> _vertexLayouts;
     // Framebuffers
-    std::list<DFramebufferVulkan> _framebuffers;
     // Shader list
-    std::array<DShaderVulkan, MAX_RESOURCES> _shaders;
 
     // Pipeline layout to map of descriptor set layout - used to retrieve the correct VkDescriptorSetLayout when creating descriptor set
     std::unordered_map<VkPipelineLayout, std::map<uint32_t, VkDescriptorSetLayout>> _pipelineLayoutToSetIndexDescriptorSetLayout;
@@ -217,15 +220,17 @@ class VulkanContext final : public IContext
     void _initializeStagingBuffer(uint32_t stagingBufferSize);
     void _deinitializeStagingBuffer();
 
+    void               _createSwapchain(DSwapchainVulkan& swapchain, const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat);
     void               _createVertexBuffer(uint32_t size, DBufferVulkan& buffer);
     void               _createUniformBuffer(uint32_t size, DBufferVulkan& buffer);
     void               _createShader(const ShaderSource& source, DShaderVulkan& shader);
+    void               _createFramebufferFromSwapchain(DSwapchainVulkan& swapchain, DImage depth);
     void               _performDeletionQueue();
     void               _performCopyOperations();
     void               _submitCommands(const std::vector<VkSemaphore>& imageAvailableSemaphores);
     void               _deferDestruction(DeleteFn&& fn);
     VkPipeline         _createPipeline(VkPipelineLayout pipelineLayout, VkRenderPass renderPass, const std::vector<VkPipelineShaderStageCreateInfo>& shaderStages, const PipelineFormat& format);
-    void               _recreateSwapchainBlocking(DSwapchainVulkan* swapchain);
+    void               _recreateSwapchainBlocking(DSwapchainVulkan& swapchain);
     RIVkRenderPassInfo _computeFramebufferAttachmentsRenderPassInfo(const std::vector<VkFormat>& attachmentFormat);
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL _vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
