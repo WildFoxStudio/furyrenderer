@@ -59,21 +59,11 @@ enum class EPresentMode
     FIFO_RELAXED  = 3,
 };
 
-struct DSwapchain_T
-{
-};
-
-typedef DSwapchain_T* DSwapchain;
-
 typedef uint32_t SwapchainId;
-
-struct DFramebuffer_T
-{
-};
-
-typedef DFramebuffer_T* DFramebuffer;
-
 typedef uint32_t FramebufferId;
+typedef uint32_t BufferId;
+typedef uint32_t ShaderId;
+typedef uint32_t VertexInputLayoutId;
 
 enum class EBufferType
 {
@@ -81,15 +71,6 @@ enum class EBufferType
     UNIFORM_BUFFER_OBJECT,
     STORAGE_BUFFER_OBJECT,
 };
-
-struct DBuffer_T
-{
-    EBufferType Type;
-};
-
-typedef DBuffer_T* DBuffer;
-
-typedef uint32_t BufferId;
 
 struct DPipeline_T
 {
@@ -133,14 +114,6 @@ struct VertexLayoutInfo
     VertexLayoutInfo(const char* semantic, EFormat format, uint32_t byteOffset, EVertexInputClassification classification, uint32_t instanceDataStepRate = 0)
       : Semantic(semantic), Format(format), ByteOffset(byteOffset), Classification(classification), InstanceDataStepRate(instanceDataStepRate){};
 };
-
-struct DVertexInputLayout_T
-{
-};
-
-typedef DVertexInputLayout_T* DVertexInputLayout;
-
-typedef uint32_t VertexInputLayoutId;
 
 enum class ETopology
 {
@@ -197,11 +170,6 @@ struct DViewport
 {
     float x, y, w, h, znear, zfar;
 };
-
-struct DImage_T
-{
-};
-typedef DImage_T* DImage;
 
 typedef uint32_t ImageId;
 
@@ -289,7 +257,7 @@ struct DRenderPassAttachments
 
 struct SetBuffer
 {
-    DBuffer  Buffer{};
+    BufferId Buffer{};
     uint32_t Offset{};
     uint32_t Range{};
 };
@@ -404,13 +372,6 @@ struct ShaderSource
     std::vector<EFormat>   ColorAttachments;
     std::optional<EFormat> DepthStencilAttachment{};
 };
-
-struct DShader_T
-{
-};
-typedef DShader_T* DShader;
-
-typedef uint32_t ShaderId;
 
 struct SetBinding
 {
@@ -564,7 +525,7 @@ class IContext
     virtual void        DestroySwapchain(SwapchainId swapchainId)                                                    = 0;
 
     virtual FramebufferId CreateSwapchainFramebuffer(SwapchainId swapchainId) = 0;
-    virtual void          DestroyFramebuffer(FramebufferId framebufferId)                             = 0;
+    virtual void          DestroyFramebuffer(FramebufferId framebufferId)     = 0;
 
     virtual BufferId            CreateVertexBuffer(uint32_t size)                                                  = 0;
     virtual BufferId            CreateUniformBuffer(uint32_t size)                                                 = 0;
