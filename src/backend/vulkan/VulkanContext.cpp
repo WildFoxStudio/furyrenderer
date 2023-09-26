@@ -676,25 +676,6 @@ VulkanContext::_createShader(const ShaderSource& source, DShaderVulkan& shader)
 }
 }
 
-// Create render pass attachments
-//{
-//    for (const auto format : source.ColorAttachments)
-//        {
-//            shader.RenderPassAttachments.Attachments.push_back(DRenderPassAttachment(
-//            format, ESampleBit::COUNT_1_BIT, ERenderPassLoad::Clear, ERenderPassStore::Store, ERenderPassLayout::Undefined, ERenderPassLayout::Present, EAttachmentReference::COLOR_ATTACHMENT));
-//        }
-//    if (source.DepthStencilAttachment)
-//        {
-//            shader.RenderPassAttachments.Attachments.push_back(DRenderPassAttachment(source.DepthStencilAttachment.value(),
-//            ESampleBit::COUNT_1_BIT,
-//            ERenderPassLoad::Clear,
-//            ERenderPassStore::Store,
-//            ERenderPassLayout::Undefined,
-//            ERenderPassLayout::AsAttachment,
-//            EAttachmentReference::DEPTH_STENCIL_ATTACHMENT));
-//        }
-//}
-
 // Create a descriptor set layouts
 {
     std::vector<VkDescriptorSetLayout>        descriptorSetLayout;
@@ -727,12 +708,6 @@ VulkanContext::_createShader(const ShaderSource& source, DShaderVulkan& shader)
                 }
         }
 }
-// Create a pipeline for this shader with default states
-//{
-//    const PipelineFormat defaultFormat(shader.VertexLayout, shader.VertexStride);
-//
-//    shader.Pipelines = _createPipeline(shader.PipelineLayout, _createRenderPass(shader.RenderPassAttachments), shader.ShaderStageCreateInfo, defaultFormat);
-//}
 }
 
 void
