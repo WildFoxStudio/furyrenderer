@@ -27,6 +27,7 @@ enum EResourceType : uint8_t
     UNIFORM_BUFFER      = 4,
     SWAPCHAIN           = 5,
     FRAMEBUFFER         = 6,
+    IMAGE               = 7,
 };
 // SHOULD BE PRIVATE
 
@@ -201,6 +202,8 @@ struct DImage_T
 {
 };
 typedef DImage_T* DImage;
+
+typedef uint32_t ImageId;
 
 typedef union DClearColorValue
 {
@@ -414,7 +417,7 @@ struct SetBinding
     /* Only a buffer or image is a valid at once*/
     EBindingType          Type{};
     std::vector<BufferId> Buffers;
-    std::vector<DImage>   Images;
+    std::vector<ImageId>  Images;
 };
 
 struct DrawCommand
@@ -437,7 +440,7 @@ struct DrawCommand
         DescriptorSetBindings[set][bindingIndex] = (std::move(binding));
     }
 
-    inline void BindImageArray(uint32_t set, uint32_t bindingIndex, const std::vector<DImage>& imagesArray)
+    inline void BindImageArray(uint32_t set, uint32_t bindingIndex, const std::vector<ImageId>& imagesArray)
     {
         SetBinding binding{ EBindingType::SAMPLER, {}, imagesArray };
         DescriptorSetBindings[set][bindingIndex] = (std::move(binding));
@@ -461,7 +464,7 @@ struct CopyMipMapLevel
 
 struct CopyImageCommand
 {
-    DImage                       Destination{};
+    ImageId                      Destination{};
     std::vector<CopyMipMapLevel> MipMapCopy;
 };
 
@@ -507,7 +510,7 @@ struct CopyDataCommand
         UniformCommand = CopyUniformBufferCommand{ ubo, 0, std::move(blob) };
     }
 
-    inline void CopyImageMipMap(DImage destination, uint32_t offset, void* data, uint32_t width, uint32_t height, uint32_t mipMapIndex, uint32_t bytes)
+    inline void CopyImageMipMap(ImageId destination, uint32_t offset, void* data, uint32_t width, uint32_t height, uint32_t mipMapIndex, uint32_t bytes)
     {
         // check(!VertexCommand.has_value());
         // check(!ImageCommand.has_value());
@@ -560,14 +563,14 @@ class IContext
     virtual SwapchainId CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat) = 0;
     virtual void        DestroySwapchain(SwapchainId swapchainId)                                                    = 0;
 
-    virtual FramebufferId CreateSwapchainFramebuffer(SwapchainId swapchainId, DImage depth = nullptr) = 0;
+    virtual FramebufferId CreateSwapchainFramebuffer(SwapchainId swapchainId) = 0;
     virtual void          DestroyFramebuffer(FramebufferId framebufferId)                             = 0;
 
     virtual BufferId            CreateVertexBuffer(uint32_t size)                                                  = 0;
     virtual BufferId            CreateUniformBuffer(uint32_t size)                                                 = 0;
     virtual void                DestroyBuffer(BufferId buffer)                                                     = 0;
-    virtual DImage              CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) = 0;
-    virtual void                DestroyImage(DImage image)                                                         = 0;
+    virtual ImageId             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) = 0;
+    virtual void                DestroyImage(ImageId imageId)                                                      = 0;
     virtual VertexInputLayoutId CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)                      = 0;
     virtual ShaderId            CreateShader(const ShaderSource& source)                                           = 0;
     virtual void                DestroyShader(const ShaderId shader)                                               = 0;

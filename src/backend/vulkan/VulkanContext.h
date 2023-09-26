@@ -29,7 +29,7 @@ struct DBufferVulkan : public DResource
     RIVulkanBuffer Buffer;
 };
 
-struct DImageVulkan : public DImage_T
+struct DImageVulkan : public DResource
 {
     RIVulkanImage Image;
     VkImageView   View{};
@@ -42,8 +42,6 @@ struct DFramebufferVulkan : public DResource
     std::vector<VkFramebuffer> Framebuffers;
     uint32_t                   Width{}, Height{};
     RIVkRenderPassInfo         RenderPassInfo;
-    // Depth attachment
-    DImageVulkan* Depth{};
 };
 
 struct DSwapchainVulkan : public DResource
@@ -107,14 +105,14 @@ class VulkanContext final : public IContext
     SwapchainId CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat) override;
     void        DestroySwapchain(SwapchainId swapchainId) override;
 
-    FramebufferId CreateSwapchainFramebuffer(SwapchainId swapchainId, DImage depth = nullptr) override;
+    FramebufferId CreateSwapchainFramebuffer(SwapchainId swapchainId) override;
     void          DestroyFramebuffer(FramebufferId framebufferId) override;
 
     BufferId            CreateVertexBuffer(uint32_t size) override;
     BufferId            CreateUniformBuffer(uint32_t size) override;
     void                DestroyBuffer(BufferId buffer) override;
-    DImage              CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) override;
-    void                DestroyImage(DImage image) override;
+    ImageId             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) override;
+    void                DestroyImage(ImageId imageId) override;
     VertexInputLayoutId CreateVertexLayout(const std::vector<VertexLayoutInfo>& info) override;
     ShaderId            CreateShader(const ShaderSource& source) override;
     void                DestroyShader(const ShaderId shader) override;
@@ -149,8 +147,8 @@ class VulkanContext final : public IContext
     std::array<DFramebufferVulkan, MAX_RESOURCES>       _framebuffers;
     std::array<DShaderVulkan, MAX_RESOURCES>            _shaders;
     std::array<DVertexInputLayoutVulkan, MAX_RESOURCES> _vertexLayouts;
+    std::array<DImageVulkan, MAX_RESOURCES>             _images;
 
-    std::list<DImageVulkan>          _images;
     std::unordered_set<VkRenderPass> _renderPasses;
     using DeleteFn                 = std::function<void()>;
     using FramesWaitToDeletionList = std::pair<uint32_t, std::vector<DeleteFn>>;
@@ -165,9 +163,6 @@ class VulkanContext final : public IContext
     std::vector<std::vector<uint32_t>> _perFrameCopySizes;
     RIVulkanBuffer                     _stagingBuffer;
     std::unique_ptr<RingBufferManager> _stagingBufferManager;
-    // No need to delete them, are POD structs
-    // Framebuffers
-    // Shader list
 
     // Pipeline layout to map of descriptor set layout - used to retrieve the correct VkDescriptorSetLayout when creating descriptor set
     std::unordered_map<VkPipelineLayout, std::map<uint32_t, VkDescriptorSetLayout>> _pipelineLayoutToSetIndexDescriptorSetLayout;
@@ -224,7 +219,7 @@ class VulkanContext final : public IContext
     void               _createVertexBuffer(uint32_t size, DBufferVulkan& buffer);
     void               _createUniformBuffer(uint32_t size, DBufferVulkan& buffer);
     void               _createShader(const ShaderSource& source, DShaderVulkan& shader);
-    void               _createFramebufferFromSwapchain(DSwapchainVulkan& swapchain, DImage depth);
+    void               _createFramebufferFromSwapchain(DSwapchainVulkan& swapchain);
     void               _performDeletionQueue();
     void               _performCopyOperations();
     void               _submitCommands(const std::vector<VkSemaphore>& imageAvailableSemaphores);

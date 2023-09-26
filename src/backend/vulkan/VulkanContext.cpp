@@ -423,7 +423,7 @@ VulkanContext::DestroySwapchain(SwapchainId swapchainId)
 }
 
 FramebufferId
-VulkanContext::CreateSwapchainFramebuffer(SwapchainId swapchainId, DImage depth)
+VulkanContext::CreateSwapchainFramebuffer(SwapchainId swapchainId)
 {
 
     const auto          index       = AllocResource<DFramebufferVulkan, MAX_RESOURCES>(_framebuffers);
@@ -432,38 +432,28 @@ VulkanContext::CreateSwapchainFramebuffer(SwapchainId swapchainId, DImage depth)
     DSwapchainVulkan& swapchain = GetResource<DSwapchainVulkan, EResourceType::SWAPCHAIN, MAX_RESOURCES>(_swapchains, swapchainId);
     swapchain.Framebuffers      = *ResourceId(EResourceType::FRAMEBUFFER, framebuffer.Id, index);
 
-    _createFramebufferFromSwapchain(swapchain, depth);
+    _createFramebufferFromSwapchain(swapchain);
 
     return swapchain.Framebuffers;
 }
 
 void
-VulkanContext::_createFramebufferFromSwapchain(DSwapchainVulkan& swapchain, DImage depth)
+VulkanContext::_createFramebufferFromSwapchain(DSwapchainVulkan& swapchain)
 {
     const auto  swapchainFormat     = swapchain.Format.format;
     const auto& swapchainImageViews = swapchain.ImageViews;
     const auto& capabilities        = swapchain.Capabilities;
 
     std::vector<VkFormat> attachments{ swapchainFormat };
-    if (depth)
-        {
-            attachments.push_back(static_cast<DImageVulkan*>(depth)->Image.Format);
-        }
 
     DFramebufferVulkan& framebuffer = GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, swapchain.Framebuffers);
-    framebuffer.Depth               = static_cast<DImageVulkan*>(depth);
 
     framebuffer.RenderPassInfo = _computeFramebufferAttachmentsRenderPassInfo(attachments);
 
     VkRenderPass renderPass = _createRenderPassFromInfo(framebuffer.RenderPassInfo);
 
-    std::transform(swapchainImageViews.begin(), swapchainImageViews.end(), std::back_inserter(framebuffer.Framebuffers), [this, &capabilities, renderPass, depth](VkImageView view) {
+    std::transform(swapchainImageViews.begin(), swapchainImageViews.end(), std::back_inserter(framebuffer.Framebuffers), [this, &capabilities, renderPass](VkImageView view) {
         std::vector<VkImageView> views{ view };
-        if (depth)
-            {
-                views.push_back(static_cast<DImageVulkan*>(depth)->View);
-            }
-
         return Device.CreateFramebuffer(views, capabilities.currentExtent.width, capabilities.currentExtent.height, renderPass);
     });
     framebuffer.Width  = capabilities.currentExtent.width;
@@ -567,10 +557,12 @@ VulkanContext::DestroyBuffer(BufferId buffer)
     });
 }
 
-DImage
+ImageId
 VulkanContext::CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount)
 {
-    DImageVulkan image;
+
+    const auto    index = AllocResource<DImageVulkan, MAX_RESOURCES>(_images);
+    DImageVulkan& image = _images.at(index);
 
     const auto vkFormat = VkUtils::convertFormat(format);
 
@@ -587,22 +579,24 @@ VulkanContext::CreateImage(EFormat format, uint32_t width, uint32_t height, uint
     // Create default sampler
     image.Sampler = Device.CreateSampler(VK_FILTER_NEAREST, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT, 0, mipMapCount, VK_SAMPLER_MIPMAP_MODE_NEAREST, true, 16);
 
-    _images.emplace_back(std::move(image));
-
-    return &_images.back();
+    return *ResourceId(EResourceType::IMAGE, image.Id, index);
 }
 
 void
-VulkanContext::DestroyImage(DImage image)
+VulkanContext::DestroyImage(ImageId imageId)
 {
-    DImageVulkan* const imageVulkan = static_cast<DImageVulkan*>(image);
+    auto& resource = GetResourceUnsafe<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, imageId);
+    check(IsValidId(resource.Id));
+    resource.Id = PENDING_DESTROY;
 
-    _deferDestruction([this, image, imageVulkan]() {
-        Device.DestroyImageView(imageVulkan->View);
-        Device.DestroyImage(imageVulkan->Image);
-        Device.DestroySampler(imageVulkan->Sampler);
+    _deferDestruction([this, imageId]() {
+        auto& resource = GetResourceUnsafe<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, imageId);
 
-        _images.erase(std::find_if(_images.begin(), _images.end(), [imageVulkan](const DImageVulkan& b) { return &b == imageVulkan; }));
+        Device.DestroyImageView(resource.View);
+        Device.DestroyImage(resource.Image);
+        Device.DestroySampler(resource.Sampler);
+
+        resource.Id = FREE;
     });
 }
 
@@ -1193,9 +1187,9 @@ VulkanContext::AdvanceFrame()
                                                             {
                                                                 std::vector<std::pair<VkImageView, VkSampler>> pair;
 
-                                                                std::transform(binding.Images.begin(), binding.Images.end(), std::back_inserter(pair), [](const DImage i) {
-                                                                    DImageVulkan* image = static_cast<DImageVulkan*>(i);
-                                                                    return std::make_pair(image->View, image->Sampler);
+                                                                std::transform(binding.Images.begin(), binding.Images.end(), std::back_inserter(pair), [this](const ImageId id) {
+                                                                    const DImageVulkan& image = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, id);
+                                                                    return std::make_pair(image.View, image.Sampler);
                                                                 });
 
                                                                 binder.BindCombinedImageSamplerArray(bindingIndex, pair);
@@ -1415,9 +1409,9 @@ VulkanContext::_performCopyOperations()
                             }
                         for (const auto& mip : v.MipMapCopy)
                             {
-                                DImageVulkan*  destination   = static_cast<DImageVulkan*>(v.Destination);
+                                DImageVulkan&  destination   = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, v.Destination);
                                 const uint32_t stagingOffset = _stagingBufferManager->Push((void*)mip.Data.data(), mip.Data.size());
-                                transfer.CopyMipMap(_stagingBuffer.Buffer, destination->Image.Image, VkExtent2D{ mip.Width, mip.Height }, mip.MipLevel, mip.Offset, stagingOffset);
+                                transfer.CopyMipMap(_stagingBuffer.Buffer, destination.Image.Image, VkExtent2D{ mip.Width, mip.Height }, mip.MipLevel, mip.Offset, stagingOffset);
                             }
                     }
             }
@@ -1523,7 +1517,7 @@ VulkanContext::_recreateSwapchainBlocking(DSwapchainVulkan& swapchain)
     });
 
     // Create a framebuffer
-    _createFramebufferFromSwapchain(swapchain, GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, swapchain.Framebuffers).Depth);
+    _createFramebufferFromSwapchain(swapchain);
 }
 
 RIVkRenderPassInfo

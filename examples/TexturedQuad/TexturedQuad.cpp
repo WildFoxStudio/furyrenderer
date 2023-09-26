@@ -277,7 +277,7 @@ main()
         Fox::BufferId transformUniformBuffer = context->CreateUniformBuffer(sizeof(float) * 16);
         float         yaw{ 0 };
 
-        Fox::DImage texture = context->CreateImage(Fox::EFormat::R8G8B8A8_UNORM, imageWidth, imageHeight, 1);
+        Fox::ImageId texture = context->CreateImage(Fox::EFormat::R8G8B8A8_UNORM, imageWidth, imageHeight, 1);
         {
             Fox::CopyDataCommand copy;
             copy.CopyImageMipMap(texture, 0, (void*)image, imageWidth, imageHeight, 0, sizeof(image));
