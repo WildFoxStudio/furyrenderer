@@ -154,13 +154,13 @@ class VulkanContext final : public IContext
     std::unordered_set<VkRenderPass> _renderPasses;
     using DeleteFn                 = std::function<void()>;
     using FramesWaitToDeletionList = std::pair<uint32_t, std::vector<DeleteFn>>;
-    uint32_t                              _frameIndex{};
-    std::vector<FramesWaitToDeletionList> _deletionQueue;
-    std::vector<RICommandPoolManager>     _cmdPool;
-    std::vector<VkSemaphore>              _workFinishedSemaphores;
-    std::vector<VkFence>                  _fence;
-    std::vector<CopyDataCommand>          _transferCommands;
-    std::vector<RenderPassData>           _drawCommands;
+    uint32_t                                                                   _frameIndex{};
+    std::vector<FramesWaitToDeletionList>                                      _deletionQueue;
+    std::array<std::unique_ptr<RICommandPoolManager>, NUM_OF_FRAMES_IN_FLIGHT> _cmdPool;
+    std::array<VkSemaphore, NUM_OF_FRAMES_IN_FLIGHT>                           _workFinishedSemaphores;
+    std::array<VkFence, NUM_OF_FRAMES_IN_FLIGHT>                               _fence;
+    std::vector<CopyDataCommand>                                               _transferCommands;
+    std::vector<RenderPassData>                                                _drawCommands;
     // Staging buffer, used to copy stuff from ram to CPU-VISIBLE-MEMORY then to GPU-ONLY-MEMORY
     std::vector<std::vector<uint32_t>> _perFrameCopySizes;
     RIVulkanBuffer                     _stagingBuffer;

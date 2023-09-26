@@ -94,7 +94,11 @@ VulkanContext::VulkanContext(const DContextConfig* const config) : _warningOutpu
     _initializeStagingBuffer(config->stagingBufferSize);
     // Command pools per frame
     {
-        std::generate_n(std::back_inserter(_cmdPool), NUM_OF_FRAMES_IN_FLIGHT, [this]() { return RICommandPoolManager(Device.CreateCommandPool()); });
+        for (auto& e : _cmdPool)
+            {
+                auto instance = std::make_unique<RICommandPoolManager>(Device.CreateCommandPool());
+                e             = std::move(instance);
+            }
     }
     // Initialize per frame pipeline layout map to descriptor pool manager
     _pipelineLayoutToDescriptorPool.resize(NUM_OF_FRAMES_IN_FLIGHT);
@@ -102,13 +106,21 @@ VulkanContext::VulkanContext(const DContextConfig* const config) : _warningOutpu
     // Fences per frame
     {
         constexpr bool fenceSignaled = true; // since the loop begins waiting on a fence the fence must be already signaled otherwise it will timeout
-        std::generate_n(std::back_inserter(_fence), NUM_OF_FRAMES_IN_FLIGHT, [this, fenceSignaled = fenceSignaled]() { return Device.CreateFence(fenceSignaled); });
+        for (auto& e : _fence)
+            {
+                e = Device.CreateFence(fenceSignaled);
+            }
     }
 
     // Semaphores per frame
     {
-        std::generate_n(std::back_inserter(_workFinishedSemaphores), NUM_OF_FRAMES_IN_FLIGHT, [this]() { return Device.CreateVkSemaphore(); });
+        for (auto& e : _workFinishedSemaphores)
+            {
+                e = Device.CreateVkSemaphore();
+            }
     }
+
+    _deletionQueue.reserve(MAX_RESOURCES);
 }
 
 void
@@ -281,14 +293,11 @@ VulkanContext::~VulkanContext()
     });
     // Destroy fences
     std::for_each(_fence.begin(), _fence.end(), [this](VkFence fence) { Device.DestroyFence(fence); });
-    _fence.clear();
 
     // Free command pools
-    std::for_each(_cmdPool.begin(), _cmdPool.end(), [this](const RICommandPoolManager& pool) { Device.DestroyCommandPool(pool.GetCommandPool()); });
-    _cmdPool.clear();
+    std::for_each(_cmdPool.begin(), _cmdPool.end(), [this](const std::unique_ptr<RICommandPoolManager>& pool) { Device.DestroyCommandPool(pool->GetCommandPool()); });
 
     std::for_each(_workFinishedSemaphores.begin(), _workFinishedSemaphores.end(), [this](VkSemaphore semaphore) { Device.DestroyVkSemaphore(semaphore); });
-    _workFinishedSemaphores.clear();
 
     // Free pipeline layouts and their descriptor set layouts used to create them
     // for (const auto& pair : _pipelineLayoutToSetIndexDescriptorSetLayout)
@@ -1010,7 +1019,7 @@ VulkanContext::AdvanceFrame()
 
     // Reset command pool
     auto& commandPool = _cmdPool[_frameIndex];
-    commandPool.Reset();
+    commandPool->Reset();
 
     _performDeletionQueue();
 
@@ -1089,7 +1098,7 @@ VulkanContext::AdvanceFrame()
     {
         for (const auto& pass : _drawCommands)
             {
-                auto cmd = commandPool.Allocate()->Cmd;
+                auto cmd = commandPool->Allocate()->Cmd;
 
                 VkCommandBufferBeginInfo beginInfo{};
                 beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -1224,7 +1233,7 @@ VulkanContext::AdvanceFrame()
 
     // Present
     {
-        auto recordedCommandBuffers = commandPool.GetRecorded();
+        auto recordedCommandBuffers = commandPool->GetRecorded();
 
         if (recordedCommandBuffers.size() > 0 && _swapchains.size() > 0)
             {
@@ -1333,7 +1342,7 @@ VulkanContext::_performCopyOperations()
         }
 
         // Copy
-        CResourceTransfer transfer(commandPool.Allocate()->Cmd);
+        CResourceTransfer transfer(commandPool->Allocate()->Cmd);
         auto              it = _transferCommands.begin();
         for (; it != _transferCommands.end(); it++)
             {
@@ -1438,7 +1447,7 @@ VulkanContext::_submitCommands(const std::vector<VkSemaphore>& imageAvailableSem
     // Reset command pool
     auto& commandPool = _cmdPool[_frameIndex];
     // Queue submit
-    auto recordedCommandBuffers = commandPool.GetRecorded();
+    auto recordedCommandBuffers = commandPool->GetRecorded();
     if (recordedCommandBuffers.size() > 0)
         {
             // Reset only when there is work submitted otherwise we'll wait indefinetly
