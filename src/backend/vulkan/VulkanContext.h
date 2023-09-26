@@ -143,11 +143,12 @@ class VulkanContext final : public IContext
     void (*_warningOutput)(const char*);
     void (*_logOutput)(const char*);
 
-    std::array<DSwapchainVulkan, MAX_RESOURCES>   _swapchains;
-    std::array<DBufferVulkan, MAX_RESOURCES>      _vertexBuffers;
-    std::array<DBufferVulkan, MAX_RESOURCES>      _uniformBuffers;
-    std::array<DFramebufferVulkan, MAX_RESOURCES> _framebuffers;
-    std::array<DShaderVulkan, MAX_RESOURCES>      _shaders;
+    std::array<DSwapchainVulkan, MAX_RESOURCES>         _swapchains;
+    std::array<DBufferVulkan, MAX_RESOURCES>            _vertexBuffers;
+    std::array<DBufferVulkan, MAX_RESOURCES>            _uniformBuffers;
+    std::array<DFramebufferVulkan, MAX_RESOURCES>       _framebuffers;
+    std::array<DShaderVulkan, MAX_RESOURCES>            _shaders;
+    std::array<DVertexInputLayoutVulkan, MAX_RESOURCES> _vertexLayouts;
 
     std::list<DImageVulkan>          _images;
     std::unordered_set<VkRenderPass> _renderPasses;
@@ -165,7 +166,6 @@ class VulkanContext final : public IContext
     RIVulkanBuffer                     _stagingBuffer;
     std::unique_ptr<RingBufferManager> _stagingBufferManager;
     // No need to delete them, are POD structs
-    std::vector<DVertexInputLayoutVulkan> _vertexLayouts;
     // Framebuffers
     // Shader list
 

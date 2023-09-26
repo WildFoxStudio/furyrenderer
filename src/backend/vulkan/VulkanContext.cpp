@@ -109,9 +109,6 @@ VulkanContext::VulkanContext(const DContextConfig* const config) : _warningOutpu
     {
         std::generate_n(std::back_inserter(_workFinishedSemaphores), NUM_OF_FRAMES_IN_FLIGHT, [this]() { return Device.CreateVkSemaphore(); });
     }
-
-    // Avoid reallocations as much as possible
-    _vertexLayouts.reserve(1024);
 }
 
 void
@@ -603,11 +600,9 @@ VulkanContext::DestroyImage(DImage image)
 VertexInputLayoutId
 VulkanContext::CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)
 {
-    const uint8_t id = GenIdentifier();
-
-    DVertexInputLayoutVulkan input;
-    input.Id = id;
-    input.VertexInputAttributes.reserve(info.size());
+    const auto                index  = AllocResource<DVertexInputLayoutVulkan, MAX_RESOURCES>(_vertexLayouts);
+    DVertexInputLayoutVulkan& layout = _vertexLayouts.at(index);
+    layout.VertexInputAttributes.reserve(info.size());
 
     unsigned int location = 0;
     for (const auto& i : info)
@@ -619,12 +614,10 @@ VulkanContext::CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)
             attr.offset   = i.ByteOffset; // uint32_t
 
             // Emplace
-            input.VertexInputAttributes.emplace_back(std::move(attr));
+            layout.VertexInputAttributes.emplace_back(std::move(attr));
         }
-    // Not vulkan pointers so no need to delete, just a POD struct
-    _vertexLayouts.emplace_back(std::move(input));
 
-    return *ResourceId(EResourceType::VERTEX_INPUT_LAYOUT, id, _vertexLayouts.size() - 1);
+    return *ResourceId(EResourceType::VERTEX_INPUT_LAYOUT, layout.Id, index);
 }
 
 ShaderId
