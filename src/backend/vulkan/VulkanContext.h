@@ -123,6 +123,7 @@ class VulkanContext final : public IContext
     uint32_t SubmitCommand(std::unique_ptr<CommandBase>&& command) override;
     void     AdvanceFrame() override;
     void     FlushDeletedBuffers() override;
+    void     ExportGraphviz(const std::string filename) override;
 
     unsigned char* GetAdapterDescription() const override;
     size_t         GetAdapterDedicatedVideoMemory() const override;
@@ -234,6 +235,7 @@ class VulkanContext final : public IContext
     void               _recreateSwapchainBlocking(DSwapchainVulkan& swapchain);
     RIVkRenderPassInfo _computeFramebufferAttachmentsRenderPassInfo(const std::vector<VkFormat>& attachmentFormat);
     VkPipeline         _queryPipelineFromAttachmentsAndFormat(DShaderVulkan& shader, const DRenderPassAttachments& renderPass, const PipelineFormat& format);
+    void               _executeCopyCommand(VkCommandBuffer cmd, const std::unique_ptr<CommandBase>& ptr);
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL _vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT                                                                   messageType,

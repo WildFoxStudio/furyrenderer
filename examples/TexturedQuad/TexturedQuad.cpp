@@ -259,13 +259,6 @@ main()
         constexpr size_t bufSize = sizeof(float) * ndcQuad.size();
         Fox::BufferId    quad    = context->CreateVertexBuffer(bufSize);
 
-        // Fox::CopyDataCommand copy;
-        // copy.CopyVertex(quad, 0, (void*)ndcQuad.data(), bufSize);
-        // context->SubmitCopy(std::move(copy));
-
-        std::unique_ptr<Fox::CommandVertexCopy> copy = std::make_unique<Fox::CommandVertexCopy>(quad, 0, (void*)ndcQuad.data(), bufSize);
-        context->SubmitCommand(std::move(copy));
-
         Fox::FramebufferId swapchainFbo = context->CreateSwapchainFramebuffer(swapchain);
 
         Fox::DRenderPassAttachment  colorAttachment(format,
@@ -282,16 +275,9 @@ main()
         float         yaw{ 0 };
 
         Fox::ImageId texture = context->CreateImage(Fox::EFormat::R8G8B8A8_UNORM, imageWidth, imageHeight, 1);
-        {
-            // Fox::CopyDataCommand copy;
-            // copy.CopyImageMipMap(texture, 0, (void*)image, imageWidth, imageHeight, 0, sizeof(image));
-            // context->SubmitCopy(std::move(copy));
-
-            auto copy = std::make_unique<Fox::CommandImageCopy>(texture, 0, (void*)image, imageWidth, imageHeight, 0, sizeof(image));
-            context->SubmitCommand(std::move(copy));
-        }
 
         bool wireFrame{};
+        bool upload{};
         while (!glfwWindowShouldClose(window))
             {
                 // Keep running
@@ -302,28 +288,39 @@ main()
                         wireFrame = !wireFrame;
                     }
 
+                std::optional<uint32_t> copyDependency;
+                std::optional<uint32_t> copyDependency2;
+                if (!upload)
+                    {
+                        //std::unique_ptr<Fox::CommandVertexCopy> copy = std::make_unique<Fox::CommandVertexCopy>(quad, 0, (void*)ndcQuad.data(), bufSize);
+                        //copyDependency                               = context->SubmitCommand(std::move(copy));
+
+                        auto copy       = std::make_unique<Fox::CommandImageCopy>(texture, 0, (void*)image, imageWidth, imageHeight, 0, sizeof(image));
+                        copyDependency2 = context->SubmitCommand(std::move(copy));
+
+                        upload = true;
+                    }
+
                 int w, h;
                 glfwGetWindowSize(window, &w, &h);
                 Fox::DViewport viewport{ 0, 0, w, h, 0.f, 1.f };
 
+                uint32_t copyUboIndex{};
                 {
                     // yaw += 0.01f;
                     const float sinA = std::sin(yaw);
                     const float cosA = std::cos(yaw);
 
-                    float                matrix[4][4]{ { cosA, 0, -sinA, 0 }, { 0, 1, 0, 0 }, { sinA, 0, cosA, 0 }, { 0, 0, 0, 1 } };
-                    //Fox::CopyDataCommand copy;
-                    //copy.CopyUniformBuffer(transformUniformBuffer, &matrix[0][0], sizeof(float) * 16);
-                    //context->SubmitCopy(std::move(copy));
-
+                    float matrix[4][4]{ { cosA, 0, -sinA, 0 }, { 0, 1, 0, 0 }, { sinA, 0, cosA, 0 }, { 0, 0, 0, 1 } };
                     {
-                        auto copy = std::make_unique<Fox::CommandUniformBufferCopy>(transformUniformBuffer, &matrix[0][0], sizeof(float) * 16);
-                        context->SubmitCommand(std::move(copy));
+                        auto copy    = std::make_unique<Fox::CommandUniformBufferCopy>(transformUniformBuffer, &matrix[0][0], sizeof(float) * 16);
+                        copyUboIndex = context->SubmitCommand(std::move(copy));
                     }
                 }
 
-                Fox::RenderPassData draw(swapchainFbo, viewport, renderPass);
-                draw.ClearColor(1, 0, 0, 1);
+                auto pass = std::make_unique<Fox::CommandDrawPass>(swapchainFbo, viewport, renderPass);
+                pass->Name = "GeometryPass";
+                pass->ClearColor(1, 0, 0, 1);
 
                 Fox::DrawCommand drawTriangle(shader);
                 drawTriangle.PipelineFormat.FillMode = wireFrame ? Fox::EFillMode::LINE : Fox::EFillMode::FILL;
@@ -331,10 +328,18 @@ main()
                 drawTriangle.BindImageArray(1, 0, { texture });
                 drawTriangle.Draw(quad, 0, 6);
 
-                draw.AddDrawCommand(std::move(drawTriangle));
+                pass->AddDrawCommand(std::move(drawTriangle));
 
-                context->SubmitPass(std::move(draw));
+                if (copyDependency.has_value())
+                    pass->DependsOn(copyDependency.value());
+                if (copyDependency2.has_value())
+                    pass->DependsOn(copyDependency2.value());
 
+                pass->DependsOn(copyUboIndex);
+
+                context->SubmitCommand(std::move(pass));
+
+                context->ExportGraphviz("output.dot");
                 context->AdvanceFrame();
             }
 

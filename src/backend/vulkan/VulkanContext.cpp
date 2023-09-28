@@ -6,6 +6,7 @@
 #include "UtilsVK.h"
 
 #include <algorithm>
+#include <fstream>-
 #include <limits>
 #include <string>
 
@@ -892,8 +893,16 @@ VulkanContext::SubmitCopy(CopyDataCommand&& data)
 uint32_t
 VulkanContext::SubmitCommand(std::unique_ptr<CommandBase>&& command)
 {
+    if (command->Dependencies.size() > 0)
+        {
+            for (const auto dep : command->Dependencies)
+                {
+                    _commands.at(dep)->RefCount++;
+                }
+        }
+
     _commands.emplace_back(std::move(command));
-    return _commands.size();
+    return _commands.size() - 1;
 }
 
 void
@@ -912,7 +921,16 @@ VulkanContext::AdvanceFrame()
 
     _performDeletionQueue();
 
-    _performCopyOperations();
+    // Pop previous frame allocation, freeing space
+    {
+        for (const uint32_t bytes : _perFrameCopySizes[_frameIndex])
+            {
+                _stagingBufferManager->Pop(bytes);
+            }
+        _perFrameCopySizes[_frameIndex].clear();
+    }
+
+    //_performCopyOperations();
 
     // Acquire swapchain images
     // Recreate swapchain if necessary
@@ -985,9 +1003,17 @@ VulkanContext::AdvanceFrame()
 
     // record drawing commands
     {
-        for (const auto& pass : _drawCommands)
+        auto cmd = commandPool->Allocate()->Cmd;
+
+        for (const auto& command : _commands)
             {
-                auto cmd = commandPool->Allocate()->Cmd;
+                if (command->Type != ECommandType::RENDER_PASS)
+                    {
+                        _executeCopyCommand(cmd, command);
+                        continue;
+                    }
+
+                const auto pass = static_cast<CommandDrawPass*>(command.get());
 
                 VkCommandBufferBeginInfo beginInfo{};
                 beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -999,9 +1025,9 @@ VulkanContext::AdvanceFrame()
                     {
                         VkRenderPassBeginInfo renderPassInfo{};
                         renderPassInfo.sType      = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-                        renderPassInfo.renderPass = _createRenderPass(pass.RenderPass);
+                        renderPassInfo.renderPass = _createRenderPass(pass->RenderPass);
 
-                        DFramebufferVulkan& framebuffer = GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, pass.Framebuffer);
+                        DFramebufferVulkan& framebuffer = GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, pass->Framebuffer);
                         {
                             // Bind framebuffer or swapchain framebuffer based on the current image index
                             if (framebuffer.Framebuffers.size() == 1)
@@ -1011,7 +1037,7 @@ VulkanContext::AdvanceFrame()
                             else
                                 {
                                     auto swapchain =
-                                    std::find_if(_swapchains.begin(), _swapchains.end(), [id = pass.Framebuffer](const DSwapchainVulkan& swapchain) { return swapchain.Framebuffers == id; });
+                                    std::find_if(_swapchains.begin(), _swapchains.end(), [id = pass->Framebuffer](const DSwapchainVulkan& swapchain) { return swapchain.Framebuffers == id; });
                                     check(swapchain != _swapchains.end());
                                     renderPassInfo.framebuffer = framebuffer.Framebuffers[swapchain->CurrentImageIndex];
                                 }
@@ -1020,13 +1046,13 @@ VulkanContext::AdvanceFrame()
                         renderPassInfo.renderArea.offset = { 0, 0 };
                         renderPassInfo.renderArea.extent = { framebuffer.Width, framebuffer.Height };
 
-                        check(pass.ClearValues.size() >= std::count_if(pass.RenderPass.Attachments.begin(), pass.RenderPass.Attachments.end(), [](const DRenderPassAttachment& att) {
+                        check(pass->ClearValues.size() >= std::count_if(pass->RenderPass.Attachments.begin(), pass->RenderPass.Attachments.end(), [](const DRenderPassAttachment& att) {
                             return att.LoadOP == ERenderPassLoad::Clear;
                         })); // Need same number of clear for each clear layout attachament
 
                         // Convert clear values to vkClearValues
                         std::vector<VkClearValue> vkClearValues;
-                        std::transform(pass.ClearValues.begin(), pass.ClearValues.end(), std::back_inserter(vkClearValues), [](const DClearValue& v) {
+                        std::transform(pass->ClearValues.begin(), pass->ClearValues.end(), std::back_inserter(vkClearValues), [](const DClearValue& v) {
                             VkClearValue value;
                             //@TODO Risky copy of union, find a better way to handle this
                             memcpy(value.color.float32, v.color.float32, sizeof(VkClearValue));
@@ -1039,18 +1065,18 @@ VulkanContext::AdvanceFrame()
                     }
                     {
                         // Flip viewport
-                        VkViewport viewport{ pass.Viewport.x, pass.Viewport.h - pass.Viewport.y, pass.Viewport.w, -pass.Viewport.h, pass.Viewport.znear, pass.Viewport.zfar };
+                        VkViewport viewport{ pass->Viewport.x, pass->Viewport.h - pass->Viewport.y, pass->Viewport.w, -pass->Viewport.h, pass->Viewport.znear, pass->Viewport.zfar };
                         vkCmdSetViewport(cmd, 0, 1, &viewport);
-                        VkRect2D scissor{ pass.Viewport.x, pass.Viewport.y, pass.Viewport.w, pass.Viewport.h };
+                        VkRect2D scissor{ pass->Viewport.x, pass->Viewport.y, pass->Viewport.w, pass->Viewport.h };
                         vkCmdSetScissor(cmd, 0, 1, &scissor);
                     }
                     // for each draw command
                     {
-                        for (const auto& draw : pass.DrawCommands)
+                        for (const auto& draw : pass->DrawCommands)
                             {
                                 auto& shader = GetResource<DShaderVulkan, EResourceType::SHADER, MAX_RESOURCES>(_shaders, draw.Shader);
 
-                                auto pipeline       = _queryPipelineFromAttachmentsAndFormat(shader, pass.RenderPass, draw.PipelineFormat);
+                                auto pipeline       = _queryPipelineFromAttachmentsAndFormat(shader, pass->RenderPass, draw.PipelineFormat);
                                 auto pipelineLayout = shader.PipelineLayout;
 
                                 // Bind pipeline
@@ -1111,9 +1137,8 @@ VulkanContext::AdvanceFrame()
                     // end renderpass
                     vkCmdEndRenderPass(cmd);
                 }
-
-                vkEndCommandBuffer(cmd);
             }
+        vkEndCommandBuffer(cmd);
 
         // Clear draw commands vector
         _drawCommands.clear();
@@ -1145,6 +1170,107 @@ VulkanContext::AdvanceFrame()
 
     // Increment the frame index
     _frameIndex = (_frameIndex + 1) % NUM_OF_FRAMES_IN_FLIGHT;
+}
+
+void
+VulkanContext::ExportGraphviz(const std::string filename)
+{
+    std::ofstream stream("graph.dot");
+    stream << "digraph framegraph \n{\n";
+
+    stream << "rankdir = LR\n";
+    stream << "bgcolor = black\n\n";
+    stream << "node [shape=rectangle, fontname=\"helvetica\", fontsize=12]\n\n";
+
+    auto getCommandName = [](std::unique_ptr<CommandBase>& ptr) -> std::string {
+        switch (ptr->Type)
+            {
+                case ECommandType::COPY_VERTEX:
+                    {
+                        CommandVertexCopy* command = static_cast<CommandVertexCopy*>(ptr.get());
+                        return "CommandVertexCopy";
+                    }
+                    break;
+                case ECommandType::COPY_UNIFORM:
+                    {
+                        CommandUniformBufferCopy* command = static_cast<CommandUniformBufferCopy*>(ptr.get());
+                        return "CommandUniformBufferCopy";
+                    }
+                    break;
+                case ECommandType::COPY_IMAGE:
+                    {
+                        CommandImageCopy* command = static_cast<CommandImageCopy*>(ptr.get());
+                        return "CommandImageCopy";
+                    }
+                    break;
+                case ECommandType::RENDER_PASS:
+                    {
+                        CommandDrawPass* command = static_cast<CommandDrawPass*>(ptr.get());
+                        return command->Name;
+                    }
+                    break;
+            }
+        return "UNKOWN";
+    };
+
+    // Nodes definition
+    for (auto& render_task : _commands)
+        {
+            std::string name = getCommandName(render_task);
+
+            stream << "\"" << name << "\" [label=\"" << name << "\\nRefs: " << render_task->RefCount << "\", style=filled, fillcolor=darkorange]\n";
+            stream << "\n";
+        }
+
+    // Arrows
+    for (auto& render_task : _commands)
+        {
+            if (render_task->Dependencies.size() > 0)
+                {
+                    std::string destination = getCommandName(render_task);
+                    stream << "\"" << destination << "\" -> { ";
+
+                    for (auto& dep : render_task->Dependencies)
+                        {
+                            const std::string sourceName = getCommandName(_commands.at(dep));
+                            // stream << "\"" << render_task->Name << "\" -> { ";
+                            // for (auto& resource : render_task->creates_)
+                            //	stream << "\"" << resource->name() << "\" ";
+                            // stream << "} [color=seagreen]\n";
+
+                            stream << "\"" << sourceName << "\" ";
+                        }
+                    stream << "} [color=gold]\n";
+                    stream << "\n";
+                }
+        }
+    // for (auto& resource : fg._resources)
+    //     stream << "\"" << resource->Name << "\" [label=\"" << resource->Name << "\\nRefs: " << resource->RefCount << "\\nID: " << resource->Id
+    //            << "\", style=filled, fillcolor= " << (resource->Transient ? "skyblue" : "steelblue") << "]\n";
+    // stream << "\n";
+
+    // for (auto& render_task : fg._passes)
+    //     {
+    //         // stream << "\"" << render_task->Name << "\" -> { ";
+    //         // for (auto& resource : render_task->creates_)
+    //         //	stream << "\"" << resource->name() << "\" ";
+    //         // stream << "} [color=seagreen]\n";
+
+    //        stream << "\"" << render_task->Name << "\" -> { ";
+    //        for (auto& resource : render_task->Writes)
+    //            stream << "\"" << resource->Name << "\" ";
+    //        stream << "} [color=gold]\n";
+    //    }
+    // stream << "\n";
+
+    // for (auto& resource : fg._resources)
+    //     {
+    //         stream << "\"" << resource->Name << "\" -> { ";
+    //         for (auto& render_task : resource->Readers)
+    //             stream << "\"" << render_task->Name << "\" ";
+    //         stream << "} [color=firebrick]\n";
+    //     }
+    stream << "}";
 }
 
 void
@@ -1221,15 +1347,6 @@ VulkanContext::_performCopyOperations()
 
         //    return aSize < bSize;
         //});
-
-        // Pop previous frame allocation, freeing space
-        {
-            for (const uint32_t bytes : _perFrameCopySizes[_frameIndex])
-                {
-                    _stagingBufferManager->Pop(bytes);
-                }
-            _perFrameCopySizes[_frameIndex].clear();
-        }
 
         // Copy
         CResourceTransfer transfer(commandPool->Allocate()->Cmd);
@@ -1329,11 +1446,10 @@ VulkanContext::_performCopyOperations()
                                     }
                             }
                             break;
-
-                            if (noFreeSpace)
-                                {
-                                    break; // We don't want that, stall until ring buffer is freed
-                                }
+                    }
+                if (noFreeSpace)
+                    {
+                        break; // We don't want that, stall until ring buffer is freed
                     }
             }
 
@@ -1373,6 +1489,109 @@ VulkanContext::_queryPipelineFromAttachmentsAndFormat(DShaderVulkan& shader, con
     VkPipeline pipeline             = _createPipeline(shader.PipelineLayout, renderPassVk, shader.ShaderStageCreateInfo, format, vertexLayout, shader.VertexStride);
     permutationMap.Pipeline[format] = pipeline;
     return pipeline;
+}
+
+void
+VulkanContext::_executeCopyCommand(VkCommandBuffer cmd, const std::unique_ptr<CommandBase>& ptr)
+{
+    CResourceTransfer transfer(cmd);
+
+    switch (ptr->Type)
+        {
+            case ECommandType::COPY_VERTEX:
+                {
+                    CommandVertexCopy* command = static_cast<CommandVertexCopy*>(ptr.get());
+                    check(IsValidId(command->Destination));
+                    check(command->Data.size() > 0);
+
+                    // If not space left in staging buffer stop copying
+                    const auto capacity = _stagingBufferManager->Capacity();
+                    if (capacity < command->Data.size())
+                        {
+                            const auto freeSpace = _stagingBufferManager->MaxSize - _stagingBufferManager->Size();
+                            if (freeSpace - capacity < command->Data.size())
+                                {
+                                    // noFreeSpace = true;
+                                    critical(0);
+                                    break;
+                                }
+                            else
+                                {
+                                    _stagingBufferManager->Push(nullptr, capacity);
+                                    _perFrameCopySizes[_frameIndex].push_back(capacity);
+                                }
+                        }
+                    auto& vertexBuffer = GetResource<DBufferVulkan, EResourceType::VERTEX_INDEX_BUFFER, MAX_RESOURCES>(_vertexBuffers, command->Destination);
+
+                    const uint32_t stagingOffset = _stagingBufferManager->Push((void*)command->Data.data(), command->Data.size());
+                    _perFrameCopySizes[_frameIndex].push_back(command->Data.size());
+                    transfer.CopyBuffer(_stagingBuffer.Buffer, vertexBuffer.Buffer.Buffer, command->Data.size(), stagingOffset);
+                }
+                break;
+            case ECommandType::COPY_UNIFORM:
+                {
+                    CommandUniformBufferCopy* command = static_cast<CommandUniformBufferCopy*>(ptr.get());
+
+                    // If not space left in staging buffer stop copying
+                    const auto capacity = _stagingBufferManager->Capacity();
+                    if (capacity < command->Data.size())
+                        {
+                            const auto freeSpace = _stagingBufferManager->MaxSize - _stagingBufferManager->Size();
+                            if (freeSpace - capacity < command->Data.size())
+                                {
+                                    // noFreeSpace = true;
+                                    critical(0);
+                                    break;
+                                }
+                            else
+                                {
+                                    _stagingBufferManager->Push(nullptr, capacity);
+                                    _perFrameCopySizes[_frameIndex].push_back(capacity);
+                                }
+                        }
+                    auto& uniformBuffer = GetResource<DBufferVulkan, EResourceType::UNIFORM_BUFFER, MAX_RESOURCES>(_uniformBuffers, command->Destination);
+
+                    const uint32_t stagingOffset = _stagingBufferManager->Push((void*)command->Data.data(), command->Data.size());
+                    _perFrameCopySizes[_frameIndex].push_back(command->Data.size());
+                    transfer.CopyBuffer(_stagingBuffer.Buffer, uniformBuffer.Buffer.Buffer, command->Data.size(), stagingOffset);
+                }
+                break;
+            case ECommandType::COPY_IMAGE:
+                {
+                    CommandImageCopy* command = static_cast<CommandImageCopy*>(ptr.get());
+
+                    uint32_t mipMapsBytes{};
+                    for (const auto& mip : command->MipMapCopy)
+                        {
+                            mipMapsBytes += mip.Data.size();
+                        }
+
+                    // If not space left in staging buffer stop copying
+                    const auto capacity = _stagingBufferManager->Capacity();
+                    if (capacity < mipMapsBytes)
+                        {
+                            const auto freeSpace = _stagingBufferManager->MaxSize - _stagingBufferManager->Size();
+                            if (freeSpace - capacity < mipMapsBytes)
+                                {
+                                    // noFreeSpace = true;
+                                    break;
+                                    critical(0);
+                                }
+                            else
+                                {
+                                    _stagingBufferManager->Push(nullptr, capacity);
+                                    _perFrameCopySizes[_frameIndex].push_back(capacity);
+                                }
+                        }
+                    for (const auto& mip : command->MipMapCopy)
+                        {
+                            DImageVulkan&  destination   = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, command->Destination);
+                            const uint32_t stagingOffset = _stagingBufferManager->Push((void*)mip.Data.data(), mip.Data.size());
+                            transfer.CopyMipMap(_stagingBuffer.Buffer, destination.Image.Image, VkExtent2D{ mip.Width, mip.Height }, mip.MipLevel, mip.Offset, stagingOffset);
+                        }
+                }
+                break;
+        }
 }
 
 void

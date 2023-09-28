@@ -3,10 +3,10 @@
 #pragma once
 
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
-#include <memory>
 
 #if defined(_WIN32) || defined(WIN32) || defined(_WIN64) || defined(WIN64)
 #define WIN32_LEAN_AND_MEAN
@@ -479,6 +479,7 @@ struct CommandBase
     CommandBase(ECommandType type) : Type(type){};
     const ECommandType    Type;
     std::vector<uint32_t> Dependencies;
+    uint32_t              RefCount{}; // internal use
     void                  DependsOn(uint32_t commandIndex) { Dependencies.emplace_back(std::move(commandIndex)); };
 };
 
@@ -679,6 +680,31 @@ struct RenderPassData
     inline void AddDrawCommand(DrawCommand&& command) { DrawCommands.emplace_back(std::move(command)); }
 };
 
+struct CommandDrawPass : public CommandBase
+{
+    CommandDrawPass(FramebufferId fbo, DViewport viewport, DRenderPassAttachments renderPass) : CommandBase(ECommandType::RENDER_PASS), Framebuffer(fbo), Viewport(viewport), RenderPass(renderPass){};
+    std::string              Name{ "RenderPass" };
+    FramebufferId            Framebuffer{};
+    DViewport                Viewport;
+    DRenderPassAttachments   RenderPass;
+    std::vector<DClearValue> ClearValues; // Equal to the RenderPass attachments with clear op
+    std::vector<DrawCommand> DrawCommands;
+
+    inline void ClearColor(float r, float g, float b, float a = 1.f)
+    {
+        DClearColorValue col{ r, g, b, a };
+        ClearValues.push_back({ col });
+    }
+    inline void ClearDepthStencil(float depth, uint32_t stencil)
+    {
+        DClearValue clearValue;
+        clearValue.depthStencil = { depth, stencil };
+        ClearValues.push_back(clearValue);
+    }
+
+    inline void AddDrawCommand(DrawCommand&& command) { DrawCommands.emplace_back(std::move(command)); }
+};
+
 class IContext
 {
   public:
@@ -703,6 +729,7 @@ class IContext
     virtual uint32_t SubmitCommand(std::unique_ptr<CommandBase>&& command) = 0;
     virtual void     AdvanceFrame()                                        = 0;
     virtual void     FlushDeletedBuffers()                                 = 0;
+    virtual void     ExportGraphviz(const std::string filename)            = 0;
 
     virtual unsigned char* GetAdapterDescription() const          = 0;
     virtual size_t         GetAdapterDedicatedVideoMemory() const = 0;

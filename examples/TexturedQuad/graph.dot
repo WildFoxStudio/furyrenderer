@@ -1,0 +1,16 @@
+digraph framegraph 
+{
+rankdir = LR
+bgcolor = black
+
+node [shape=rectangle, fontname="helvetica", fontsize=12]
+
+"CommandImageCopy" [label="CommandImageCopy\nRefs: 1", style=filled, fillcolor=darkorange]
+
+"CommandUniformBufferCopy" [label="CommandUniformBufferCopy\nRefs: 1", style=filled, fillcolor=darkorange]
+
+"GeometryPass" [label="GeometryPass\nRefs: 0", style=filled, fillcolor=darkorange]
+
+"GeometryPass" -> { "CommandImageCopy" "CommandUniformBufferCopy" } [color=gold]
+
+}

@@ -8,12 +8,12 @@ namespace Fox
 {
 CResourceTransfer::CResourceTransfer(VkCommandBuffer command) : _command(command)
 {
-    check(_command);
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    //check(_command);
+    //VkCommandBufferBeginInfo beginInfo{};
+    //beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    //beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-    vkBeginCommandBuffer(_command, &beginInfo);
+    //vkBeginCommandBuffer(_command, &beginInfo);
 }
 
 // void
