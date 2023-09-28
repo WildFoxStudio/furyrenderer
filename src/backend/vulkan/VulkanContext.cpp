@@ -1004,145 +1004,146 @@ VulkanContext::AdvanceFrame()
 
     // record drawing commands
     {
-        auto cmd = commandPool->Allocate()->Cmd;
-
-        VkCommandBufferBeginInfo beginInfo{};
-        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-        vkBeginCommandBuffer(cmd, &beginInfo);
 
         for (const auto& command : _commands)
             {
+                auto                     cmd = commandPool->Allocate()->Cmd;
+
+                VkCommandBufferBeginInfo beginInfo{};
+                beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+                beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+                vkBeginCommandBuffer(cmd, &beginInfo);
+
                 if (command->Type != ECommandType::RENDER_PASS)
                     {
                         _executeCopyCommand(cmd, command);
-                        continue;
                     }
-
-                const auto pass = static_cast<CommandDrawPass*>(command.get());
-
-                {
-                    // For each render pass bind all necessary
+                else
                     {
-                        VkRenderPassBeginInfo renderPassInfo{};
-                        renderPassInfo.sType      = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-                        renderPassInfo.renderPass = _createRenderPass(pass->RenderPass);
 
-                        DFramebufferVulkan& framebuffer = GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, pass->Framebuffer);
+                        const auto pass = static_cast<CommandDrawPass*>(command.get());
+
                         {
-                            // Bind framebuffer or swapchain framebuffer based on the current image index
-                            if (framebuffer.Framebuffers.size() == 1)
-                                {
-                                    renderPassInfo.framebuffer = framebuffer.Framebuffers.front();
-                                }
-                            else
-                                {
-                                    auto swapchain =
-                                    std::find_if(_swapchains.begin(), _swapchains.end(), [id = pass->Framebuffer](const DSwapchainVulkan& swapchain) { return swapchain.Framebuffers == id; });
-                                    check(swapchain != _swapchains.end());
-                                    renderPassInfo.framebuffer = framebuffer.Framebuffers[swapchain->CurrentImageIndex];
-                                }
-                        }
-
-                        renderPassInfo.renderArea.offset = { 0, 0 };
-                        renderPassInfo.renderArea.extent = { framebuffer.Width, framebuffer.Height };
-
-                        check(pass->ClearValues.size() >= std::count_if(pass->RenderPass.Attachments.begin(), pass->RenderPass.Attachments.end(), [](const DRenderPassAttachment& att) {
-                            return att.LoadOP == ERenderPassLoad::Clear;
-                        })); // Need same number of clear for each clear layout attachament
-
-                        // Convert clear values to vkClearValues
-                        std::vector<VkClearValue> vkClearValues;
-                        std::transform(pass->ClearValues.begin(), pass->ClearValues.end(), std::back_inserter(vkClearValues), [](const DClearValue& v) {
-                            VkClearValue value;
-                            //@TODO Risky copy of union, find a better way to handle this
-                            memcpy(value.color.float32, v.color.float32, sizeof(VkClearValue));
-                            return value;
-                        });
-
-                        renderPassInfo.clearValueCount = (uint32_t)vkClearValues.size();
-                        renderPassInfo.pClearValues    = vkClearValues.data();
-                        vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-                    }
-                    {
-                        // Flip viewport
-                        VkViewport viewport{ pass->Viewport.x, pass->Viewport.h - pass->Viewport.y, pass->Viewport.w, -pass->Viewport.h, pass->Viewport.znear, pass->Viewport.zfar };
-                        vkCmdSetViewport(cmd, 0, 1, &viewport);
-                        VkRect2D scissor{ pass->Viewport.x, pass->Viewport.y, pass->Viewport.w, pass->Viewport.h };
-                        vkCmdSetScissor(cmd, 0, 1, &scissor);
-                    }
-                    // for each draw command
-                    {
-                        for (const auto& draw : pass->DrawCommands)
+                            // For each render pass bind all necessary
                             {
-                                auto& shader = GetResource<DShaderVulkan, EResourceType::SHADER, MAX_RESOURCES>(_shaders, draw.Shader);
+                                VkRenderPassBeginInfo renderPassInfo{};
+                                renderPassInfo.sType      = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+                                renderPassInfo.renderPass = _createRenderPass(pass->RenderPass);
 
-                                auto pipeline       = _queryPipelineFromAttachmentsAndFormat(shader, pass->RenderPass, draw.PipelineFormat);
-                                auto pipelineLayout = shader.PipelineLayout;
+                                DFramebufferVulkan& framebuffer = GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, pass->Framebuffer);
+                                {
+                                    // Bind framebuffer or swapchain framebuffer based on the current image index
+                                    if (framebuffer.Framebuffers.size() == 1)
+                                        {
+                                            renderPassInfo.framebuffer = framebuffer.Framebuffers.front();
+                                        }
+                                    else
+                                        {
+                                            auto swapchain =
+                                            std::find_if(_swapchains.begin(), _swapchains.end(), [id = pass->Framebuffer](const DSwapchainVulkan& swapchain) { return swapchain.Framebuffers == id; });
+                                            check(swapchain != _swapchains.end());
+                                            renderPassInfo.framebuffer = framebuffer.Framebuffers[swapchain->CurrentImageIndex];
+                                        }
+                                }
 
-                                // Bind pipeline
-                                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-                                // find descriptor set from cache and bind them
-                                auto descriptorPoolManager = _pipelineLayoutToDescriptorPool[_frameIndex].find(pipelineLayout)->second;
+                                renderPassInfo.renderArea.offset = { 0, 0 };
+                                renderPassInfo.renderArea.extent = { framebuffer.Width, framebuffer.Height };
 
-                                // For each set to bind
-                                for (const auto& set : draw.DescriptorSetBindings)
+                                check(pass->ClearValues.size() >= std::count_if(pass->RenderPass.Attachments.begin(), pass->RenderPass.Attachments.end(), [](const DRenderPassAttachment& att) {
+                                    return att.LoadOP == ERenderPassLoad::Clear;
+                                })); // Need same number of clear for each clear layout attachament
+
+                                // Convert clear values to vkClearValues
+                                std::vector<VkClearValue> vkClearValues;
+                                std::transform(pass->ClearValues.begin(), pass->ClearValues.end(), std::back_inserter(vkClearValues), [](const DClearValue& v) {
+                                    VkClearValue value;
+                                    //@TODO Risky copy of union, find a better way to handle this
+                                    memcpy(value.color.float32, v.color.float32, sizeof(VkClearValue));
+                                    return value;
+                                });
+
+                                renderPassInfo.clearValueCount = (uint32_t)vkClearValues.size();
+                                renderPassInfo.pClearValues    = vkClearValues.data();
+                                vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+                            }
+                            {
+                                // Flip viewport
+                                VkViewport viewport{ pass->Viewport.x, pass->Viewport.h - pass->Viewport.y, pass->Viewport.w, -pass->Viewport.h, pass->Viewport.znear, pass->Viewport.zfar };
+                                vkCmdSetViewport(cmd, 0, 1, &viewport);
+                                VkRect2D scissor{ pass->Viewport.x, pass->Viewport.y, pass->Viewport.w, pass->Viewport.h };
+                                vkCmdSetScissor(cmd, 0, 1, &scissor);
+                            }
+                            // for each draw command
+                            {
+                                for (const auto& draw : pass->DrawCommands)
                                     {
-                                        // Get descriptor set layout for this set
-                                        auto descriptorSetLayout = _pipelineLayoutToSetIndexDescriptorSetLayout.find(pipelineLayout)->second[set.first];
+                                        auto& shader = GetResource<DShaderVulkan, EResourceType::SHADER, MAX_RESOURCES>(_shaders, draw.Shader);
 
-                                        auto binder = descriptorPoolManager->CreateDescriptorSetBinder();
-                                        for (const auto& bindingPair : set.second)
+                                        auto pipeline       = _queryPipelineFromAttachmentsAndFormat(shader, pass->RenderPass, draw.PipelineFormat);
+                                        auto pipelineLayout = shader.PipelineLayout;
+
+                                        // Bind pipeline
+                                        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+                                        // find descriptor set from cache and bind them
+                                        auto descriptorPoolManager = _pipelineLayoutToDescriptorPool[_frameIndex].find(pipelineLayout)->second;
+
+                                        // For each set to bind
+                                        for (const auto& set : draw.DescriptorSetBindings)
                                             {
-                                                const auto  bindingIndex = bindingPair.first;
-                                                const auto& binding      = bindingPair.second;
-                                                switch (binding.Type)
+                                                // Get descriptor set layout for this set
+                                                auto descriptorSetLayout = _pipelineLayoutToSetIndexDescriptorSetLayout.find(pipelineLayout)->second[set.first];
+
+                                                auto binder = descriptorPoolManager->CreateDescriptorSetBinder();
+                                                for (const auto& bindingPair : set.second)
                                                     {
-                                                        case EBindingType::UNIFORM_BUFFER_OBJECT:
+                                                        const auto  bindingIndex = bindingPair.first;
+                                                        const auto& binding      = bindingPair.second;
+                                                        switch (binding.Type)
                                                             {
-                                                                check(binding.Buffers.size() == 1);
-                                                                const auto&    b      = binding.Buffers.front();
-                                                                DBufferVulkan& buffer = GetResource<DBufferVulkan, EResourceType::UNIFORM_BUFFER, MAX_RESOURCES>(_uniformBuffers, b);
-                                                                binder.BindUniformBuffer(bindingIndex, buffer.Buffer.Buffer, 0, buffer.Size);
-                                                            }
-                                                            break;
-                                                        case EBindingType::SAMPLER:
-                                                            {
-                                                                std::vector<std::pair<VkImageView, VkSampler>> pair;
+                                                                case EBindingType::UNIFORM_BUFFER_OBJECT:
+                                                                    {
+                                                                        check(binding.Buffers.size() == 1);
+                                                                        const auto&    b      = binding.Buffers.front();
+                                                                        DBufferVulkan& buffer = GetResource<DBufferVulkan, EResourceType::UNIFORM_BUFFER, MAX_RESOURCES>(_uniformBuffers, b);
+                                                                        binder.BindUniformBuffer(bindingIndex, buffer.Buffer.Buffer, 0, buffer.Size);
+                                                                    }
+                                                                    break;
+                                                                case EBindingType::SAMPLER:
+                                                                    {
+                                                                        std::vector<std::pair<VkImageView, VkSampler>> pair;
 
-                                                                std::transform(binding.Images.begin(), binding.Images.end(), std::back_inserter(pair), [this](const ImageId id) {
-                                                                    const DImageVulkan& image = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, id);
-                                                                    return std::make_pair(image.View, image.Sampler);
-                                                                });
+                                                                        std::transform(binding.Images.begin(), binding.Images.end(), std::back_inserter(pair), [this](const ImageId id) {
+                                                                            const DImageVulkan& image = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, id);
+                                                                            return std::make_pair(image.View, image.Sampler);
+                                                                        });
 
-                                                                binder.BindCombinedImageSamplerArray(bindingIndex, pair);
+                                                                        binder.BindCombinedImageSamplerArray(bindingIndex, pair);
+                                                                    }
+                                                                    break;
+                                                                default:
+                                                                    check(0);
+                                                                    break;
                                                             }
-                                                            break;
-                                                        default:
-                                                            check(0);
-                                                            break;
                                                     }
+
+                                                binder.BindDescriptorSet(cmd, pipelineLayout, descriptorSetLayout, set.first);
                                             }
 
-                                        binder.BindDescriptorSet(cmd, pipelineLayout, descriptorSetLayout, set.first);
+                                        // draw call
+                                        DBufferVulkan& vertexBuffer = GetResource<DBufferVulkan, EResourceType::VERTEX_INDEX_BUFFER, MAX_RESOURCES>(_vertexBuffers, draw.VertexBuffer);
+                                        VkDeviceSize   offset{ 0 };
+                                        vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer.Buffer.Buffer, &offset);
+                                        vkCmdDraw(cmd, draw.VerticesCount, 1, draw.BeginVertex, 0);
                                     }
-
-                                // draw call
-                                DBufferVulkan& vertexBuffer = GetResource<DBufferVulkan, EResourceType::VERTEX_INDEX_BUFFER, MAX_RESOURCES>(_vertexBuffers, draw.VertexBuffer);
-                                VkDeviceSize   offset{ 0 };
-                                vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer.Buffer.Buffer, &offset);
-                                vkCmdDraw(cmd, draw.VerticesCount, 1, draw.BeginVertex, 0);
                             }
+                        }
+                        // end renderpass
+                        vkCmdEndRenderPass(cmd);
                     }
 
-                    // end renderpass
-                    vkCmdEndRenderPass(cmd);
-                }
+                vkEndCommandBuffer(cmd);
             }
-
-        vkEndCommandBuffer(cmd);
-
         // Clear draw commands vector
         _commands.clear();
     }
