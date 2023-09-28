@@ -477,10 +477,11 @@ enum class ECommandType
 struct CommandBase
 {
     CommandBase(ECommandType type) : Type(type){};
-    const ECommandType    Type;
-    std::vector<uint32_t> Dependencies;
-    uint32_t              RefCount{}; // internal use
-    void                  DependsOn(uint32_t commandIndex) { Dependencies.emplace_back(std::move(commandIndex)); };
+    const ECommandType        Type;
+    std::vector<uint32_t>     Dependencies;
+    uint32_t                  RefCount{}; // internal use
+    std::vector<CommandBase*> Blocks;
+    void                      DependsOn(uint32_t commandIndex) { Dependencies.emplace_back(std::move(commandIndex)); };
 };
 
 struct SetBinding

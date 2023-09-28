@@ -898,6 +898,7 @@ VulkanContext::SubmitCommand(std::unique_ptr<CommandBase>&& command)
             for (const auto dep : command->Dependencies)
                 {
                     _commands.at(dep)->RefCount++;
+                    _commands.at(dep)->Blocks.push_back(command.get());
                 }
         }
 
@@ -1005,6 +1006,12 @@ VulkanContext::AdvanceFrame()
     {
         auto cmd = commandPool->Allocate()->Cmd;
 
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+        vkBeginCommandBuffer(cmd, &beginInfo);
+
         for (const auto& command : _commands)
             {
                 if (command->Type != ECommandType::RENDER_PASS)
@@ -1015,11 +1022,6 @@ VulkanContext::AdvanceFrame()
 
                 const auto pass = static_cast<CommandDrawPass*>(command.get());
 
-                VkCommandBufferBeginInfo beginInfo{};
-                beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-                beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-                vkBeginCommandBuffer(cmd, &beginInfo);
                 {
                     // For each render pass bind all necessary
                     {
@@ -1138,10 +1140,11 @@ VulkanContext::AdvanceFrame()
                     vkCmdEndRenderPass(cmd);
                 }
             }
+
         vkEndCommandBuffer(cmd);
 
         // Clear draw commands vector
-        _drawCommands.clear();
+        _commands.clear();
     }
 
     _submitCommands(imageAvailableSemaphores);
@@ -1178,7 +1181,7 @@ VulkanContext::ExportGraphviz(const std::string filename)
     std::ofstream stream("graph.dot");
     stream << "digraph framegraph \n{\n";
 
-    stream << "rankdir = LR\n";
+    stream << "rankdir = RL\n";
     stream << "bgcolor = black\n\n";
     stream << "node [shape=rectangle, fontname=\"helvetica\", fontsize=12]\n\n";
 
@@ -1525,7 +1528,33 @@ VulkanContext::_executeCopyCommand(VkCommandBuffer cmd, const std::unique_ptr<Co
 
                     const uint32_t stagingOffset = _stagingBufferManager->Push((void*)command->Data.data(), command->Data.size());
                     _perFrameCopySizes[_frameIndex].push_back(command->Data.size());
-                    transfer.CopyBuffer(_stagingBuffer.Buffer, vertexBuffer.Buffer.Buffer, command->Data.size(), stagingOffset);
+                    // Perform copy
+                    {
+                        VkBufferCopy copy{};
+                        copy.srcOffset = stagingOffset;
+                        copy.dstOffset = 0; // Write always to the beginning
+                        copy.size      = command->Data.size();
+
+                        vkCmdCopyBuffer(cmd, _stagingBuffer.Buffer, vertexBuffer.Buffer.Buffer, 1, &copy);
+                    }
+                    // Perform barrier if blocks other commands
+                    if (command->Blocks.size() > 0)
+                        {
+                            for (const auto& blockingCommand : command->Blocks)
+                                {
+                                    VkBufferMemoryBarrier readBarrier{};
+                                    readBarrier.sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+                                    readBarrier.pNext               = NULL;
+                                    readBarrier.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
+                                    readBarrier.dstAccessMask       = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_INDEX_READ_BIT;
+                                    readBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                                    readBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                                    readBarrier.buffer              = vertexBuffer.Buffer.Buffer;
+                                    readBarrier.offset              = 0;
+                                    readBarrier.size                = VK_WHOLE_SIZE;
+                                    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 0, nullptr, 1, &readBarrier, 0, nullptr);
+                                }
+                        }
                 }
                 break;
             case ECommandType::COPY_UNIFORM:
@@ -1553,7 +1582,33 @@ VulkanContext::_executeCopyCommand(VkCommandBuffer cmd, const std::unique_ptr<Co
 
                     const uint32_t stagingOffset = _stagingBufferManager->Push((void*)command->Data.data(), command->Data.size());
                     _perFrameCopySizes[_frameIndex].push_back(command->Data.size());
-                    transfer.CopyBuffer(_stagingBuffer.Buffer, uniformBuffer.Buffer.Buffer, command->Data.size(), stagingOffset);
+                    // Perform copy
+                    {
+                        VkBufferCopy copy{};
+                        copy.srcOffset = stagingOffset;
+                        copy.dstOffset = 0; // Write always to the beginning
+                        copy.size      = command->Data.size();
+
+                        vkCmdCopyBuffer(cmd, _stagingBuffer.Buffer, uniformBuffer.Buffer.Buffer, 1, &copy);
+                    }
+                    // Perform barrier if blocks other commands
+                    if (command->Blocks.size() > 0)
+                        {
+                            for (const auto& blockingCommand : command->Blocks)
+                                {
+                                    VkBufferMemoryBarrier readBarrier{};
+                                    readBarrier.sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+                                    readBarrier.pNext               = NULL;
+                                    readBarrier.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
+                                    readBarrier.dstAccessMask       = VK_ACCESS_UNIFORM_READ_BIT;
+                                    readBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                                    readBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                                    readBarrier.buffer              = uniformBuffer.Buffer.Buffer;
+                                    readBarrier.offset              = 0;
+                                    readBarrier.size                = VK_WHOLE_SIZE;
+                                    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 0, nullptr, 1, &readBarrier, 0, nullptr);
+                                }
+                        }
                 }
                 break;
             case ECommandType::COPY_IMAGE:
@@ -1588,6 +1643,66 @@ VulkanContext::_executeCopyCommand(VkCommandBuffer cmd, const std::unique_ptr<Co
                             DImageVulkan&  destination   = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, command->Destination);
                             const uint32_t stagingOffset = _stagingBufferManager->Push((void*)mip.Data.data(), mip.Data.size());
                             transfer.CopyMipMap(_stagingBuffer.Buffer, destination.Image.Image, VkExtent2D{ mip.Width, mip.Height }, mip.MipLevel, mip.Offset, stagingOffset);
+                            {
+                                VkImageMemoryBarrier barrierTransfer{};
+                                {
+                                    barrierTransfer.sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                                    barrierTransfer.oldLayout                       = VK_IMAGE_LAYOUT_UNDEFINED;
+                                    barrierTransfer.newLayout                       = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                                    barrierTransfer.srcQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+                                    barrierTransfer.dstQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+                                    barrierTransfer.image                           = destination.Image.Image;
+                                    barrierTransfer.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+                                    barrierTransfer.subresourceRange.baseMipLevel   = mip.MipLevel;
+                                    barrierTransfer.subresourceRange.levelCount     = 1; // number of mip maps
+                                    barrierTransfer.subresourceRange.baseArrayLayer = 0;
+                                    barrierTransfer.subresourceRange.layerCount     = 1;
+                                    barrierTransfer.srcAccessMask                   = 0;
+                                    barrierTransfer.dstAccessMask                   = VK_ACCESS_TRANSFER_WRITE_BIT;
+                                }
+                                vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, (uint32_t)1, &barrierTransfer);
+
+                                VkBufferImageCopy region{};
+                                {
+                                    region.bufferOffset      = stagingOffset;
+                                    region.bufferRowLength   = 0;
+                                    region.bufferImageHeight = 0;
+
+                                    region.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+                                    region.imageSubresource.mipLevel       = mip.MipLevel;
+                                    region.imageSubresource.baseArrayLayer = 0;
+                                    region.imageSubresource.layerCount     = 1;
+
+                                    region.imageOffset = { 0, 0, 0 };
+                                    region.imageExtent = VkExtent3D{ mip.Width, mip.Height, 1 };
+                                }
+                                vkCmdCopyBufferToImage(cmd, _stagingBuffer.Buffer, destination.Image.Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, (uint32_t)1, &region);
+                            }
+                            if (command->Blocks.size() > 0)
+                                {
+                                    for (const auto blockingCommand : command->Blocks)
+                                        {
+                                            const auto pass = static_cast<CommandDrawPass*>(blockingCommand);
+
+                                            VkImageMemoryBarrier barrierSampler{};
+                                            {
+                                                barrierSampler.sType                           = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                                                barrierSampler.oldLayout                       = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                                                barrierSampler.newLayout                       = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                                                barrierSampler.srcQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+                                                barrierSampler.dstQueueFamilyIndex             = VK_QUEUE_FAMILY_IGNORED;
+                                                barrierSampler.image                           = destination.Image.Image;
+                                                barrierSampler.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+                                                barrierSampler.subresourceRange.baseMipLevel   = mip.MipLevel;
+                                                barrierSampler.subresourceRange.levelCount     = 1;
+                                                barrierSampler.subresourceRange.baseArrayLayer = 0;
+                                                barrierSampler.subresourceRange.layerCount     = 1;
+                                                barrierSampler.srcAccessMask                   = VK_ACCESS_TRANSFER_WRITE_BIT;
+                                                barrierSampler.dstAccessMask                   = VK_ACCESS_SHADER_READ_BIT;
+                                            }
+                                            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 0, nullptr, 0, nullptr, (uint32_t)1, &barrierSampler);
+                                        }
+                                }
                         }
                 }
                 break;

@@ -292,11 +292,14 @@ main()
                 std::optional<uint32_t> copyDependency2;
                 if (!upload)
                     {
-                        //std::unique_ptr<Fox::CommandVertexCopy> copy = std::make_unique<Fox::CommandVertexCopy>(quad, 0, (void*)ndcQuad.data(), bufSize);
-                        //copyDependency                               = context->SubmitCommand(std::move(copy));
-
-                        auto copy       = std::make_unique<Fox::CommandImageCopy>(texture, 0, (void*)image, imageWidth, imageHeight, 0, sizeof(image));
-                        copyDependency2 = context->SubmitCommand(std::move(copy));
+                        {
+                            std::unique_ptr<Fox::CommandVertexCopy> copy = std::make_unique<Fox::CommandVertexCopy>(quad, 0, (void*)ndcQuad.data(), bufSize);
+                            copyDependency                               = context->SubmitCommand(std::move(copy));
+                        }
+                        {
+                            auto copy       = std::make_unique<Fox::CommandImageCopy>(texture, 0, (void*)image, imageWidth, imageHeight, 0, sizeof(image));
+                            copyDependency2 = context->SubmitCommand(std::move(copy));
+                        }
 
                         upload = true;
                     }
@@ -318,7 +321,7 @@ main()
                     }
                 }
 
-                auto pass = std::make_unique<Fox::CommandDrawPass>(swapchainFbo, viewport, renderPass);
+                auto pass  = std::make_unique<Fox::CommandDrawPass>(swapchainFbo, viewport, renderPass);
                 pass->Name = "GeometryPass";
                 pass->ClearColor(1, 0, 0, 1);
 
