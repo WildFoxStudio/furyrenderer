@@ -259,9 +259,12 @@ main()
         constexpr size_t bufSize = sizeof(float) * ndcQuad.size();
         Fox::BufferId    quad    = context->CreateVertexBuffer(bufSize);
 
-        Fox::CopyDataCommand copy;
-        copy.CopyVertex(quad, 0, (void*)ndcQuad.data(), bufSize);
-        context->SubmitCopy(std::move(copy));
+        // Fox::CopyDataCommand copy;
+        // copy.CopyVertex(quad, 0, (void*)ndcQuad.data(), bufSize);
+        // context->SubmitCopy(std::move(copy));
+
+        std::unique_ptr<Fox::CommandVertexCopy> copy = std::make_unique<Fox::CommandVertexCopy>(quad, 0, (void*)ndcQuad.data(), bufSize);
+        context->SubmitCommand(std::move(copy));
 
         Fox::FramebufferId swapchainFbo = context->CreateSwapchainFramebuffer(swapchain);
 
@@ -280,9 +283,12 @@ main()
 
         Fox::ImageId texture = context->CreateImage(Fox::EFormat::R8G8B8A8_UNORM, imageWidth, imageHeight, 1);
         {
-            Fox::CopyDataCommand copy;
-            copy.CopyImageMipMap(texture, 0, (void*)image, imageWidth, imageHeight, 0, sizeof(image));
-            context->SubmitCopy(std::move(copy));
+            // Fox::CopyDataCommand copy;
+            // copy.CopyImageMipMap(texture, 0, (void*)image, imageWidth, imageHeight, 0, sizeof(image));
+            // context->SubmitCopy(std::move(copy));
+
+            auto copy = std::make_unique<Fox::CommandImageCopy>(texture, 0, (void*)image, imageWidth, imageHeight, 0, sizeof(image));
+            context->SubmitCommand(std::move(copy));
         }
 
         bool wireFrame{};
@@ -306,9 +312,14 @@ main()
                     const float cosA = std::cos(yaw);
 
                     float                matrix[4][4]{ { cosA, 0, -sinA, 0 }, { 0, 1, 0, 0 }, { sinA, 0, cosA, 0 }, { 0, 0, 0, 1 } };
-                    Fox::CopyDataCommand copy;
-                    copy.CopyUniformBuffer(transformUniformBuffer, &matrix[0][0], sizeof(float) * 16);
-                    context->SubmitCopy(std::move(copy));
+                    //Fox::CopyDataCommand copy;
+                    //copy.CopyUniformBuffer(transformUniformBuffer, &matrix[0][0], sizeof(float) * 16);
+                    //context->SubmitCopy(std::move(copy));
+
+                    {
+                        auto copy = std::make_unique<Fox::CommandUniformBufferCopy>(transformUniformBuffer, &matrix[0][0], sizeof(float) * 16);
+                        context->SubmitCommand(std::move(copy));
+                    }
                 }
 
                 Fox::RenderPassData draw(swapchainFbo, viewport, renderPass);

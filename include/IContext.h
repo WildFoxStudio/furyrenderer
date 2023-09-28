@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <memory>
 
 #if defined(_WIN32) || defined(WIN32) || defined(_WIN64) || defined(WIN64)
 #define WIN32_LEAN_AND_MEAN
@@ -466,6 +467,21 @@ struct ShaderSource
     bool                DepthStencilAttachment{};
 };
 
+enum class ECommandType
+{
+    COPY_IMAGE,
+    COPY_VERTEX,
+    COPY_UNIFORM,
+    RENDER_PASS
+};
+struct CommandBase
+{
+    CommandBase(ECommandType type) : Type(type){};
+    const ECommandType    Type;
+    std::vector<uint32_t> Dependencies;
+    void                  DependsOn(uint32_t commandIndex) { Dependencies.emplace_back(std::move(commandIndex)); };
+};
+
 struct SetBinding
 {
     /* Only a buffer or image is a valid at once*/
@@ -587,6 +603,58 @@ struct CopyDataCommand
     }
 };
 
+struct CommandImageCopy : public CommandBase
+{
+    CommandImageCopy(ImageId destination, uint32_t offset, void* data, uint32_t width, uint32_t height, uint32_t mipMapIndex, uint32_t bytes) : CommandBase(ECommandType::COPY_IMAGE)
+    {
+        Destination = destination;
+        CopyMipMap(offset, data, width, height, mipMapIndex, bytes);
+    };
+
+    void CopyMipMap(uint32_t offset, void* data, uint32_t width, uint32_t height, uint32_t mipMapIndex, uint32_t bytes)
+    {
+        std::vector<unsigned char> blob(bytes, 0);
+        memcpy(blob.data(), data, bytes);
+
+        CopyMipMapLevel l;
+        l.Data     = std::move(blob);
+        l.MipLevel = mipMapIndex;
+        l.Width    = width;
+        l.Height   = height;
+        l.Offset   = offset;
+
+        MipMapCopy.push_back(std::move(l));
+    };
+    ImageId                      Destination{};
+    std::vector<CopyMipMapLevel> MipMapCopy;
+};
+
+struct CommandVertexCopy : public CommandBase
+{
+    CommandVertexCopy(BufferId destination, uint32_t destinationOffset, void* data, uint32_t bytes) : CommandBase(ECommandType::COPY_VERTEX)
+    {
+        Destination = destination;
+        DestOffset  = destinationOffset;
+        Data.resize(bytes);
+        memcpy(Data.data(), data, bytes);
+    };
+    BufferId                   Destination{};
+    uint32_t                   DestOffset{};
+    std::vector<unsigned char> Data;
+};
+
+struct CommandUniformBufferCopy : public CommandBase
+{
+    CommandUniformBufferCopy(BufferId destination, void* data, uint32_t bytes) : CommandBase(ECommandType::COPY_UNIFORM)
+    {
+        Destination = destination;
+        Data.resize(bytes);
+        memcpy(Data.data(), data, bytes);
+    };
+    BufferId                   Destination{};
+    std::vector<unsigned char> Data;
+};
+
 struct RenderPassData
 {
     FramebufferId            Framebuffer{};
@@ -630,10 +698,11 @@ class IContext
     virtual ShaderId            CreateShader(const ShaderSource& source)                                           = 0;
     virtual void                DestroyShader(const ShaderId shader)                                               = 0;
 
-    virtual void SubmitPass(RenderPassData&& data)  = 0;
-    virtual void SubmitCopy(CopyDataCommand&& data) = 0;
-    virtual void AdvanceFrame()                     = 0;
-    virtual void FlushDeletedBuffers()              = 0;
+    virtual void     SubmitPass(RenderPassData&& data)                     = 0;
+    virtual void     SubmitCopy(CopyDataCommand&& data)                    = 0;
+    virtual uint32_t SubmitCommand(std::unique_ptr<CommandBase>&& command) = 0;
+    virtual void     AdvanceFrame()                                        = 0;
+    virtual void     FlushDeletedBuffers()                                 = 0;
 
     virtual unsigned char* GetAdapterDescription() const          = 0;
     virtual size_t         GetAdapterDedicatedVideoMemory() const = 0;

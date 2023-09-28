@@ -889,6 +889,13 @@ VulkanContext::SubmitCopy(CopyDataCommand&& data)
     _transferCommands.emplace_back(std::move(data));
 }
 
+uint32_t
+VulkanContext::SubmitCommand(std::unique_ptr<CommandBase>&& command)
+{
+    _commands.emplace_back(std::move(command));
+    return _commands.size();
+}
+
 void
 VulkanContext::AdvanceFrame()
 {
@@ -1192,28 +1199,28 @@ VulkanContext::_performCopyOperations()
     // Perform copy commands
     {
         // Sort from smallest to largest data
-        std::sort(_transferCommands.begin(), _transferCommands.end(), [](const CopyDataCommand& a, const CopyDataCommand& b) {
-            uint32_t aSize{};
-            if (a.UniformCommand.has_value())
-                {
-                    aSize = a.UniformCommand.value().Data.size();
-                }
-            if (a.VertexCommand.has_value())
-                {
-                    aSize = a.VertexCommand.value().Data.size();
-                }
-            uint32_t bSize{};
-            if (b.UniformCommand.has_value())
-                {
-                    bSize = b.UniformCommand.value().Data.size();
-                }
-            if (a.VertexCommand.has_value())
-                {
-                    bSize = b.VertexCommand.value().Data.size();
-                }
+        // std::sort(_transferCommands.begin(), _transferCommands.end(), [](const CopyDataCommand& a, const CopyDataCommand& b) {
+        //    uint32_t aSize{};
+        //    if (a.UniformCommand.has_value())
+        //        {
+        //            aSize = a.UniformCommand.value().Data.size();
+        //        }
+        //    if (a.VertexCommand.has_value())
+        //        {
+        //            aSize = a.VertexCommand.value().Data.size();
+        //        }
+        //    uint32_t bSize{};
+        //    if (b.UniformCommand.has_value())
+        //        {
+        //            bSize = b.UniformCommand.value().Data.size();
+        //        }
+        //    if (a.VertexCommand.has_value())
+        //        {
+        //            bSize = b.VertexCommand.value().Data.size();
+        //        }
 
-            return aSize < bSize;
-        });
+        //    return aSize < bSize;
+        //});
 
         // Pop previous frame allocation, freeing space
         {
@@ -1226,101 +1233,126 @@ VulkanContext::_performCopyOperations()
 
         // Copy
         CResourceTransfer transfer(commandPool->Allocate()->Cmd);
-        auto              it = _transferCommands.begin();
-        for (; it != _transferCommands.end(); it++)
+        auto              it = _commands.begin();
+        for (; it != _commands.end(); it++)
             {
-
-                if (it->VertexCommand.has_value() || it->UniformCommand.has_value())
+                bool noFreeSpace{};
+                switch (it->get()->Type)
                     {
-                        DBufferVulkan*                    destination{};
-                        const std::vector<unsigned char>* data{};
-                        uint32_t*                         offset{};
-                        if (it->VertexCommand.has_value())
+                        case ECommandType::COPY_VERTEX:
                             {
-                                destination = &GetResource<DBufferVulkan, EResourceType::VERTEX_INDEX_BUFFER, MAX_RESOURCES>(_vertexBuffers, it->VertexCommand.value().Destination);
-                                data        = &it->VertexCommand.value().Data;
-                                offset      = &it->VertexCommand.value().DestOffset;
-                            }
-                        if (it->UniformCommand.has_value())
-                            {
-                                destination = &GetResource<DBufferVulkan, EResourceType::UNIFORM_BUFFER, MAX_RESOURCES>(_uniformBuffers, it->UniformCommand.value().Destination);
-                                data        = &it->UniformCommand.value().Data;
-                                offset      = &it->UniformCommand.value().DestOffset;
-                            }
-                        check(destination != nullptr);
-                        check(data != nullptr);
-                        check(offset != nullptr);
+                                CommandVertexCopy* command = static_cast<CommandVertexCopy*>(it->get());
+                                check(IsValidId(command->Destination));
+                                check(command->Data.size() > 0);
 
-                        // If not space left in staging buffer stop copying
-                        const auto capacity = _stagingBufferManager->Capacity();
-                        if (capacity < data->size())
-                            {
-                                const auto freeSpace = _stagingBufferManager->MaxSize - _stagingBufferManager->Size();
-                                if (freeSpace - capacity < data->size())
+                                // If not space left in staging buffer stop copying
+                                const auto capacity = _stagingBufferManager->Capacity();
+                                if (capacity < command->Data.size())
                                     {
-                                        break;
+                                        const auto freeSpace = _stagingBufferManager->MaxSize - _stagingBufferManager->Size();
+                                        if (freeSpace - capacity < command->Data.size())
+                                            {
+                                                noFreeSpace = true;
+                                                break;
+                                            }
+                                        else
+                                            {
+                                                _stagingBufferManager->Push(nullptr, capacity);
+                                                _perFrameCopySizes[_frameIndex].push_back(capacity);
+                                            }
                                     }
-                                else
-                                    {
-                                        _stagingBufferManager->Push(nullptr, capacity);
-                                        _perFrameCopySizes[_frameIndex].push_back(capacity);
-                                    }
-                            }
-                        const uint32_t stagingOffset = _stagingBufferManager->Push((void*)data->data(), data->size());
-                        _perFrameCopySizes[_frameIndex].push_back(data->size());
-                        transfer.CopyBuffer(_stagingBuffer.Buffer, destination->Buffer.Buffer, data->size(), stagingOffset);
-                    }
-                else if (it->ImageCommand.has_value())
-                    {
-                        // Copy mip maps
-                        const CopyImageCommand& v = it->ImageCommand.value();
+                                auto& vertexBuffer = GetResource<DBufferVulkan, EResourceType::VERTEX_INDEX_BUFFER, MAX_RESOURCES>(_vertexBuffers, command->Destination);
 
-                        uint32_t mipMapsBytes{};
-                        for (const auto& mip : v.MipMapCopy)
-                            {
-                                mipMapsBytes += mip.Data.size();
+                                const uint32_t stagingOffset = _stagingBufferManager->Push((void*)command->Data.data(), command->Data.size());
+                                _perFrameCopySizes[_frameIndex].push_back(command->Data.size());
+                                transfer.CopyBuffer(_stagingBuffer.Buffer, vertexBuffer.Buffer.Buffer, command->Data.size(), stagingOffset);
                             }
+                            break;
+                        case ECommandType::COPY_UNIFORM:
+                            {
+                                CommandUniformBufferCopy* command = static_cast<CommandUniformBufferCopy*>(it->get());
 
-                        // If not space left in staging buffer stop copying
-                        const auto capacity = _stagingBufferManager->Capacity();
-                        if (capacity < mipMapsBytes)
-                            {
-                                const auto freeSpace = _stagingBufferManager->MaxSize - _stagingBufferManager->Size();
-                                if (freeSpace - capacity < mipMapsBytes)
+                                // If not space left in staging buffer stop copying
+                                const auto capacity = _stagingBufferManager->Capacity();
+                                if (capacity < command->Data.size())
                                     {
-                                        break;
+                                        const auto freeSpace = _stagingBufferManager->MaxSize - _stagingBufferManager->Size();
+                                        if (freeSpace - capacity < command->Data.size())
+                                            {
+                                                noFreeSpace = true;
+                                                break;
+                                            }
+                                        else
+                                            {
+                                                _stagingBufferManager->Push(nullptr, capacity);
+                                                _perFrameCopySizes[_frameIndex].push_back(capacity);
+                                            }
                                     }
-                                else
+                                auto& uniformBuffer = GetResource<DBufferVulkan, EResourceType::UNIFORM_BUFFER, MAX_RESOURCES>(_uniformBuffers, command->Destination);
+
+                                const uint32_t stagingOffset = _stagingBufferManager->Push((void*)command->Data.data(), command->Data.size());
+                                _perFrameCopySizes[_frameIndex].push_back(command->Data.size());
+                                transfer.CopyBuffer(_stagingBuffer.Buffer, uniformBuffer.Buffer.Buffer, command->Data.size(), stagingOffset);
+                            }
+                            break;
+                        case ECommandType::COPY_IMAGE:
+                            {
+                                CommandImageCopy* command = static_cast<CommandImageCopy*>(it->get());
+
+                                uint32_t mipMapsBytes{};
+                                for (const auto& mip : command->MipMapCopy)
                                     {
-                                        _stagingBufferManager->Push(nullptr, capacity);
-                                        _perFrameCopySizes[_frameIndex].push_back(capacity);
+                                        mipMapsBytes += mip.Data.size();
+                                    }
+
+                                // If not space left in staging buffer stop copying
+                                const auto capacity = _stagingBufferManager->Capacity();
+                                if (capacity < mipMapsBytes)
+                                    {
+                                        const auto freeSpace = _stagingBufferManager->MaxSize - _stagingBufferManager->Size();
+                                        if (freeSpace - capacity < mipMapsBytes)
+                                            {
+                                                noFreeSpace = true;
+                                                break;
+                                            }
+                                        else
+                                            {
+                                                _stagingBufferManager->Push(nullptr, capacity);
+                                                _perFrameCopySizes[_frameIndex].push_back(capacity);
+                                            }
+                                    }
+                                for (const auto& mip : command->MipMapCopy)
+                                    {
+                                        DImageVulkan&  destination   = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, command->Destination);
+                                        const uint32_t stagingOffset = _stagingBufferManager->Push((void*)mip.Data.data(), mip.Data.size());
+                                        transfer.CopyMipMap(_stagingBuffer.Buffer, destination.Image.Image, VkExtent2D{ mip.Width, mip.Height }, mip.MipLevel, mip.Offset, stagingOffset);
                                     }
                             }
-                        for (const auto& mip : v.MipMapCopy)
-                            {
-                                DImageVulkan&  destination   = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, v.Destination);
-                                const uint32_t stagingOffset = _stagingBufferManager->Push((void*)mip.Data.data(), mip.Data.size());
-                                transfer.CopyMipMap(_stagingBuffer.Buffer, destination.Image.Image, VkExtent2D{ mip.Width, mip.Height }, mip.MipLevel, mip.Offset, stagingOffset);
-                            }
+                            break;
+
+                            if (noFreeSpace)
+                                {
+                                    break; // We don't want that, stall until ring buffer is freed
+                                }
                     }
             }
 
         transfer.FinishCommandBuffer();
 
         // If we couldn't transfer all data print log
-        if (it != _transferCommands.end())
+        if (it != _commands.end())
             {
                 uint32_t bytesLeft{};
-                std::for_each(it, _transferCommands.end(), [&bytesLeft](const CopyDataCommand& c) {
-                    bytesLeft += c.VertexCommand.has_value() ? c.VertexCommand.value().Data.size() : 0;
-                    bytesLeft += c.UniformCommand.has_value() ? c.UniformCommand.value().Data.size() : 0;
-                });
+                // std::for_each(it, _commands.end(), [&bytesLeft](const CopyDataCommand& c) {
+                //     bytesLeft += c.VertexCommand.has_value() ? c.VertexCommand.value().Data.size() : 0;
+                //     bytesLeft += c.UniformCommand.has_value() ? c.UniformCommand.value().Data.size() : 0;
+                // });
                 const std::string out = "Warning: Staging buffer could not copy " + std::to_string(bytesLeft) + " bytes. Condider increase the staging buffer size";
                 Log(out);
             }
 
         // Clear all transfer commands we've processed
-        _transferCommands.erase(_transferCommands.begin(), it);
+        _commands.erase(_commands.begin(), it);
     }
 }
 

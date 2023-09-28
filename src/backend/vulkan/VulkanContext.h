@@ -118,10 +118,11 @@ class VulkanContext final : public IContext
     ShaderId            CreateShader(const ShaderSource& source) override;
     void                DestroyShader(const ShaderId shader) override;
 
-    void SubmitPass(RenderPassData&& data) override;
-    void SubmitCopy(CopyDataCommand&& data) override;
-    void AdvanceFrame() override;
-    void FlushDeletedBuffers() override;
+    void     SubmitPass(RenderPassData&& data) override;
+    void     SubmitCopy(CopyDataCommand&& data) override;
+    uint32_t SubmitCommand(std::unique_ptr<CommandBase>&& command) override;
+    void     AdvanceFrame() override;
+    void     FlushDeletedBuffers() override;
 
     unsigned char* GetAdapterDescription() const override;
     size_t         GetAdapterDedicatedVideoMemory() const override;
@@ -147,6 +148,7 @@ class VulkanContext final : public IContext
     std::array<DShaderVulkan, MAX_RESOURCES>            _shaders;
     std::array<DVertexInputLayoutVulkan, MAX_RESOURCES> _vertexLayouts;
     std::array<DImageVulkan, MAX_RESOURCES>             _images;
+    std::vector<std::unique_ptr<CommandBase>>           _commands;
 
     std::unordered_set<VkRenderPass> _renderPasses;
     using DeleteFn                 = std::function<void()>;
