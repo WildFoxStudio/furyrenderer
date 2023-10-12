@@ -112,11 +112,14 @@ main()
         };
         // clang-format on
         constexpr size_t bufSize  = sizeof(float) * ndcTriangle.size();
-        Fox::BufferId    triangle = context->CreateVertexBuffer(bufSize);
+        Fox::BufferId    triangle = context->CreateBuffer(bufSize, Fox::VERTEX_INDEX_BUFFER, Fox::EMemoryUsage::RESOURCE_MEMORY_USAGE_CPU_ONLY);
 
-        Fox::CopyDataCommand copy;
-        copy.CopyVertex(triangle, 0, (void*)ndcTriangle.data(), bufSize);
-        context->SubmitCopy(std::move(copy));
+        {
+            // Copy vertices
+            void* triangleData = context->BeginMapBuffer(triangle);
+            memcpy(triangleData, (void*)ndcTriangle.data(), bufSize);
+            context->EndMapBuffer(triangle);
+        }
 
         Fox::FramebufferId swapchainFbo = context->CreateSwapchainFramebuffer(swapchain);
 

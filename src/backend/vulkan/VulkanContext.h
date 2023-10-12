@@ -155,8 +155,9 @@ class VulkanContext final : public IContext
     FramebufferId CreateSwapchainFramebuffer(SwapchainId swapchainId) override;
     void          DestroyFramebuffer(FramebufferId framebufferId) override;
 
-    BufferId            CreateVertexBuffer(uint32_t size) override;
-    BufferId            CreateUniformBuffer(uint32_t size) override;
+    BufferId CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usage) override;
+    void*    BeginMapBuffer(BufferId buffer) override;
+    void     EndMapBuffer(BufferId buffer) override;
     void                DestroyBuffer(BufferId buffer) override;
     ImageId             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) override;
     EFormat             GetImageFormat(ImageId) const override;

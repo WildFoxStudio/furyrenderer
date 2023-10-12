@@ -577,76 +577,126 @@ VulkanContext::DestroyFramebuffer(FramebufferId framebufferId)
 }
 
 BufferId
-VulkanContext::CreateVertexBuffer(uint32_t size)
+VulkanContext::CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usage)
 {
-    const auto     index  = AllocResource<DBufferVulkan, MAX_RESOURCES>(_vertexBuffers);
-    DBufferVulkan& buffer = _vertexBuffers.at(index);
+    size_t             index{};
+    DBufferVulkan*     buffer{};
+    VkBufferUsageFlags usageFlags{};
+    switch (type)
+        {
+            case EResourceType::UNIFORM_BUFFER:
+                usageFlags = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+                index      = AllocResource<DBufferVulkan, MAX_RESOURCES>(_uniformBuffers);
+                buffer     = &_uniformBuffers.at(index);
+                break;
+            case EResourceType::VERTEX_INDEX_BUFFER:
+                index      = AllocResource<DBufferVulkan, MAX_RESOURCES>(_vertexBuffers);
+                usageFlags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+                buffer     = &_vertexBuffers.at(index);
+                break;
+            default:
+                check(0); // Invalid type
+                break;
+        }
 
-    _createVertexBuffer(size, buffer);
+    buffer->Size = size;
 
-    return *ResourceId(EResourceType::VERTEX_INDEX_BUFFER, buffer.Id, index);
+    switch (usage)
+        {
+            case EMemoryUsage::RESOURCE_MEMORY_USAGE_GPU_ONLY:
+                {
+                    buffer->Buffer = Device.CreateBufferDeviceLocalTransferBit(size, usageFlags);
+                }
+                break;
+            case EMemoryUsage::RESOURCE_MEMORY_USAGE_CPU_ONLY:
+                {
+                    buffer->Buffer = Device.CreateBufferHostVisible(size, usageFlags);
+                }
+                break;
+            case EMemoryUsage::RESOURCE_MEMORY_USAGE_CPU_TO_GPU:
+                {
+                    buffer->Buffer = Device.CreateBufferHostVisible(size, usageFlags | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+                }
+                break;
+            default:
+                check(0); // invalid usage
+                break;
+        }
+
+    return *ResourceId(type, buffer->Id, index);
+}
+
+void*
+VulkanContext::BeginMapBuffer(BufferId buffer)
+{
+    const auto     resourceType = ResourceId(buffer).First();
+    const auto     index        = ResourceId(buffer).Value();
+    DBufferVulkan* bufferPtr{};
+
+    switch (resourceType)
+        {
+            case EResourceType::UNIFORM_BUFFER:
+                bufferPtr = &_uniformBuffers.at(index);
+                break;
+            case EResourceType::VERTEX_INDEX_BUFFER:
+                bufferPtr = &_vertexBuffers.at(index);
+                break;
+            default:
+                check(0); // Invalid type
+                break;
+        }
+
+    check(bufferPtr->Buffer.IsMappable); // Must be mappable flag
+    return Device.MapBuffer(bufferPtr->Buffer);
 }
 
 void
-VulkanContext::_createVertexBuffer(uint32_t size, DBufferVulkan& buffer)
+VulkanContext::EndMapBuffer(BufferId buffer)
 {
-    buffer.Size   = size;
-    buffer.Buffer = Device.CreateBufferDeviceLocalTransferBit(size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-}
+    const auto     resourceType = ResourceId(buffer).First();
+    const auto     index        = ResourceId(buffer).Value();
+    DBufferVulkan* bufferPtr{};
 
-BufferId
-VulkanContext::CreateUniformBuffer(uint32_t size)
-{
-    check(size <= 16000); // MAX 16KB limitation
-    const auto     index  = AllocResource<DBufferVulkan, MAX_RESOURCES>(_uniformBuffers);
-    DBufferVulkan& buffer = _uniformBuffers.at(index);
+    switch (resourceType)
+        {
+            case EResourceType::UNIFORM_BUFFER:
+                bufferPtr = &_uniformBuffers.at(index);
+                break;
+            case EResourceType::VERTEX_INDEX_BUFFER:
+                bufferPtr = &_vertexBuffers.at(index);
+                break;
+            default:
+                check(0); // Invalid type
+                break;
+        }
 
-    _createUniformBuffer(size, buffer);
-
-    return *ResourceId(EResourceType::UNIFORM_BUFFER, buffer.Id, index);
-}
-
-void
-VulkanContext::_createUniformBuffer(uint32_t size, DBufferVulkan& buffer)
-{
-    buffer.Size   = size;
-    buffer.Buffer = Device.CreateBufferDeviceLocalTransferBit(size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    check(bufferPtr->Buffer.IsMappable); // Must be mappable flag
+    return Device.UnmapBuffer(bufferPtr->Buffer);
 }
 
 void
 VulkanContext::DestroyBuffer(BufferId buffer)
 {
-    ResourceId resource(buffer);
-    check(resource.First() == EResourceType::VERTEX_INDEX_BUFFER || resource.First() == EResourceType::UNIFORM_BUFFER);
-    check(_vertexBuffers.at(resource.Value()).Id == resource.Second() || _uniformBuffers.at(resource.Value()).Id == resource.Second());
 
-    if (resource.First() == EResourceType::UNIFORM_BUFFER)
-        {
-            DBufferVulkan& buffer = _uniformBuffers.at(resource.Value());
-            check(IsValidId(buffer.Id));
-            buffer.Id = PENDING_DESTROY;
-        }
-    else if (resource.First() == EResourceType::VERTEX_INDEX_BUFFER)
-        {
-            DBufferVulkan& buffer = _vertexBuffers.at(resource.Value());
-            check(IsValidId(buffer.Id));
-            buffer.Id = PENDING_DESTROY;
-        }
+    const auto     resourceType = ResourceId(buffer).First();
+    const auto     index        = ResourceId(buffer).Value();
+    DBufferVulkan* bufferPtr{};
 
-    _deferDestruction([this, resource]() {
-        if (resource.First() == EResourceType::UNIFORM_BUFFER)
-            {
-                DBufferVulkan& buffer = _uniformBuffers.at(resource.Value());
-                Device.DestroyBuffer(buffer.Buffer);
-                buffer.Id = FREE;
-            }
-        else if (resource.First() == EResourceType::VERTEX_INDEX_BUFFER)
-            {
-                DBufferVulkan& buffer = _vertexBuffers.at(resource.Value());
-                Device.DestroyBuffer(buffer.Buffer);
-                buffer.Id = FREE;
-            }
-    });
+    switch (resourceType)
+        {
+            case EResourceType::UNIFORM_BUFFER:
+                bufferPtr = &_uniformBuffers.at(index);
+                break;
+            case EResourceType::VERTEX_INDEX_BUFFER:
+                bufferPtr = &_vertexBuffers.at(index);
+                break;
+            default:
+                check(0); // Invalid type
+                break;
+        }
+    check(IsValidId(bufferPtr->Id));
+    bufferPtr->Id = FREE;
+    Device.DestroyBuffer(bufferPtr->Buffer);
 }
 
 ImageId

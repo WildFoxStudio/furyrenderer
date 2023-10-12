@@ -16,6 +16,7 @@ struct RIVulkanBuffer
 {
     VkBuffer      Buffer{};
     VmaAllocation Allocation{};
+    bool          IsMappable{};
 };
 
 class RIVulkanBufferHasher

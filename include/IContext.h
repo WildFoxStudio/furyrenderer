@@ -72,6 +72,16 @@ enum class EBufferType
     STORAGE_BUFFER_OBJECT,
 };
 
+enum class EMemoryUsage
+{
+    /// Memory will be used on device only, no need to be mapped on host.
+    RESOURCE_MEMORY_USAGE_GPU_ONLY = 1,
+    /// Memory will be mapped on host. Could be used for transfer to device.
+    RESOURCE_MEMORY_USAGE_CPU_ONLY = 2,
+    /// Memory will be used for frequent (dynamic) updates from host and reads on device.
+    RESOURCE_MEMORY_USAGE_CPU_TO_GPU = 3,
+};
+
 struct DPipeline_T
 {
 };
@@ -622,8 +632,9 @@ class IContext
     virtual FramebufferId CreateSwapchainFramebuffer(SwapchainId swapchainId) = 0;
     virtual void          DestroyFramebuffer(FramebufferId framebufferId)     = 0;
 
-    virtual BufferId            CreateVertexBuffer(uint32_t size)                                                  = 0;
-    virtual BufferId            CreateUniformBuffer(uint32_t size)                                                 = 0;
+    virtual BufferId CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usage) = 0;
+    virtual void*    BeginMapBuffer(BufferId buffer)                                     = 0;
+    virtual void     EndMapBuffer(BufferId buffer)                                       = 0;
     virtual void                DestroyBuffer(BufferId buffer)                                                     = 0;
     virtual ImageId             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) = 0;
     virtual EFormat             GetImageFormat(ImageId) const                                                      = 0;

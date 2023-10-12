@@ -25,6 +25,7 @@ RIVulkanDevice4::CreateBufferHostVisible(uint32_t size, VkBufferUsageFlags usage
     allocInfo.flags                   = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
     RIVulkanBuffer buf;
+    buf.IsMappable        = true;
 
     const VkResult result = vmaCreateBuffer(VmaAllocator, &bufferInfo, &allocInfo, &buf.Buffer, &buf.Allocation, nullptr);
     if (VKFAILED(result))
