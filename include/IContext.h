@@ -615,8 +615,9 @@ class IContext
 {
   public:
     virtual ~IContext(){};
-    virtual SwapchainId CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat) = 0;
-    virtual void        DestroySwapchain(SwapchainId swapchainId)                                                    = 0;
+    virtual SwapchainId          CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat) = 0;
+    virtual std::vector<ImageId> GetSwapchainImages(SwapchainId swapchainId)                                                  = 0;
+    virtual void                 DestroySwapchain(SwapchainId swapchainId)                                                    = 0;
 
     virtual FramebufferId CreateSwapchainFramebuffer(SwapchainId swapchainId) = 0;
     virtual void          DestroyFramebuffer(FramebufferId framebufferId)     = 0;
@@ -625,6 +626,7 @@ class IContext
     virtual BufferId            CreateUniformBuffer(uint32_t size)                                                 = 0;
     virtual void                DestroyBuffer(BufferId buffer)                                                     = 0;
     virtual ImageId             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) = 0;
+    virtual EFormat             GetImageFormat(ImageId) const                                                      = 0;
     virtual void                DestroyImage(ImageId imageId)                                                      = 0;
     virtual VertexInputLayoutId CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)                      = 0;
     virtual ShaderId            CreateShader(const ShaderSource& source)                                           = 0;

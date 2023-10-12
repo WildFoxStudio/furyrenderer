@@ -31,19 +31,59 @@ struct DBufferVulkan : public DResource
 
 struct DImageVulkan : public DResource
 {
-    RIVulkanImage Image;
-    VkImageView   View{};
+    RIVulkanImage      Image;
+    VkImageView        View{};
     VkImageAspectFlags ImageAspect{};
-    VkSampler     Sampler{};
+    VkSampler          Sampler{};
 };
 
-struct DFramebufferVulkan : public DResource
+struct DFramebufferVulkan_DEPRECATED : public DResource
 {
     /*Per frame or single framebuffer*/
     std::vector<VkFramebuffer> Framebuffers;
     uint32_t                   Width{}, Height{};
     DRenderPassAttachments     Attachments;
     RIVkRenderPassInfo         RenderPassInfo;
+};
+
+struct DFramebufferVulkan
+{
+    VkFramebuffer Framebuffer{};
+};
+
+struct DFramebufferAttachments
+{
+    static constexpr uint32_t             MAX_ATTACHMENTS = 10;
+    std::array<uint32_t, MAX_ATTACHMENTS> ImageIds;
+};
+
+struct DFramebufferAttachmentsHashFn
+{
+    size_t operator()(const DFramebufferAttachments& attachments)
+    {
+        size_t hash{};
+        for (size_t i = 0; i < DFramebufferAttachments::MAX_ATTACHMENTS; i++)
+            {
+                hash += std::hash<uint32_t>{}(attachments.ImageIds[i]);
+            }
+        return hash;
+    };
+};
+
+struct DFramebufferAttachmentEqualFn
+{
+    bool operator()(const DFramebufferAttachments& lhs, const DFramebufferAttachments& rhs)
+    {
+
+        for (size_t i = 0; i < DFramebufferAttachments::MAX_ATTACHMENTS; i++)
+            {
+                if (lhs.ImageIds[i] != rhs.ImageIds[i])
+                    {
+                        return false;
+                    }
+            }
+        return true;
+    };
 };
 
 struct DSwapchainVulkan : public DResource
@@ -108,8 +148,9 @@ class VulkanContext final : public IContext
     VulkanContext(const DContextConfig* const config);
     ~VulkanContext();
 
-    SwapchainId CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat) override;
-    void        DestroySwapchain(SwapchainId swapchainId) override;
+    SwapchainId          CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat) override;
+    std::vector<ImageId> GetSwapchainImages(SwapchainId swapchainId) override;
+    void                 DestroySwapchain(SwapchainId swapchainId) override;
 
     FramebufferId CreateSwapchainFramebuffer(SwapchainId swapchainId) override;
     void          DestroyFramebuffer(FramebufferId framebufferId) override;
@@ -118,6 +159,7 @@ class VulkanContext final : public IContext
     BufferId            CreateUniformBuffer(uint32_t size) override;
     void                DestroyBuffer(BufferId buffer) override;
     ImageId             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) override;
+    EFormat             GetImageFormat(ImageId) const override;
     void                DestroyImage(ImageId imageId) override;
     VertexInputLayoutId CreateVertexLayout(const std::vector<VertexLayoutInfo>& info) override;
     ShaderId            CreateShader(const ShaderSource& source) override;
@@ -145,13 +187,14 @@ class VulkanContext final : public IContext
     void (*_warningOutput)(const char*);
     void (*_logOutput)(const char*);
 
-    std::array<DSwapchainVulkan, MAX_RESOURCES>         _swapchains;
-    std::array<DBufferVulkan, MAX_RESOURCES>            _vertexBuffers;
-    std::array<DBufferVulkan, MAX_RESOURCES>            _uniformBuffers;
-    std::array<DFramebufferVulkan, MAX_RESOURCES>       _framebuffers;
-    std::array<DShaderVulkan, MAX_RESOURCES>            _shaders;
-    std::array<DVertexInputLayoutVulkan, MAX_RESOURCES> _vertexLayouts;
-    std::array<DImageVulkan, MAX_RESOURCES>             _images;
+    std::array<DSwapchainVulkan, MAX_RESOURCES>              _swapchains;
+    std::array<DBufferVulkan, MAX_RESOURCES>                 _vertexBuffers;
+    std::array<DBufferVulkan, MAX_RESOURCES>                 _uniformBuffers;
+    std::array<DFramebufferVulkan_DEPRECATED, MAX_RESOURCES> _framebuffers;
+    std::array<DShaderVulkan, MAX_RESOURCES>                 _shaders;
+    std::array<DVertexInputLayoutVulkan, MAX_RESOURCES>      _vertexLayouts;
+    std::array<DImageVulkan, MAX_RESOURCES>                  _images;
+    std::vector<DFramebufferVulkan>                          _transientFramebuffers;
 
     std::unordered_set<VkRenderPass> _renderPasses;
     using DeleteFn                 = std::function<void()>;

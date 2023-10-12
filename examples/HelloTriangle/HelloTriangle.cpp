@@ -75,28 +75,31 @@ main()
         windowData._hwnd     = glfwGetWin32Window(window);
         windowData._instance = GetModuleHandle(NULL);
 
-        Fox::DSwapchain swapchain;
-        auto            presentMode = Fox::EPresentMode::IMMEDIATE_KHR;
-        auto            format      = Fox::EFormat::B8G8R8A8_UNORM;
-        if (!context->CreateSwapchain(&windowData, presentMode, format, &swapchain))
+        Fox::SwapchainId swapchain;
+        auto             presentMode = Fox::EPresentMode::IMMEDIATE_KHR;
+        auto             format      = Fox::EFormat::B8G8R8A8_UNORM;
+        swapchain                    = context->CreateSwapchain(&windowData, presentMode, format);
+        if (swapchain == NULL)
             {
                 throw std::runtime_error("Failed to CreateSwapchain");
             }
 
+        std::vector<Fox::ImageId> swapchainImages = context->GetSwapchainImages(swapchain);
+
         // Create vertex layout
-        Fox::VertexLayoutInfo   position("SV_POSITION", Fox::EFormat::R32G32B32_FLOAT, 0, Fox::EVertexInputClassification::PER_VERTEX_DATA);
-        Fox::VertexLayoutInfo   color("Color0", Fox::EFormat::R32G32B32A32_FLOAT, 3 * sizeof(float), Fox::EVertexInputClassification::PER_VERTEX_DATA);
-        Fox::DVertexInputLayout vertexLayout = context->CreateVertexLayout({ position, color });
-        constexpr uint32_t      stride       = 7 * sizeof(float);
+        Fox::VertexLayoutInfo    position("SV_POSITION", Fox::EFormat::R32G32B32_FLOAT, 0, Fox::EVertexInputClassification::PER_VERTEX_DATA);
+        Fox::VertexLayoutInfo    color("Color0", Fox::EFormat::R32G32B32A32_FLOAT, 3 * sizeof(float), Fox::EVertexInputClassification::PER_VERTEX_DATA);
+        Fox::VertexInputLayoutId vertexLayout = context->CreateVertexLayout({ position, color });
+        constexpr uint32_t       stride       = 7 * sizeof(float);
 
         Fox::ShaderSource shaderSource;
         shaderSource.VertexLayout            = vertexLayout;
         shaderSource.VertexStride            = stride;
         shaderSource.SourceCode.VertexShader = ReadBlobUnsafe("vertex.spv");
         shaderSource.SourceCode.PixelShader  = ReadBlobUnsafe("fragment.spv");
-        shaderSource.ColorAttachments.push_back(format);
+        shaderSource.ColorAttachments        = 1;
 
-        Fox::DShader shader = context->CreateShader(shaderSource);
+        Fox::ShaderId shader = context->CreateShader(shaderSource);
 
         // clang-format off
         constexpr std::array<float, 21> ndcTriangle{            
@@ -109,13 +112,13 @@ main()
         };
         // clang-format on
         constexpr size_t bufSize  = sizeof(float) * ndcTriangle.size();
-        Fox::DBuffer     triangle = context->CreateVertexBuffer(bufSize);
+        Fox::BufferId    triangle = context->CreateVertexBuffer(bufSize);
 
         Fox::CopyDataCommand copy;
         copy.CopyVertex(triangle, 0, (void*)ndcTriangle.data(), bufSize);
         context->SubmitCopy(std::move(copy));
 
-        Fox::DFramebuffer swapchainFbo = context->CreateSwapchainFramebuffer(swapchain);
+        Fox::FramebufferId swapchainFbo = context->CreateSwapchainFramebuffer(swapchain);
 
         Fox::DRenderPassAttachment  colorAttachment(format,
         Fox::ESampleBit::COUNT_1_BIT,
@@ -150,7 +153,7 @@ main()
             }
 
         context->DestroyShader(shader);
-        context->DestroyVertexBuffer(triangle);
+        context->DestroyBuffer(triangle);
         context->DestroySwapchain(swapchain);
 
         glfwDestroyWindow(window);

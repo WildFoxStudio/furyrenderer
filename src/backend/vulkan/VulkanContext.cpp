@@ -35,6 +35,19 @@ GetResource(std::array<T, maxSize>& container, uint32_t id)
 };
 
 template<class T, EResourceType type, size_t maxSize>
+inline const T&
+GetResource(const std::array<T, maxSize>& container, uint32_t id)
+{
+    const auto resourceId = ResourceId(id);
+    check(resourceId.First() == type); // Invalid resource id
+    check(resourceId.Value() < maxSize); // Must be less than array size
+    const T& element = container.at(resourceId.Value());
+    check(IsValidId(element.Id)); // The object must be in valid state
+    check(element.Id == resourceId.Second()); // The object must have not been destroyed previously and reallocated
+    return element;
+};
+
+template<class T, EResourceType type, size_t maxSize>
 inline T&
 GetResourceUnsafe(std::array<T, maxSize>& container, uint32_t id)
 {
@@ -275,7 +288,7 @@ VulkanContext::~VulkanContext()
     check(validVertexBufferCount == 0);
     const auto validUniformBufferCount = std::count_if(_uniformBuffers.begin(), _uniformBuffers.end(), [](const DBufferVulkan& buffer) { return IsValidId(buffer.Id); });
     check(validUniformBufferCount == 0);
-    const auto validFramebufferCount = std::count_if(_framebuffers.begin(), _framebuffers.end(), [](const DFramebufferVulkan& buffer) { return IsValidId(buffer.Id); });
+    const auto validFramebufferCount = std::count_if(_framebuffers.begin(), _framebuffers.end(), [](const DFramebufferVulkan_DEPRECATED& buffer) { return IsValidId(buffer.Id); });
     check(validFramebufferCount == 0);
     const auto validShaderCount = std::count_if(_shaders.begin(), _shaders.end(), [](const DShaderVulkan& shader) { return IsValidId(shader.Id); });
     check(validShaderCount == 0);
@@ -415,6 +428,23 @@ VulkanContext::_createSwapchain(DSwapchainVulkan& swapchain, const WindowData* w
     std::generate_n(std::back_inserter(swapchain.ImageAvailableSemaphore), NUM_OF_FRAMES_IN_FLIGHT, [this]() { return Device.CreateVkSemaphore(); });
 }
 
+std::vector<ImageId>
+VulkanContext::GetSwapchainImages(SwapchainId swapchainId)
+{
+    ResourceId resource(swapchainId);
+
+    check(resource.First() == EResourceType::SWAPCHAIN);
+
+    DSwapchainVulkan& swapchain = GetResource<DSwapchainVulkan, EResourceType::SWAPCHAIN, MAX_RESOURCES>(_swapchains, swapchainId);
+
+    std::vector<ImageId> images;
+    images.resize(swapchain.ImagesCount);
+
+    std::copy(swapchain.ImagesId.begin(), swapchain.ImagesId.begin() + swapchain.ImagesCount, images.data());
+
+    return images;
+}
+
 uint32_t
 VulkanContext::_createImageFromVkImage(VkImage vkimage, VkFormat format, uint32_t width, uint32_t height)
 {
@@ -481,8 +511,8 @@ FramebufferId
 VulkanContext::CreateSwapchainFramebuffer(SwapchainId swapchainId)
 {
 
-    const auto          index       = AllocResource<DFramebufferVulkan, MAX_RESOURCES>(_framebuffers);
-    DFramebufferVulkan& framebuffer = _framebuffers.at(index);
+    const auto                     index       = AllocResource<DFramebufferVulkan_DEPRECATED, MAX_RESOURCES>(_framebuffers);
+    DFramebufferVulkan_DEPRECATED& framebuffer = _framebuffers.at(index);
 
     DSwapchainVulkan& swapchain = GetResource<DSwapchainVulkan, EResourceType::SWAPCHAIN, MAX_RESOURCES>(_swapchains, swapchainId);
     swapchain.Framebuffers      = *ResourceId(EResourceType::FRAMEBUFFER, framebuffer.Id, index);
@@ -501,7 +531,7 @@ VulkanContext::_createFramebufferFromSwapchain(DSwapchainVulkan& swapchain)
 
     std::vector<VkFormat> attachments{ swapchainFormat };
 
-    DFramebufferVulkan& framebuffer = GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, swapchain.Framebuffers);
+    DFramebufferVulkan_DEPRECATED& framebuffer = GetResource<DFramebufferVulkan_DEPRECATED, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, swapchain.Framebuffers);
     framebuffer.Attachments.Attachments.push_back(DRenderPassAttachment(VkUtils::convertVkFormat(swapchainFormat),
     ESampleBit::COUNT_1_BIT,
     ERenderPassLoad::Load,
@@ -525,7 +555,7 @@ VulkanContext::_createFramebufferFromSwapchain(DSwapchainVulkan& swapchain)
 void
 VulkanContext::DestroyFramebuffer(FramebufferId framebufferId)
 {
-    auto& framebuffer = GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, framebufferId);
+    auto& framebuffer = GetResource<DFramebufferVulkan_DEPRECATED, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, framebufferId);
     check(IsValidId(framebuffer.Id));
     framebuffer.Id = PENDING_DESTROY;
 
@@ -537,7 +567,7 @@ VulkanContext::DestroyFramebuffer(FramebufferId framebufferId)
         }
 
     _deferDestruction([this, framebufferId]() {
-        DFramebufferVulkan& framebuffer = GetResourceUnsafe<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, framebufferId);
+        DFramebufferVulkan_DEPRECATED& framebuffer = GetResourceUnsafe<DFramebufferVulkan_DEPRECATED, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, framebufferId);
 
         std::for_each(framebuffer.Framebuffers.begin(), framebuffer.Framebuffers.end(), [this](const VkFramebuffer& framebuffer) { Device.DestroyFramebuffer(framebuffer); });
         framebuffer.Framebuffers.clear();
@@ -642,6 +672,14 @@ VulkanContext::CreateImage(EFormat format, uint32_t width, uint32_t height, uint
     image.Sampler = Device.CreateSampler(VK_FILTER_NEAREST, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT, 0, mipMapCount, VK_SAMPLER_MIPMAP_MODE_NEAREST, true, 16);
 
     return *ResourceId(EResourceType::IMAGE, image.Id, index);
+}
+
+EFormat
+VulkanContext::GetImageFormat(ImageId imageId) const
+{
+    const DImageVulkan& resource = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, imageId);
+
+    return VkUtils::convertVkFormat(resource.Image.Format);
 }
 
 void
@@ -1049,7 +1087,7 @@ VulkanContext::AdvanceFrame()
                         renderPassInfo.sType      = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
                         renderPassInfo.renderPass = _createRenderPass(pass.RenderPass);
 
-                        DFramebufferVulkan& framebuffer = GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, pass.Framebuffer);
+                        DFramebufferVulkan_DEPRECATED& framebuffer = GetResource<DFramebufferVulkan_DEPRECATED, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, pass.Framebuffer);
                         {
                             // Bind framebuffer or swapchain framebuffer based on the current image index
                             if (framebuffer.Framebuffers.size() == 1)
@@ -1438,7 +1476,7 @@ VulkanContext::_recreateSwapchainBlocking(DSwapchainVulkan& swapchain)
     // This can be a valid approach since a game doesn't resize very often
     vkDeviceWaitIdle(Device.Device);
 
-    DFramebufferVulkan& framebuffer = GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, swapchain.Framebuffers);
+    DFramebufferVulkan_DEPRECATED& framebuffer = GetResource<DFramebufferVulkan_DEPRECATED, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, swapchain.Framebuffers);
     // Destroy all framebuffers
     {
         std::for_each(framebuffer.Framebuffers.begin(), framebuffer.Framebuffers.end(), [this](const VkFramebuffer& framebuffer) { Device.DestroyFramebuffer(framebuffer); });
