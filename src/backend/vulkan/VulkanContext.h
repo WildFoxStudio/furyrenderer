@@ -33,6 +33,7 @@ struct DImageVulkan : public DResource
 {
     RIVulkanImage Image;
     VkImageView   View{};
+    VkImageAspectFlags ImageAspect{};
     VkSampler     Sampler{};
 };
 
@@ -47,11 +48,15 @@ struct DFramebufferVulkan : public DResource
 
 struct DSwapchainVulkan : public DResource
 {
-    VkSurfaceKHR             Surface{};
-    VkSurfaceCapabilitiesKHR Capabilities;
-    VkSurfaceFormatKHR       Format;
-    VkPresentModeKHR         PresentMode;
-    VkSwapchainKHR           Swapchain{};
+    static constexpr uint32_t             MAX_IMAGE_COUNT = 4;
+    VkSurfaceKHR                          Surface{};
+    VkSurfaceCapabilitiesKHR              Capabilities;
+    VkSurfaceFormatKHR                    Format;
+    VkPresentModeKHR                      PresentMode;
+    VkSwapchainKHR                        Swapchain{};
+    uint32_t                              ImagesCount{};
+    std::array<uint32_t, MAX_IMAGE_COUNT> ImagesId;
+    // Deprecated below
     std::vector<VkImage>     Images;
     std::vector<VkImageView> ImageViews;
     FramebufferId            Framebuffers{};
@@ -215,6 +220,7 @@ class VulkanContext final : public IContext
     void _deinitializeStagingBuffer();
 
     void               _createSwapchain(DSwapchainVulkan& swapchain, const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat);
+    uint32_t           _createImageFromVkImage(VkImage vkimage, VkFormat format, uint32_t width, uint32_t height);
     void               _createVertexBuffer(uint32_t size, DBufferVulkan& buffer);
     void               _createUniformBuffer(uint32_t size, DBufferVulkan& buffer);
     void               _createShader(const ShaderSource& source, DShaderVulkan& shader);

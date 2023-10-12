@@ -342,6 +342,7 @@ VulkanContext::CreateSwapchain(const WindowData* windowData, EPresentMode& prese
 void
 VulkanContext::_createSwapchain(DSwapchainVulkan& swapchain, const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat)
 {
+    // Get surface of the window
     VkSurfaceKHR surface{};
     {
         const auto result = Instance.CreateSurfaceFromWindow(*windowData, &surface);
@@ -351,6 +352,7 @@ VulkanContext::_createSwapchain(DSwapchainVulkan& swapchain, const WindowData* w
             }
     }
 
+    // Query formats present mode and capabilities
     const auto formats           = Device.GetSurfaceFormats(surface);
     outFormat                    = VkUtils::convertVkFormat(formats.front().format);
     const auto validPresentModes = Device.GetSurfacePresentModes(surface);
@@ -365,6 +367,7 @@ VulkanContext::_createSwapchain(DSwapchainVulkan& swapchain, const WindowData* w
 
     const auto capabilities = Device.GetSurfaceCapabilities(surface);
 
+    // Create swapchain object
     VkSwapchainKHR vkSwapchain{};
     {
         const auto result = Device.CreateSwapchainFromSurface(surface, formats.at(0), vkPresentMode, capabilities, &vkSwapchain);
@@ -374,6 +377,7 @@ VulkanContext::_createSwapchain(DSwapchainVulkan& swapchain, const WindowData* w
             }
     }
 
+    // Setup new object
     swapchain.Surface      = surface;
     swapchain.Capabilities = capabilities;
     swapchain.Format       = formats.at(0);
@@ -391,7 +395,51 @@ VulkanContext::_createSwapchain(DSwapchainVulkan& swapchain, const WindowData* w
         return imageView;
     });
 
+    const auto swapchainImages = Device.GetSwapchainImages(vkSwapchain);
+    swapchain.ImagesCount      = swapchainImages.size();
+    for (size_t i = 0; i < swapchainImages.size(); i++)
+        {
+            swapchain.ImagesId[i] = _createImageFromVkImage(swapchainImages.at(i), swapchain.Format.format, swapchain.Capabilities.currentExtent.width, swapchain.Capabilities.currentExtent.height);
+        }
+
+    std::transform(swapchain.Images.begin(), swapchain.Images.end(), std::back_inserter(swapchain.ImageViews), [this, format = swapchain.Format.format](const VkImage& image) {
+        VkImageView imageView{};
+        const auto  result = Device.CreateImageView(format, image, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, &imageView);
+        if (VKFAILED(result))
+            {
+                throw std::runtime_error("Failed to create swapchain imageView " + std::string(VkUtils::VkErrorString(result)));
+            }
+        return imageView;
+    });
+
     std::generate_n(std::back_inserter(swapchain.ImageAvailableSemaphore), NUM_OF_FRAMES_IN_FLIGHT, [this]() { return Device.CreateVkSemaphore(); });
+}
+
+uint32_t
+VulkanContext::_createImageFromVkImage(VkImage vkimage, VkFormat format, uint32_t width, uint32_t height)
+{
+
+    const auto    index    = AllocResource<DImageVulkan, MAX_RESOURCES>(_images);
+    DImageVulkan& image    = _images.at(index);
+    image.Image.Image      = vkimage;
+    image.Image.Allocation = nullptr;
+    image.Image.Format     = format;
+    image.Image.Width      = width;
+    image.Image.Height     = height;
+    image.Image.MipLevels  = 1;
+    image.Image.UsageFlags = NULL;
+
+    // Create image view
+    image.ImageAspect = VkUtils::isColorFormat(format) ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
+    {
+        const VkResult result = Device.CreateImageView(format, image.Image.Image, image.ImageAspect, 0, 1, &image.View);
+        if (VKFAILED(result))
+            {
+                throw std::runtime_error(VkUtils::VkErrorString(result));
+            }
+    }
+
+    return *ResourceId(EResourceType::IMAGE, image.Id, index);
 }
 
 void
@@ -420,6 +468,13 @@ VulkanContext::DestroySwapchain(SwapchainId swapchainId)
 
         swapchain.Id = NULL;
     }
+
+    for (uint32_t i = 0; i < swapchain.ImagesCount; i++)
+        {
+            const auto image = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, swapchain.ImagesId[i]);
+            Device.DestroyImageView(image.View);
+        }
+    swapchain.ImagesCount = 0;
 }
 
 FramebufferId
