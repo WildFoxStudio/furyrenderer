@@ -293,20 +293,20 @@ struct RenderPassData
     FramebufferRef            Framebuffer{};
     VkViewport                Viewport;
     VkRenderPass              RenderPass;
-    std::vector<VkClearValue> ClearValues; // Equal to the RenderPass attachments with clear op
+    std::vector<VkClearValue> ClearValues_DEPRECATED; // Equal to the RenderPass attachments with clear op
     std::vector<DrawCommand>  DrawCommands;
 
     RenderPassData(FramebufferRef fbo, VkViewport viewport, VkRenderPass renderPass) : Framebuffer(fbo), Viewport(viewport), RenderPass(renderPass) {}
     inline void ClearColor(float r, float g, float b, float a = 1.f)
     {
         VkClearColorValue col{ r, g, b, a };
-        ClearValues.push_back({ col });
+        ClearValues_DEPRECATED.push_back({ col });
     }
     inline void ClearDepthStencil(float depth, uint32_t stencil)
     {
         VkClearValue clearValue;
         clearValue.depthStencil = { depth, stencil };
-        ClearValues.push_back(clearValue);
+        ClearValues_DEPRECATED.push_back(clearValue);
     }
 
     inline void AddDrawCommand(DrawCommand&& command) { DrawCommands.emplace_back(std::move(command)); }

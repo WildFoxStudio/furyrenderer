@@ -17,6 +17,8 @@
 #pragma error Platform not supported
 #endif
 
+#include <functional>
+
 namespace Fox
 {
 // SHOULD BE PRIVATE
@@ -472,16 +474,38 @@ enum class ECommandType
     COPY_IMAGE,
     COPY_VERTEX,
     COPY_UNIFORM,
-    RENDER_PASS
+    RENDER_PASS,
+    BARRIER,//internal use
+    IMAGE_TRANSITION,//internal use
 };
+
+struct CommandBase;
+
+struct FramegraphResource
+{
+    const EResourceType       Type;
+    std::string               Name;
+    std::string               Description;
+    size_t                    Id;
+    size_t                    RefCount{};
+    std::vector<CommandBase*> Readers; // internally use
+    explicit FramegraphResource(EResourceType type, std::string debugName, std::string description = "") : Type(type), Name(debugName), Description(description)
+    {
+        static size_t idCounter{};
+        Id = idCounter++;
+    };
+};
+
 struct CommandBase
 {
     CommandBase(ECommandType type) : Type(type){};
-    const ECommandType        Type;
-    std::vector<uint32_t>     Dependencies;
-    uint32_t                  RefCount{}; // internal use
-    std::vector<CommandBase*> Blocks;
-    void                      DependsOn(uint32_t commandIndex) { Dependencies.emplace_back(std::move(commandIndex)); };
+    const ECommandType               Type;
+    std::vector<uint32_t>            Dependencies;
+    uint32_t                         RefCount{}; // internal use do not modify
+    std::vector<FramegraphResource*> WritesTo; // internal use do not modify
+    std::vector<FramegraphResource*> ReadsFrom; // internal use do not modify
+    std::vector<CommandBase*>        Blocks; // internal use do not modify
+    void                             DependsOn(uint32_t commandIndex) { Dependencies.emplace_back(std::move(commandIndex)); };
 };
 
 struct SetBinding
@@ -662,20 +686,20 @@ struct RenderPassData
     FramebufferId            Framebuffer{};
     DViewport                Viewport;
     DRenderPassAttachments   RenderPass;
-    std::vector<DClearValue> ClearValues; // Equal to the RenderPass attachments with clear op
+    std::vector<DClearValue> ClearValues_DEPRECATED; // Equal to the RenderPass attachments with clear op
     std::vector<DrawCommand> DrawCommands;
 
     RenderPassData(FramebufferId fbo, DViewport viewport, DRenderPassAttachments renderPass) : Framebuffer(fbo), Viewport(viewport), RenderPass(renderPass) {}
     inline void ClearColor(float r, float g, float b, float a = 1.f)
     {
         DClearColorValue col{ r, g, b, a };
-        ClearValues.push_back({ col });
+        ClearValues_DEPRECATED.push_back({ col });
     }
     inline void ClearDepthStencil(float depth, uint32_t stencil)
     {
         DClearValue clearValue;
         clearValue.depthStencil = { depth, stencil };
-        ClearValues.push_back(clearValue);
+        ClearValues_DEPRECATED.push_back(clearValue);
     }
 
     inline void AddDrawCommand(DrawCommand&& command) { DrawCommands.emplace_back(std::move(command)); }
@@ -684,23 +708,22 @@ struct RenderPassData
 struct CommandDrawPass : public CommandBase
 {
     CommandDrawPass(FramebufferId fbo, DViewport viewport, DRenderPassAttachments renderPass) : CommandBase(ECommandType::RENDER_PASS), Framebuffer(fbo), Viewport(viewport), RenderPass(renderPass){};
-    std::string              Name{ "RenderPass" };
-    FramebufferId            Framebuffer{};
-    DViewport                Viewport;
-    DRenderPassAttachments   RenderPass;
-    std::vector<DClearValue> ClearValues; // Equal to the RenderPass attachments with clear op
-    std::vector<DrawCommand> DrawCommands;
+    std::string                            Name{ "RenderPass" };
+    FramebufferId                          Framebuffer{};
+    DViewport                              Viewport;
+    DRenderPassAttachments                 RenderPass;
+    std::map<uint32_t, DClearColorValue>   ClearViews;
+    std::optional<DClearDepthStencilValue> OptClearDepthStencil;
+    std::vector<DrawCommand>               DrawCommands;
 
-    inline void ClearColor(float r, float g, float b, float a = 1.f)
+    inline void ClearColor(uint32_t attachmentIndex, float r, float g, float b, float a = 1.f)
     {
         DClearColorValue col{ r, g, b, a };
-        ClearValues.push_back({ col });
+        ClearViews[attachmentIndex] = std::move(col);
     }
     inline void ClearDepthStencil(float depth, uint32_t stencil)
     {
-        DClearValue clearValue;
-        clearValue.depthStencil = { depth, stencil };
-        ClearValues.push_back(clearValue);
+        OptClearDepthStencil = DClearDepthStencilValue{ depth, stencil };
     }
 
     inline void AddDrawCommand(DrawCommand&& command) { DrawCommands.emplace_back(std::move(command)); }
@@ -716,14 +739,14 @@ class IContext
     virtual FramebufferId CreateSwapchainFramebuffer(SwapchainId swapchainId) = 0;
     virtual void          DestroyFramebuffer(FramebufferId framebufferId)     = 0;
 
-    virtual BufferId            CreateVertexBuffer(uint32_t size)                                                  = 0;
-    virtual BufferId            CreateUniformBuffer(uint32_t size)                                                 = 0;
-    virtual void                DestroyBuffer(BufferId buffer)                                                     = 0;
-    virtual ImageId             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) = 0;
-    virtual void                DestroyImage(ImageId imageId)                                                      = 0;
-    virtual VertexInputLayoutId CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)                      = 0;
-    virtual ShaderId            CreateShader(const ShaderSource& source)                                           = 0;
-    virtual void                DestroyShader(const ShaderId shader)                                               = 0;
+    virtual BufferId            CreateVertexBuffer(uint32_t size)                                                                         = 0;
+    virtual BufferId            CreateUniformBuffer(uint32_t size)                                                                        = 0;
+    virtual void                DestroyBuffer(BufferId buffer)                                                                            = 0;
+    virtual ImageId             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount, std::string debugName) = 0;
+    virtual void                DestroyImage(ImageId imageId)                                                                             = 0;
+    virtual VertexInputLayoutId CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)                                             = 0;
+    virtual ShaderId            CreateShader(const ShaderSource& source)                                                                  = 0;
+    virtual void                DestroyShader(const ShaderId shader)                                                                      = 0;
 
     virtual void     SubmitPass(RenderPassData&& data)                     = 0;
     virtual void     SubmitCopy(CopyDataCommand&& data)                    = 0;

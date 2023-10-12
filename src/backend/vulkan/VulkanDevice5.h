@@ -21,6 +21,7 @@ struct RIVulkanImage
     uint32_t          Height{};
     uint32_t          MipLevels{};
     VkImageUsageFlags UsageFlags{};
+    VkImageLayout     ImageLayout{};
 };
 
 class RIVulkanImageHasher

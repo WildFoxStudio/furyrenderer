@@ -274,7 +274,7 @@ main()
         Fox::BufferId transformUniformBuffer = context->CreateUniformBuffer(sizeof(float) * 16);
         float         yaw{ 0 };
 
-        Fox::ImageId texture = context->CreateImage(Fox::EFormat::R8G8B8A8_UNORM, imageWidth, imageHeight, 1);
+        Fox::ImageId texture = context->CreateImage(Fox::EFormat::R8G8B8A8_UNORM, imageWidth, imageHeight, 1, "Texture");
 
         bool wireFrame{};
         bool upload{};
@@ -323,7 +323,7 @@ main()
 
                 auto pass  = std::make_unique<Fox::CommandDrawPass>(swapchainFbo, viewport, renderPass);
                 pass->Name = "GeometryPass";
-                pass->ClearColor(1, 0, 0, 1);
+                pass->ClearColor(0, 1, 0, 0, 1);
 
                 Fox::DrawCommand drawTriangle(shader);
                 drawTriangle.PipelineFormat.FillMode = wireFrame ? Fox::EFillMode::LINE : Fox::EFillMode::FILL;

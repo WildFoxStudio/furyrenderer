@@ -380,16 +380,27 @@ VulkanContext::_createSwapchain(DSwapchainVulkan& swapchain, const WindowData* w
     swapchain.Format       = formats.at(0);
     swapchain.PresentMode  = vkPresentMode;
     swapchain.Swapchain    = vkSwapchain;
-    swapchain.Images       = Device.GetSwapchainImages(vkSwapchain);
+    const auto images      = Device.GetSwapchainImages(vkSwapchain);
 
-    std::transform(swapchain.Images.begin(), swapchain.Images.end(), std::back_inserter(swapchain.ImageViews), [this, format = swapchain.Format.format](const VkImage& image) {
-        VkImageView imageView{};
-        const auto  result = Device.CreateImageView(format, image, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, &imageView);
+    std::transform(images.begin(), images.end(), std::back_inserter(swapchain.Images), [this, &swapchain](const VkImage& vkimage) {
+        RIVulkanImage img{};
+        img.Image     = vkimage;
+        img.Format    = swapchain.Format.format;
+        img.Width     = swapchain.Capabilities.currentExtent.width;
+        img.Height    = swapchain.Capabilities.currentExtent.height;
+        img.MipLevels = 1;
+
+        DImageVulkan image{};
+        image.DebugName = "Swapchain_" + std::to_string(ResourceId(swapchain.Id).Value());
+        image.Image     = std::move(img);
+
+        const auto result = Device.CreateImageView(image.Image.Format, image.Image.Image, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, &image.View);
         if (VKFAILED(result))
             {
                 throw std::runtime_error("Failed to create swapchain imageView " + std::string(VkUtils::VkErrorString(result)));
             }
-        return imageView;
+
+        return image;
     });
 
     std::generate_n(std::back_inserter(swapchain.ImageAvailableSemaphore), NUM_OF_FRAMES_IN_FLIGHT, [this]() { return Device.CreateVkSemaphore(); });
@@ -410,8 +421,8 @@ VulkanContext::DestroySwapchain(SwapchainId swapchainId)
 
         swapchain.Images.clear();
 
-        std::for_each(swapchain.ImageViews.begin(), swapchain.ImageViews.end(), [this](const VkImageView& imageView) { Device.DestroyImageView(imageView); });
-        swapchain.ImageViews.clear();
+        std::for_each(swapchain.Images.begin(), swapchain.Images.end(), [this](const DImageVulkan& image) { Device.DestroyImageView(image.View); });
+        swapchain.Images.clear();
 
         std::for_each(swapchain.ImageAvailableSemaphore.begin(), swapchain.ImageAvailableSemaphore.end(), [this](const VkSemaphore& semaphore) { Device.DestroyVkSemaphore(semaphore); });
         swapchain.ImageAvailableSemaphore.clear();
@@ -441,13 +452,15 @@ VulkanContext::CreateSwapchainFramebuffer(SwapchainId swapchainId)
 void
 VulkanContext::_createFramebufferFromSwapchain(DSwapchainVulkan& swapchain)
 {
-    const auto  swapchainFormat     = swapchain.Format.format;
-    const auto& swapchainImageViews = swapchain.ImageViews;
-    const auto& capabilities        = swapchain.Capabilities;
+    const auto  swapchainFormat = swapchain.Format.format;
+    const auto& capabilities    = swapchain.Capabilities;
 
     std::vector<VkFormat> attachments{ swapchainFormat };
 
     DFramebufferVulkan& framebuffer = GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, swapchain.Framebuffers);
+    framebuffer.Width               = capabilities.currentExtent.width;
+    framebuffer.Height              = capabilities.currentExtent.height;
+
     framebuffer.Attachments.Attachments.push_back(DRenderPassAttachment(VkUtils::convertVkFormat(swapchainFormat),
     ESampleBit::COUNT_1_BIT,
     ERenderPassLoad::Load,
@@ -460,12 +473,16 @@ VulkanContext::_createFramebufferFromSwapchain(DSwapchainVulkan& swapchain)
 
     VkRenderPass renderPass = _createRenderPassFromInfo(framebuffer.RenderPassInfo);
 
-    std::transform(swapchainImageViews.begin(), swapchainImageViews.end(), std::back_inserter(framebuffer.Framebuffers), [this, &capabilities, renderPass](VkImageView view) {
-        std::vector<VkImageView> views{ view };
-        return Device.CreateFramebuffer(views, capabilities.currentExtent.width, capabilities.currentExtent.height, renderPass);
+    std::transform(swapchain.Images.begin(), swapchain.Images.end(), std::back_inserter(framebuffer.Framebuffers), [this, framebuffer, &capabilities, renderPass](DImageVulkan& img) {
+        std::vector<VkImageView> views{ img.View };
+
+        DFramebufferSingle fbo;
+        fbo.Framebuffer = Device.CreateFramebuffer(views, capabilities.currentExtent.width, capabilities.currentExtent.height, renderPass);
+        fbo.ImageAttachments.push_back(&img);
+        fbo.ImageLayouts.push_back(VK_IMAGE_LAYOUT_UNDEFINED);
+
+        return fbo;
     });
-    framebuffer.Width  = capabilities.currentExtent.width;
-    framebuffer.Height = capabilities.currentExtent.height;
 }
 
 void
@@ -485,7 +502,7 @@ VulkanContext::DestroyFramebuffer(FramebufferId framebufferId)
     _deferDestruction([this, framebufferId]() {
         DFramebufferVulkan& framebuffer = GetResourceUnsafe<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, framebufferId);
 
-        std::for_each(framebuffer.Framebuffers.begin(), framebuffer.Framebuffers.end(), [this](const VkFramebuffer& framebuffer) { Device.DestroyFramebuffer(framebuffer); });
+        std::for_each(framebuffer.Framebuffers.begin(), framebuffer.Framebuffers.end(), [this](const DFramebufferSingle& framebuffer) { Device.DestroyFramebuffer(framebuffer.Framebuffer); });
         framebuffer.Framebuffers.clear();
 
         framebuffer.Id = FREE;
@@ -566,11 +583,12 @@ VulkanContext::DestroyBuffer(BufferId buffer)
 }
 
 ImageId
-VulkanContext::CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount)
+VulkanContext::CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount, std::string debugName)
 {
 
     const auto    index = AllocResource<DImageVulkan, MAX_RESOURCES>(_images);
     DImageVulkan& image = _images.at(index);
+    image.DebugName     = debugName;
 
     const auto vkFormat = VkUtils::convertFormat(format);
 
@@ -891,24 +909,412 @@ VulkanContext::SubmitCopy(CopyDataCommand&& data)
 }
 
 uint32_t
-VulkanContext::SubmitCommand(std::unique_ptr<CommandBase>&& command)
+VulkanContext::SubmitCommand(std::unique_ptr<CommandBase>&& commandPtr)
 {
-    if (command->Dependencies.size() > 0)
+    // if (commandPtr->Dependencies.size() > 0)
+    //     {
+    //         for (const auto dep : commandPtr->Dependencies)
+    //             {
+    //                 _commands.at(dep)->RefCount++;
+    //                 _commands.at(dep)->Blocks.push_back(commandPtr.get());
+    //             }
+    //     }
+
+    //// Find used resources and add them to the _framegraphResources vector
+    // switch (commandPtr->Type)
+    //     {
+    //         case ECommandType::COPY_VERTEX:
+    //             {
+    //                 CommandVertexCopy* command  = static_cast<CommandVertexCopy*>(commandPtr.get());
+    //                 auto*              resource = _makeFramegraphVertexBuffer(command->Destination);
+
+    //                command->WritesTo.emplace_back(resource);
+    //            }
+    //            break;
+    //        case ECommandType::COPY_UNIFORM:
+    //            {
+    //                CommandUniformBufferCopy* command = static_cast<CommandUniformBufferCopy*>(commandPtr.get());
+
+    //                auto* resource = _makeFramegraphUbo(command->Destination);
+
+    //                command->WritesTo.emplace_back(resource);
+    //            }
+    //            break;
+    //        case ECommandType::COPY_IMAGE:
+    //            {
+    //                CommandImageCopy* command = static_cast<CommandImageCopy*>(commandPtr.get());
+
+    //                auto* resource = _makeFramegraphImage(command->Destination);
+
+    //                command->WritesTo.emplace_back(resource);
+    //            }
+    //            break;
+    //        case ECommandType::RENDER_PASS:
+    //            {
+    //                CommandDrawPass* command = static_cast<CommandDrawPass*>(commandPtr.get());
+
+    //                const DFramebufferVulkan& fbo = GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, command->Framebuffer);
+    //                {
+    //                    const std::vector<DImageVulkan*>* imagesPtr;
+    //                    if (!fbo.IsSwapchainFramebuffer())
+    //                        {
+    //                            imagesPtr = &fbo.Framebuffers.back().ImageAttachments;
+    //                        }
+    //                    else
+    //                        {
+    //                            imagesPtr = &fbo.Framebuffers[_frameIndex];
+    //                        }
+
+    //                    for (const auto* imgPtr : *imagesPtr)
+    //                        {
+    //                            auto* resource = _makeFramegraphImagePtr(imgPtr);
+    //                            // Depends on the render pass LOAD / STORE OP
+    //                            command->WritesTo.emplace_back(resource);
+    //                            command->ReadsFrom.emplace_back(resource);
+
+    //                            // resource->Readers.emplace_back(command);
+    //                        }
+
+    //                    for (const auto& cmd : command->DrawCommands)
+    //                        {
+    //                            {
+    //                                auto* resource = _makeFramegraphVertexBuffer(cmd.VertexBuffer);
+    //                                resource->Readers.emplace_back(command);
+    //                            }
+    //                            for (const auto& set : cmd.DescriptorSetBindings)
+    //                                for (const auto& binding : set.second)
+    //                                    {
+    //                                        switch (binding.second.Type)
+    //                                            {
+    //                                                case EBindingType::UNIFORM_BUFFER_OBJECT:
+    //                                                    {
+    //                                                        auto* resource = _makeFramegraphUbo(binding.second.Buffers.front());
+    //                                                        resource->Readers.emplace_back(command);
+    //                                                    }
+    //                                                    break;
+    //                                                case EBindingType::SAMPLER:
+    //                                                    {
+    //                                                        for (const auto& img : binding.second.Images)
+    //                                                            {
+    //                                                                auto* resource = _makeFramegraphImage(img);
+    //                                                                resource->Readers.emplace_back(command);
+    //                                                            }
+    //                                                    }
+    //                                                    break;
+    //                                            }
+    //                                    }
+    //                        }
+    //                }
+    //            }
+    //            break;
+    //    }
+
+    _commands.emplace_back(std::move(commandPtr));
+    return _commands.size() - 1;
+}
+
+void
+VulkanContext::_compileGraph()
+{
+    // This must be after the query of the swapchain next image index
+
+    std::vector<BufferId> writeToBuffer;
+    std::vector<ImageId>  writeToImage;
+    std::vector<ImageId>  readFromImage;
+
+    struct Resource
+    {
+        bool                 IsImage;
+        VkImage              Image{};
+        VkBuffer             Buffer{};
+        VkAccessFlags        AccessFlag{};
+        VkPipelineStageFlags PipelineStage{};
+        VkImageLayout        ImageLayout{};
+    };
+
+    struct Pass
+    {
+        CommandBase*           Command{};
+        std::vector<Resource*> Writes;
+        std::vector<Resource*> Reads;
+    };
+
+    auto makeResourceImage = [](VkImage image) -> Resource* {
+        auto res     = new Resource;
+        res->IsImage = true;
+        res->Image   = image;
+        return res;
+    };
+
+    auto makeResourceBuffer = [](VkBuffer buffer) -> Resource* {
+        auto res     = new Resource;
+        res->IsImage = false;
+        res->Buffer  = buffer;
+        return res;
+    };
+
+    auto getImagePtr         = [this](uint32_t id) { return &GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, id); };
+    auto getVertexBufferPtr  = [this](uint32_t id) { return &GetResource<DBufferVulkan, EResourceType::VERTEX_INDEX_BUFFER, MAX_RESOURCES>(_vertexBuffers, id); };
+    auto getUniformBufferPtr = [this](uint32_t id) { return &GetResource<DBufferVulkan, EResourceType::UNIFORM_BUFFER, MAX_RESOURCES>(_uniformBuffers, id); };
+    auto getFramebufferPtr = [this](uint32_t id) { 
+        auto fbo = GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, id);  
+    
+    };
+
+    // Index of the command to a vector of edges that point to index of other commands that use the same resource
+    std::vector<Pass*> dependencyGraph;
+    dependencyGraph.resize(_commands.size());
+
+    std::unordered_map<void*, Resource*> resources;
+
+    // Extrapolate resources
+    for (size_t i = 0; i < _commands.size(); i++)
         {
-            for (const auto dep : command->Dependencies)
+            // std::vector<size_t>& edges = dependencyGraph.at(i);
+            dependencyGraph.at(i) = new Pass;
+            dependencyGraph.at(i)->Command = _commands.at(i).get();
+
+            //for (size_t j = i; j < _commands.size(); j++)
                 {
-                    _commands.at(dep)->RefCount++;
-                    _commands.at(dep)->Blocks.push_back(command.get());
+                    switch (_commands.at(i)->Type)
+                        {
+                            case ECommandType::COPY_IMAGE:
+                                {
+                                    const CommandImageCopy* imgCopy  = static_cast<CommandImageCopy*>(_commands.at(i).get());
+                                    auto*                   imagePtr = getImagePtr(imgCopy->Destination);
+                                    auto*                   resource = makeResourceImage(imagePtr->Image.Image);
+                                    resources[imagePtr]              = resource;
+                                    dependencyGraph.at(i)->Writes.push_back(resource);
+                                }
+                                break;
+                            case ECommandType::COPY_VERTEX:
+                                {
+                                    const CommandVertexCopy* copy      = static_cast<CommandVertexCopy*>(_commands.at(i).get());
+                                    auto*                    bufferPtr = getVertexBufferPtr(copy->Destination);
+                                    auto*                    resource  = makeResourceBuffer(bufferPtr->Buffer.Buffer);
+                                    resources[bufferPtr]               = resource;
+                                    dependencyGraph.at(i)->Writes.push_back(resource);
+                                }
+                                break;
+                            case ECommandType::COPY_UNIFORM:
+                                {
+                                    const CommandUniformBufferCopy* copy      = static_cast<CommandUniformBufferCopy*>(_commands.at(i).get());
+                                    auto*                           bufferPtr = getUniformBufferPtr(copy->Destination);
+                                    auto*                           resource  = makeResourceBuffer(bufferPtr->Buffer.Buffer);
+                                    resources[bufferPtr]                      = resource;
+                                    dependencyGraph.at(i)->Writes.push_back(resource);
+                                }
+                                break;
+                            case ECommandType::RENDER_PASS:
+                                {
+                                    const CommandDrawPass* pass = static_cast<CommandDrawPass*>(_commands.at(i).get());
+
+
+                                }
+                                break;
+                        }
                 }
         }
+    return;
+    //auto getResourceImage = [this](const std::unique_ptr<CommandBase>& command) -> std::vector<ImageId> {
+    //    switch (command->Type)
+    //        {
+    //            case ECommandType::COPY_IMAGE:
+    //                {
+    //                    const CommandImageCopy* imgCopy = static_cast<CommandImageCopy*>(command.get());
+    //                    return { imgCopy->Destination };
+    //                }
+    //                break;
+    //            case ECommandType::COPY_VERTEX:
+    //                return {};
+    //                break;
+    //            case ECommandType::COPY_UNIFORM:
+    //                return {};
+    //                break;
+    //            case ECommandType::RENDER_PASS:
+    //                {
+    //                    const CommandDrawPass* drawCommand = static_cast<CommandDrawPass*>(command.get());
 
-    _commands.emplace_back(std::move(command));
-    return _commands.size() - 1;
+    //                    auto                      fboId       = drawCommand->Framebuffer;
+    //                    const DFramebufferVulkan& fboResource = GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, fboId);
+
+    //                    const DFramebufferSingle* fbo{};
+    //                    // Since swapchain images do not have ID we can skip this control
+    //                    if (fboResource.IsSwapchainFramebuffer())
+    //                        {
+    //                            auto swapchain = std::find_if(_swapchains.begin(), _swapchains.end(), [fboId](const DSwapchainVulkan& swapchain) { return swapchain.Framebuffers == fboId; });
+    //                            check(swapchain != _swapchains.end());
+
+    //                            fbo = &fboResource.Framebuffers.at(swapchain->CurrentImageIndex);
+    //                        }
+    //                    else
+    //                        {
+    //                            fbo = &fboResource.Framebuffers.front();
+    //                        }
+    //                }
+    //                break;
+    //        }
+    //};
+
+    //auto doesReadImage = [this](const std::unique_ptr<CommandBase>& command, ImageId image) -> bool {
+    //    // Only render pass can read images, as FBO or as attachments for now
+    //    switch (command->Type)
+    //        {
+    //            case ECommandType::RENDER_PASS:
+    //                {
+    //                    const CommandDrawPass* drawCommand = static_cast<CommandDrawPass*>(command.get());
+    //                    // Verify if the image is being used as an FBO attachment
+    //                    {
+    //                        const auto fboId = drawCommand->Framebuffer;
+
+    //                        const DFramebufferVulkan& fboResource = GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, fboId);
+
+    //                        const DFramebufferSingle* fbo{};
+    //                        // Since swapchain images do not have ID we can skip this control
+    //                        check(!fboResource.IsSwapchainFramebuffer());
+
+    //                        // if (fboResource.IsSwapchainFramebuffer())
+    //                        //     {
+    //                        //         auto swapchain = std::find_if(_swapchains.begin(), _swapchains.end(), [fboId](const DSwapchainVulkan& swapchain) { return swapchain.Framebuffers == fboId; });
+    //                        //         check(swapchain != _swapchains.end());
+
+    //                        //        fbo = &fboResource.Framebuffers.at(swapchain->CurrentImageIndex);
+    //                        //    }
+    //                        // else
+    //                        {
+    //                            fbo = &fboResource.Framebuffers.front();
+    //                        }
+
+    //                        const DImageVulkan* imagePtr = &GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, image);
+    //                        const auto foundAsAttachment = std::find(fbo->ImageAttachments.begin(), fbo->ImageAttachments.end(), [imagePtr](const DImageVulkan* image) { return image == imagePtr; });
+
+    //                        if (foundAsAttachment != fbo->ImageAttachments.end())
+    //                            {
+    //                                return true;
+    //                            }
+    //                    }
+    //                    // Verify that the image is not used as shader resource
+    //                    {
+
+    //                        for (const auto& draw : drawCommand->DrawCommands)
+    //                            {
+    //                                for (const auto& set : draw.DescriptorSetBindings)
+    //                                    {
+    //                                        for (const auto& binding : set.second)
+    //                                            {
+    //                                                if (binding.second.Type == EBindingType::SAMPLER)
+    //                                                    {
+    //                                                        const auto foundAsSampler = std::find(binding.second.Images.begin(), binding.second.Images.end(), image);
+    //                                                        if (foundAsSampler != binding.second.Images.end())
+    //                                                            {
+    //                                                                return true;
+    //                                                            }
+    //                                                    }
+    //                                            }
+    //                                    }
+    //                            }
+    //                    }
+    //                }
+    //                break;
+
+    //            default:
+    //                return false;
+    //        }
+    //};
+
+    //for (std::vector<std::unique_ptr<CommandBase>>::iterator it = _commands.begin(); it != _commands.end(); it++)
+    //    {
+    //        const std::unique_ptr<CommandBase>& command = *it;
+    //        switch (command->Type)
+    //            {
+    //                case ECommandType::COPY_IMAGE:
+    //                    {
+    //                        const CommandImageCopy* imgCopy = static_cast<CommandImageCopy*>(command.get());
+
+    //                        DImageVulkan& img = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, imgCopy->Destination);
+
+    //                        // Count number of writes before this command - prevent WAW
+    //                        const auto numOfBeforeWrites = std::count_if(writeToImage.begin(), writeToImage.end(), [&imgCopy](const ImageId& id) { return id == imgCopy->Destination; });
+    //                        // Create a barrier if previously we wrote to this image
+    //                        if (numOfBeforeWrites > 0)
+    //                            {
+    //                                auto writeBarrier = std::make_unique<CommandImageTransition>()
+    //                                                    ->MipsRange(0, img.Image.MipLevels)
+    //                                                    .From(img.Image.ImageLayout)
+    //                                                    .To(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+    //                                                    .SetColorBit()
+    //                                                    .SrcAccess(VK_ACCESS_TRANSFER_WRITE_BIT)
+    //                                                    .DstAccess(VK_ACCESS_TRANSFER_WRITE_BIT);
+    //                                _compiledCommands.emplace_back(std::move(writeBarrier));
+
+    //                                img.Image.ImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    //                            }
+
+    //                        // Move command to execute
+    //                        _compiledCommands.emplace_back(std::move(command));
+
+    //                        // Mark that we write to this image
+    //                        writeToImage.push_back(imgCopy->Destination);
+
+    //                        // If later we read from this image make a read barrier - prevent RAW
+    //                        const auto numOfReads =
+    //                        std::count_if(it, _commands.end(), [&doesReadImage, &imgCopy](const std::unique_ptr<CommandBase>& command) { return doesReadImage(command, imgCopy->Destination); });
+    //                        if (numOfReads)
+    //                            {
+    //                                auto readBarrier = std::make_unique<CommandImageTransition>()
+    //                                                   ->MipsRange(0, img.Image.MipLevels)
+    //                                                   .From(img.Image.ImageLayout)
+    //                                                   .To(img.Image.ImageLayout)
+    //                                                   .SetColorBit()
+    //                                                   .SrcAccess(VK_ACCESS_TRANSFER_WRITE_BIT)
+    //                                                   .DstAccess(VK_ACCESS_SHADER_READ_BIT);
+    //                                _compiledCommands.emplace_back(std::move(readBarrier));
+    //                            }
+    //                    }
+    //                    break;
+    //                case ECommandType::COPY_VERTEX:
+    //                    {
+    //                        const CommandVertexCopy* vertexCopy = static_cast<CommandVertexCopy*>(command.get());
+
+    //                        DBufferVulkan& buf = GetResource<DBufferVulkan, EResourceType::VERTEX_INDEX_BUFFER, MAX_RESOURCES>(_vertexBuffers, vertexCopy->Destination);
+
+    //                        auto writeBarrier = std::make_unique<CommandBarrier>()->SetBuffer(buf.Buffer.Buffer);
+    //                        _compiledCommands.emplace_back(std::move(writeBarrier));
+    //                        _compiledCommands.emplace_back(std::move(command));
+    //                        auto readBarrier = std::make_unique<CommandBarrier>();
+    //                        _compiledCommands.emplace_back(std::move(readBarrier));
+    //                    }
+    //                    break;
+    //                case ECommandType::COPY_UNIFORM:
+    //                    {
+    //                        auto writeBarrier = std::make_unique<CommandBarrier>();
+    //                        _compiledCommands.emplace_back(std::move(writeBarrier));
+    //                        _compiledCommands.emplace_back(std::move(command));
+    //                        auto readBarrier = std::make_unique<CommandBarrier>();
+    //                        _compiledCommands.emplace_back(std::move(readBarrier));
+    //                    }
+    //                    break;
+    //                case ECommandType::RENDER_PASS:
+    //                    {
+    //                        const CommandDrawPass* drawCommand = static_cast<CommandDrawPass*>(command.get());
+
+    //                        // drawCommand->Framebuffer.Get
+
+    //                        auto writeBarrier = std::make_unique<CommandBarrier>();
+    //                        _compiledCommands.emplace_back(std::move(writeBarrier));
+    //                        _compiledCommands.emplace_back(std::move(command));
+    //                        auto readBarrier = std::make_unique<CommandBarrier>();
+    //                        _compiledCommands.emplace_back(std::move(readBarrier));
+    //                    }
+    //                    break;
+    //            }
+    //    }
 }
 
 void
 VulkanContext::AdvanceFrame()
 {
+    _compileGraph();
     // Wait for previous work to complete wait fence to signal
     const VkResult result = vkWaitForFences(Device.Device, 1, &_fence[_frameIndex], VK_TRUE /*Wait all*/, MAX_FENCE_TIMEOUT);
     if (VKFAILED(result))
@@ -1007,7 +1413,7 @@ VulkanContext::AdvanceFrame()
 
         for (const auto& command : _commands)
             {
-                auto                     cmd = commandPool->Allocate()->Cmd;
+                auto cmd = commandPool->Allocate()->Cmd;
 
                 VkCommandBufferBeginInfo beginInfo{};
                 beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -1032,34 +1438,48 @@ VulkanContext::AdvanceFrame()
                                 renderPassInfo.renderPass = _createRenderPass(pass->RenderPass);
 
                                 DFramebufferVulkan& framebuffer = GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, pass->Framebuffer);
+
                                 {
                                     // Bind framebuffer or swapchain framebuffer based on the current image index
-                                    if (framebuffer.Framebuffers.size() == 1)
+                                    if (framebuffer.IsSwapchainFramebuffer())
                                         {
-                                            renderPassInfo.framebuffer = framebuffer.Framebuffers.front();
+                                            renderPassInfo.framebuffer = framebuffer.Framebuffers.front().Framebuffer;
                                         }
                                     else
                                         {
                                             auto swapchain =
                                             std::find_if(_swapchains.begin(), _swapchains.end(), [id = pass->Framebuffer](const DSwapchainVulkan& swapchain) { return swapchain.Framebuffers == id; });
                                             check(swapchain != _swapchains.end());
-                                            renderPassInfo.framebuffer = framebuffer.Framebuffers[swapchain->CurrentImageIndex];
+                                            renderPassInfo.framebuffer = framebuffer.Framebuffers.at(swapchain->CurrentImageIndex).Framebuffer;
                                         }
                                 }
+
+                                // Create runtime render pass load store op and layouts
+                                DRenderPassAttachments newRenderPass = { framebuffer.Attachments };
+                                // Reset attachment to load op - should be default from FBO
+                                for (auto& attachment : newRenderPass.Attachments)
+                                    {
+                                        attachment.LoadOP = ERenderPassLoad::Load;
+                                    }
+
+                                // Set clear based on clear view index
+                                for (const auto& clearPair : pass->ClearViews)
+                                    {
+                                        const auto view = clearPair.first;
+                                        check(view < newRenderPass.Attachments.size()); // Invalid view id
+                                        newRenderPass.Attachments.at(view).LoadOP = ERenderPassLoad::Clear;
+                                    }
+
+                                // framebuffer.ImageAttachments<>
 
                                 renderPassInfo.renderArea.offset = { 0, 0 };
                                 renderPassInfo.renderArea.extent = { framebuffer.Width, framebuffer.Height };
 
-                                check(pass->ClearValues.size() >= std::count_if(pass->RenderPass.Attachments.begin(), pass->RenderPass.Attachments.end(), [](const DRenderPassAttachment& att) {
-                                    return att.LoadOP == ERenderPassLoad::Clear;
-                                })); // Need same number of clear for each clear layout attachament
-
-                                // Convert clear values to vkClearValues
+                                // Convert clear values to vkClearValues 1 to 1 order
                                 std::vector<VkClearValue> vkClearValues;
-                                std::transform(pass->ClearValues.begin(), pass->ClearValues.end(), std::back_inserter(vkClearValues), [](const DClearValue& v) {
+                                std::transform(pass->ClearViews.begin(), pass->ClearViews.end(), std::back_inserter(vkClearValues), [](const std::pair<uint32_t, DClearColorValue>& pair) {
                                     VkClearValue value;
-                                    //@TODO Risky copy of union, find a better way to handle this
-                                    memcpy(value.color.float32, v.color.float32, sizeof(VkClearValue));
+                                    memcpy(value.color.float32, pair.second.float32, sizeof(float) * 4);
                                     return value;
                                 });
 
@@ -1140,6 +1560,8 @@ VulkanContext::AdvanceFrame()
                         }
                         // end renderpass
                         vkCmdEndRenderPass(cmd);
+
+                        VkUtils::fullPipelineBarrier(cmd);
                     }
 
                 vkEndCommandBuffer(cmd);
@@ -1182,34 +1604,36 @@ VulkanContext::ExportGraphviz(const std::string filename)
     std::ofstream stream("graph.dot");
     stream << "digraph framegraph \n{\n";
 
-    stream << "rankdir = RL\n";
+    stream << "rankdir = LR\n";
     stream << "bgcolor = black\n\n";
     stream << "node [shape=rectangle, fontname=\"helvetica\", fontsize=12]\n\n";
 
-    auto getCommandName = [](std::unique_ptr<CommandBase>& ptr) -> std::string {
+    auto getResourceName = [](const FramegraphResource* resource) -> std::string { return resource->Name + "_" + std::to_string(resource->Id); };
+
+    auto getCommandName = [](CommandBase* ptr) -> std::string {
         switch (ptr->Type)
             {
                 case ECommandType::COPY_VERTEX:
                     {
-                        CommandVertexCopy* command = static_cast<CommandVertexCopy*>(ptr.get());
+                        CommandVertexCopy* command = static_cast<CommandVertexCopy*>(ptr);
                         return "CommandVertexCopy";
                     }
                     break;
                 case ECommandType::COPY_UNIFORM:
                     {
-                        CommandUniformBufferCopy* command = static_cast<CommandUniformBufferCopy*>(ptr.get());
+                        CommandUniformBufferCopy* command = static_cast<CommandUniformBufferCopy*>(ptr);
                         return "CommandUniformBufferCopy";
                     }
                     break;
                 case ECommandType::COPY_IMAGE:
                     {
-                        CommandImageCopy* command = static_cast<CommandImageCopy*>(ptr.get());
+                        CommandImageCopy* command = static_cast<CommandImageCopy*>(ptr);
                         return "CommandImageCopy";
                     }
                     break;
                 case ECommandType::RENDER_PASS:
                     {
-                        CommandDrawPass* command = static_cast<CommandDrawPass*>(ptr.get());
+                        CommandDrawPass* command = static_cast<CommandDrawPass*>(ptr);
                         return command->Name;
                     }
                     break;
@@ -1220,38 +1644,80 @@ VulkanContext::ExportGraphviz(const std::string filename)
     // Nodes definition
     for (auto& render_task : _commands)
         {
-            std::string name = getCommandName(render_task);
+            std::string name = getCommandName(render_task.get());
 
             stream << "\"" << name << "\" [label=\"" << name << "\\nRefs: " << render_task->RefCount << "\", style=filled, fillcolor=darkorange]\n";
+            stream << "\n";
+        }
+
+    // Resources
+    for (auto& resource : _framegraphResources)
+        {
+            bool transient{};
+            stream << "\"" << getResourceName(resource.get()) << "\" [label=\"" << resource->Name << "\\nFormat:" << resource->Description << "\\nRefs:" << resource->RefCount
+                   << "\\nID: " << resource->Id << "\", style=filled, fillcolor= " << (transient ? "skyblue" : "steelblue") << "]\n";
             stream << "\n";
         }
 
     // Arrows
     for (auto& render_task : _commands)
         {
-            if (render_task->Dependencies.size() > 0)
-                {
-                    std::string destination = getCommandName(render_task);
-                    stream << "\"" << destination << "\" -> { ";
+            // if (render_task->Dependencies.size() > 0)
+            {
+                std::string destination = getCommandName(render_task.get());
+                stream << "\"" << destination << "\" -> { ";
 
-                    for (auto& dep : render_task->Dependencies)
-                        {
-                            const std::string sourceName = getCommandName(_commands.at(dep));
-                            // stream << "\"" << render_task->Name << "\" -> { ";
-                            // for (auto& resource : render_task->creates_)
-                            //	stream << "\"" << resource->name() << "\" ";
-                            // stream << "} [color=seagreen]\n";
+                for (const auto write : render_task->WritesTo)
+                    {
+                        const std::string sourceName = getResourceName(write);
+                        stream << "\"" << sourceName << "\" ";
+                    }
+                stream << "} [color=seagreen]\n";
 
-                            stream << "\"" << sourceName << "\" ";
-                        }
-                    stream << "} [color=gold]\n";
-                    stream << "\n";
-                }
+                // if (render_task->ReadsFrom.size())
+                //     {
+                //         stream << "\{ ";
+                //         for (const auto read : render_task->ReadsFrom)
+                //             {
+                //                 const std::string sourceName = getResourceName(read);
+
+                //                stream << "\"" << sourceName << "\" ";
+                //            }
+
+                //        std::string destination = getCommandName(render_task);
+                //        stream << "} -> \" " << destination << "\" ";
+                //        stream << " [color=crimson]\n";
+                //    }
+
+                // for (auto& dep : render_task->Dependencies)
+                //     {
+                //         const std::string sourceName = getCommandName(_commands.at(dep));
+                //         // stream << "\"" << render_task->Name << "\" -> { ";
+                //         // for (auto& resource : render_task->creates_)
+                //         //	stream << "\"" << resource->name() << "\" ";
+                //         // stream << "} [color=seagreen]\n";
+
+                //        stream << "\"" << sourceName << "\" ";
+                //    }
+            }
         }
-    // for (auto& resource : fg._resources)
-    //     stream << "\"" << resource->Name << "\" [label=\"" << resource->Name << "\\nRefs: " << resource->RefCount << "\\nID: " << resource->Id
-    //            << "\", style=filled, fillcolor= " << (resource->Transient ? "skyblue" : "steelblue") << "]\n";
-    // stream << "\n";
+
+    for (const auto& resource : _framegraphResources)
+        {
+            stream << "\"" << getResourceName(resource.get()) << "\" -> { ";
+            for (auto& render_task : resource->Readers)
+                stream << "\"" << getCommandName(render_task) << "\" ";
+            stream << "} [color=firebrick]\n";
+        }
+
+    // switch (resource->Type)
+    //     {
+    //         case EResourceType::IMAGE:
+    //             {
+    //
+    //             }
+    //             break;
+    //     }
 
     // for (auto& render_task : fg._passes)
     //     {
@@ -1529,6 +1995,10 @@ VulkanContext::_executeCopyCommand(VkCommandBuffer cmd, const std::unique_ptr<Co
 
                     const uint32_t stagingOffset = _stagingBufferManager->Push((void*)command->Data.data(), command->Data.size());
                     _perFrameCopySizes[_frameIndex].push_back(command->Data.size());
+
+                    auto* resource = _makeFramegraphVertexBufferPtr(&vertexBuffer);
+                    resource->WaitReadToWriteTransferBarrier(cmd);
+
                     // Perform copy
                     {
                         VkBufferCopy copy{};
@@ -1538,24 +2008,8 @@ VulkanContext::_executeCopyCommand(VkCommandBuffer cmd, const std::unique_ptr<Co
 
                         vkCmdCopyBuffer(cmd, _stagingBuffer.Buffer, vertexBuffer.Buffer.Buffer, 1, &copy);
                     }
-                    // Perform barrier if blocks other commands
-                    if (command->Blocks.size() > 0)
-                        {
-                            for (const auto& blockingCommand : command->Blocks)
-                                {
-                                    VkBufferMemoryBarrier readBarrier{};
-                                    readBarrier.sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-                                    readBarrier.pNext               = NULL;
-                                    readBarrier.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
-                                    readBarrier.dstAccessMask       = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_INDEX_READ_BIT;
-                                    readBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                                    readBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                                    readBarrier.buffer              = vertexBuffer.Buffer.Buffer;
-                                    readBarrier.offset              = 0;
-                                    readBarrier.size                = VK_WHOLE_SIZE;
-                                    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 0, nullptr, 1, &readBarrier, 0, nullptr);
-                                }
-                        }
+
+                    resource->WaitWriteToReadTransferBarrier(cmd);
                 }
                 break;
             case ECommandType::COPY_UNIFORM:
@@ -1583,6 +2037,10 @@ VulkanContext::_executeCopyCommand(VkCommandBuffer cmd, const std::unique_ptr<Co
 
                     const uint32_t stagingOffset = _stagingBufferManager->Push((void*)command->Data.data(), command->Data.size());
                     _perFrameCopySizes[_frameIndex].push_back(command->Data.size());
+
+                    auto* resource = _makeFramegraphUboPtr(&uniformBuffer);
+
+                    resource->WaitReadToWriteTransferBarrier(cmd);
                     // Perform copy
                     {
                         VkBufferCopy copy{};
@@ -1592,24 +2050,7 @@ VulkanContext::_executeCopyCommand(VkCommandBuffer cmd, const std::unique_ptr<Co
 
                         vkCmdCopyBuffer(cmd, _stagingBuffer.Buffer, uniformBuffer.Buffer.Buffer, 1, &copy);
                     }
-                    // Perform barrier if blocks other commands
-                    if (command->Blocks.size() > 0)
-                        {
-                            for (const auto& blockingCommand : command->Blocks)
-                                {
-                                    VkBufferMemoryBarrier readBarrier{};
-                                    readBarrier.sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-                                    readBarrier.pNext               = NULL;
-                                    readBarrier.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
-                                    readBarrier.dstAccessMask       = VK_ACCESS_UNIFORM_READ_BIT;
-                                    readBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                                    readBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                                    readBarrier.buffer              = uniformBuffer.Buffer.Buffer;
-                                    readBarrier.offset              = 0;
-                                    readBarrier.size                = VK_WHOLE_SIZE;
-                                    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_SHADER_BIT, 0, 0, nullptr, 1, &readBarrier, 0, nullptr);
-                                }
-                        }
+                    resource->WaitWriteToReadTransferBarrier(cmd);
                 }
                 break;
             case ECommandType::COPY_IMAGE:
@@ -1753,13 +2194,13 @@ VulkanContext::_recreateSwapchainBlocking(DSwapchainVulkan& swapchain)
     DFramebufferVulkan& framebuffer = GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, swapchain.Framebuffers);
     // Destroy all framebuffers
     {
-        std::for_each(framebuffer.Framebuffers.begin(), framebuffer.Framebuffers.end(), [this](const VkFramebuffer& framebuffer) { Device.DestroyFramebuffer(framebuffer); });
+        std::for_each(framebuffer.Framebuffers.begin(), framebuffer.Framebuffers.end(), [this](const DFramebufferSingle& framebuffer) { Device.DestroyFramebuffer(framebuffer.Framebuffer); });
         framebuffer.Framebuffers.clear();
     }
 
     // Destroy all image views
-    std::for_each(swapchain.ImageViews.begin(), swapchain.ImageViews.end(), [this](const VkImageView& imageView) { Device.DestroyImageView(imageView); });
-    swapchain.ImageViews.clear();
+    std::for_each(swapchain.Images.begin(), swapchain.Images.end(), [this](const DImageVulkan& image) { Device.DestroyImageView(image.View); });
+    swapchain.Images.clear();
 
     // Create from old
     {
@@ -1778,17 +2219,28 @@ VulkanContext::_recreateSwapchainBlocking(DSwapchainVulkan& swapchain)
     }
 
     // Get image views
-    swapchain.Images = Device.GetSwapchainImages(swapchain.Swapchain);
+    const auto images = Device.GetSwapchainImages(swapchain.Swapchain);
 
-    // Create image views
-    std::transform(swapchain.Images.begin(), swapchain.Images.end(), std::back_inserter(swapchain.ImageViews), [this, format = swapchain.Format.format](const VkImage& image) {
-        VkImageView imageView{};
-        const auto  result = Device.CreateImageView(format, image, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, &imageView);
+    // Create images
+    std::transform(images.begin(), images.end(), std::back_inserter(swapchain.Images), [this, &swapchain](const VkImage& vkimage) {
+        RIVulkanImage img{};
+        img.Image     = vkimage;
+        img.Format    = swapchain.Format.format;
+        img.Width     = swapchain.Capabilities.currentExtent.width;
+        img.Height    = swapchain.Capabilities.currentExtent.height;
+        img.MipLevels = 1;
+
+        DImageVulkan image{};
+        image.DebugName = "Swapchain_" + std::to_string(ResourceId(swapchain.Id).Value());
+        image.Image     = std::move(img);
+
+        const auto result = Device.CreateImageView(image.Image.Format, image.Image.Image, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, &image.View);
         if (VKFAILED(result))
             {
                 throw std::runtime_error("Failed to create swapchain imageView " + std::string(VkUtils::VkErrorString(result)));
             }
-        return imageView;
+
+        return image;
     });
 
     // Create a framebuffer
@@ -2039,4 +2491,85 @@ VulkanContext::WaitDeviceIdle()
 {
     vkDeviceWaitIdle(Device.Device);
 }
+
+#pragma region Framegraph functions
+FramegraphImage*
+VulkanContext::_makeFramegraphImage(ImageId id)
+{
+    DImageVulkan* imgPtr = &GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, id);
+    return _makeFramegraphImagePtr(imgPtr);
+}
+
+FramegraphImage*
+VulkanContext::_makeFramegraphImagePtr(const DImageVulkan* imagePtr)
+{
+    // Find image in the resource graph
+    const auto foundExistingResource = std::find_if(_framegraphResources.begin(), _framegraphResources.end(), [imagePtr](const std::unique_ptr<FramegraphResource>& resource) {
+        return resource->Type == EResourceType::IMAGE && imagePtr == static_cast<FramegraphImage*>(resource.get())->Image;
+    });
+    // If already exists in the resource graph and to command
+    if (foundExistingResource == _framegraphResources.end())
+        {
+            auto resource = std::make_unique<FramegraphImage>(imagePtr, imagePtr->DebugName, VkUtils::vkFormatString(imagePtr->Image.Format));
+            resource->RefCount++; // If we found this resource it means is used in a pass
+            _framegraphResources.emplace_back(std::move(resource));
+            return static_cast<FramegraphImage*>(_framegraphResources.back().get());
+        }
+
+    return static_cast<FramegraphImage*>(foundExistingResource->get());
+}
+
+FramegraphUbo*
+VulkanContext::_makeFramegraphUbo(BufferId id)
+{
+    DBufferVulkan* ptr = &GetResource<DBufferVulkan, EResourceType::UNIFORM_BUFFER, MAX_RESOURCES>(_uniformBuffers, id);
+    return _makeFramegraphUboPtr(ptr);
+}
+
+FramegraphUbo*
+VulkanContext::_makeFramegraphUboPtr(const DBufferVulkan* ptr)
+{
+    // Find in the resource graph
+    const auto foundExistingResource = std::find_if(_framegraphResources.begin(), _framegraphResources.end(), [ptr](const std::unique_ptr<FramegraphResource>& resource) {
+        return resource->Type == EResourceType::UNIFORM_BUFFER && ptr == static_cast<FramegraphUbo*>(resource.get())->Buffer;
+    });
+    // If already exists in the resource graph and to command
+    if (foundExistingResource == _framegraphResources.end())
+        {
+            auto resource = std::make_unique<FramegraphUbo>(ptr, "UniformBuffer", std::to_string(ptr->Size) + std::string(" bytes"));
+            resource->RefCount++; // If we found this resource it means is used in a pass
+            _framegraphResources.emplace_back(std::move(resource));
+            return static_cast<FramegraphUbo*>(_framegraphResources.back().get());
+        }
+
+    return static_cast<FramegraphUbo*>(foundExistingResource->get());
+}
+
+FramegraphVertexBuffer*
+VulkanContext::_makeFramegraphVertexBuffer(BufferId id)
+{
+    DBufferVulkan* ptr = &GetResource<DBufferVulkan, EResourceType::VERTEX_INDEX_BUFFER, MAX_RESOURCES>(_vertexBuffers, id);
+    return _makeFramegraphVertexBufferPtr(ptr);
+}
+
+FramegraphVertexBuffer*
+VulkanContext::_makeFramegraphVertexBufferPtr(const DBufferVulkan* ptr)
+{
+    // Find in the resource graph
+    const auto foundExistingResource = std::find_if(_framegraphResources.begin(), _framegraphResources.end(), [ptr](const std::unique_ptr<FramegraphResource>& resource) {
+        return resource->Type == EResourceType::VERTEX_INDEX_BUFFER && ptr == static_cast<FramegraphVertexBuffer*>(resource.get())->Buffer;
+    });
+    // If already exists in the resource graph and to command
+    if (foundExistingResource == _framegraphResources.end())
+        {
+            auto resource = std::make_unique<FramegraphVertexBuffer>(ptr, "VertexBuffer", std::to_string(ptr->Size) + std::string(" bytes"));
+            resource->RefCount++; // If we found this resource it means is used in a pass
+            _framegraphResources.emplace_back(std::move(resource));
+            return static_cast<FramegraphVertexBuffer*>(_framegraphResources.back().get());
+        }
+
+    return static_cast<FramegraphVertexBuffer*>(foundExistingResource->get());
+}
+
+#pragma endregion
 }

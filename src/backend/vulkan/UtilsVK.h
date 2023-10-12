@@ -145,6 +145,45 @@ convertVkFormat(const VkFormat format)
     return Fox::EFormat::R8_UNORM;
 };
 
+inline std::string
+vkFormatString(const VkFormat format)
+{
+    switch (format)
+        {
+            case VK_FORMAT_R8_UNORM:
+                return "VK_FORMAT_R8_UNORM";
+            case VK_FORMAT_R8G8B8_UNORM:
+                return "VK_FORMAT_R8G8B8_UNORM";
+            case VK_FORMAT_R8G8B8A8_UNORM:
+                return "VK_FORMAT_R8G8B8A8_UNORM";
+            case VK_FORMAT_B8G8R8_UNORM:
+                return "VK_FORMAT_B8G8R8_UNORM";
+            case VK_FORMAT_B8G8R8A8_UNORM:
+                return "VK_FORMAT_B8G8R8A8_UNORM";
+            case VK_FORMAT_D16_UNORM:
+                return "VK_FORMAT_D16_UNORM";
+            case VK_FORMAT_D32_SFLOAT:
+                return "VK_FORMAT_D32_SFLOAT";
+            case VK_FORMAT_D16_UNORM_S8_UINT:
+                return "VK_FORMAT_D16_UNORM_S8_UINT";
+            case VK_FORMAT_D24_UNORM_S8_UINT:
+                return "VK_FORMAT_D24_UNORM_S8_UINT";
+            case VK_FORMAT_D32_SFLOAT_S8_UINT:
+                return "VK_FORMAT_D32_SFLOAT_S8_UINT";
+            case VK_FORMAT_R32_SFLOAT:
+                return "VK_FORMAT_R32_SFLOAT";
+            case VK_FORMAT_R32G32_SFLOAT:
+                return "VK_FORMAT_R32G32_SFLOAT";
+            case VK_FORMAT_R32G32B32_SFLOAT:
+                return "VK_FORMAT_R32G32B32_SFLOAT";
+            case VK_FORMAT_R32G32B32A32_SFLOAT:
+                return "VK_FORMAT_R32G32B32A32_SFLOAT";
+        }
+
+    check(0);
+    return "VK_FORMAT_UNDEFINED";
+}
+
 inline VkFormat
 convertFormat(const Fox::EFormat format)
 {
@@ -586,6 +625,23 @@ createShaderStageInfo(VkShaderStageFlagBits stage, VkShaderModule shaderModule)
     stageInfo.pSpecializationInfo = nullptr;
 
     return stageInfo;
+}
+
+inline void
+fullPipelineBarrier(VkCommandBuffer cmd)
+{
+    VkMemoryBarrier barrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, NULL, VK_ACCESS_MEMORY_WRITE_BIT, VK_ACCESS_MEMORY_READ_BIT };
+    vkCmdPipelineBarrier(cmd,
+    VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, // Source pipeline stage
+    VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, // Destination pipeline stage
+    0, // Dependency flags
+    1,
+    &barrier, // Memory barriers
+    0,
+    nullptr, // Buffer memory barriers
+    0,
+    0 // Image memory barriers (if applicable)
+    );
 }
 
 }

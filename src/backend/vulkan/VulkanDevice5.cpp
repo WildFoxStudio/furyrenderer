@@ -43,11 +43,12 @@ RIVulkanDevice5::CreateImageDeviceLocal(uint32_t width, uint32_t height, uint32_
             throw std::runtime_error(VkUtils::VkErrorString(result));
         }
 
-    image.Format     = format;
-    image.Width      = width;
-    image.Height     = height;
-    image.MipLevels  = mipLevels;
-    image.UsageFlags = usage;
+    image.Format      = format;
+    image.Width       = width;
+    image.Height      = height;
+    image.MipLevels   = mipLevels;
+    image.UsageFlags  = usage;
+    image.ImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
     _images.insert(image);
 
