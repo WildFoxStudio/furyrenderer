@@ -121,13 +121,21 @@ main()
             context->EndMapBuffer(triangle);
         }
 
-        Fox::PipelineFormat pipelineFormat;
+        Fox::PipelineFormat          pipelineFormat;
         Fox::DFramebufferAttachments attachments;
         attachments.ImageIds[0] = swapchainImages[0];
 
         uint32_t pipeline = context->CreatePipeline(shader, attachments, pipelineFormat);
 
         Fox::FramebufferId swapchainFbo = context->CreateSwapchainFramebuffer_DEPRECATED(swapchain);
+
+        std::vector<uint32_t> swapchainFbos;
+        for (size_t i = 0; i < swapchainImages.size(); i++)
+            {
+                Fox::DFramebufferAttachments att;
+                att.ImageIds[0] = swapchainImages[i];
+                swapchainFbos.push_back(context->CreateFramebuffer(att));
+            }
 
         Fox::DRenderPassAttachment  colorAttachment(format,
         Fox::ESampleBit::COUNT_1_BIT,
@@ -165,6 +173,10 @@ main()
         context->DestroyBuffer(triangle);
         context->DestroySwapchain(swapchain);
         context->DestroyPipeline(pipeline);
+        for (size_t i = 0; i < swapchainFbos.size(); i++)
+            {
+                context->DestroyFramebuffer(swapchainFbos[i]);
+            }
 
         glfwDestroyWindow(window);
 

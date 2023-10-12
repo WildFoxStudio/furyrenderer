@@ -2,11 +2,11 @@
 
 #pragma once
 
+#include <array>
 #include <map>
 #include <optional>
 #include <string>
 #include <vector>
-#include <array>
 
 #if defined(_WIN32) || defined(WIN32) || defined(_WIN64) || defined(WIN64)
 #define WIN32_LEAN_AND_MEAN
@@ -668,7 +668,7 @@ class IContext
     virtual void                 DestroySwapchain(SwapchainId swapchainId)                                                    = 0;
 
     virtual FramebufferId CreateSwapchainFramebuffer_DEPRECATED(SwapchainId swapchainId) = 0;
-    virtual void          DestroyFramebuffer(FramebufferId framebufferId)                = 0;
+    virtual void          DestroyFramebuffer_DEPRECATED(FramebufferId framebufferId)     = 0;
 
     virtual BufferId            CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usage)                                             = 0;
     virtual void*               BeginMapBuffer(BufferId buffer)                                                                                 = 0;
@@ -682,6 +682,9 @@ class IContext
     virtual void                DestroyShader(const ShaderId shader)                                                                            = 0;
     virtual uint32_t            CreatePipeline(const ShaderId shader, const DFramebufferAttachments& attachments, const PipelineFormat& format) = 0;
     virtual void                DestroyPipeline(uint32_t pipelineId)                                                                            = 0;
+
+    virtual uint32_t CreateFramebuffer(const DFramebufferAttachments& attachments) = 0;
+    virtual void     DestroyFramebuffer(uint32_t framebufferId)                    = 0;
 
     virtual void SubmitPass(RenderPassData&& data)  = 0;
     virtual void SubmitCopy(CopyDataCommand&& data) = 0;

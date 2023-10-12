@@ -46,7 +46,7 @@ struct DFramebufferVulkan_DEPRECATED : public DResource
     RIVkRenderPassInfo         RenderPassInfo;
 };
 
-struct DFramebufferVulkan
+struct DFramebufferVulkan : public DResource
 {
     VkFramebuffer Framebuffer{};
 };
@@ -124,7 +124,7 @@ class VulkanContext final : public IContext
     void                 DestroySwapchain(SwapchainId swapchainId) override;
 
     FramebufferId CreateSwapchainFramebuffer_DEPRECATED(SwapchainId swapchainId) override;
-    void          DestroyFramebuffer(FramebufferId framebufferId) override;
+    void          DestroyFramebuffer_DEPRECATED(FramebufferId framebufferId) override;
 
     BufferId            CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usage) override;
     void*               BeginMapBuffer(BufferId buffer) override;
@@ -139,6 +139,9 @@ class VulkanContext final : public IContext
 
     uint32_t CreatePipeline(const ShaderId shader, const DFramebufferAttachments& attachments, const PipelineFormat& format) override;
     void     DestroyPipeline(uint32_t pipelineId) override;
+
+    uint32_t CreateFramebuffer(const DFramebufferAttachments& attachments) override;
+    void     DestroyFramebuffer(uint32_t framebufferId) override;
 
     void SubmitPass(RenderPassData&& data) override;
     void SubmitCopy(CopyDataCommand&& data) override;
@@ -164,7 +167,8 @@ class VulkanContext final : public IContext
     std::array<DSwapchainVulkan, MAX_RESOURCES>              _swapchains;
     std::array<DBufferVulkan, MAX_RESOURCES>                 _vertexBuffers;
     std::array<DBufferVulkan, MAX_RESOURCES>                 _uniformBuffers;
-    std::array<DFramebufferVulkan_DEPRECATED, MAX_RESOURCES> _framebuffers;
+    std::array<DFramebufferVulkan_DEPRECATED, MAX_RESOURCES> _framebuffers_DEPRECATED;
+    std::array<DFramebufferVulkan, MAX_RESOURCES>            _framebuffers;
     std::array<DShaderVulkan, MAX_RESOURCES>                 _shaders;
     std::array<DVertexInputLayoutVulkan, MAX_RESOURCES>      _vertexLayouts;
     std::array<DImageVulkan, MAX_RESOURCES>                  _images;

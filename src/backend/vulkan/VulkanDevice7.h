@@ -22,6 +22,6 @@ class RIVulkanDevice7 : public RIVulkanDevice6
     void          DestroyFramebuffer(VkFramebuffer framebuffer);
 
   private:
-    std::unordered_set<VkFramebuffer> _framebuffers;
+    std::unordered_set<VkFramebuffer> _framebuffers_DEPRECATED;
 };
 }
