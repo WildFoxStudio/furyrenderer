@@ -88,6 +88,50 @@ RIVulkanDevice12::DestroyCommandPool(RICommandPool* pool)
         }
 }
 
+VkCommandPool
+RIVulkanDevice12::CreateCommandPool2(uint32_t queueFamilyIndex)
+{
+    VkCommandPool commandPool{};
+    {
+        VkCommandPoolCreateInfo poolInfo{};
+        poolInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        poolInfo.flags            = 0; /* they all have to be reset together*/
+        poolInfo.queueFamilyIndex = queueFamilyIndex;
+
+        const VkResult result = vkCreateCommandPool(Device, &poolInfo, nullptr, &commandPool);
+        if (VKFAILED(result))
+            {
+                throw std::runtime_error(VkUtils::VkErrorString(result));
+            }
+    }
+
+    _cachedPools2.push_back(commandPool);
+
+    return commandPool;
+}
+
+void
+RIVulkanDevice12::ResetCommandPool2(VkCommandPool commandPool)
+{
+    vkResetCommandPool(Device, commandPool, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
+}
+
+void
+RIVulkanDevice12::DestroyCommandPool2(VkCommandPool commandPool)
+{
+    vkDestroyCommandPool(Device, commandPool, nullptr);
+
+    // remove from the list
+    for (auto it = _cachedPools2.begin(); it != _cachedPools2.end(); ++it)
+        {
+            if ((*it) == commandPool)
+                {
+                    _cachedPools2.erase(it);
+                    break;
+                }
+        }
+}
+
 void
 RIVulkanDevice12::SubmitToMainQueue(const std::vector<RICommandBuffer*>& cmds, const std::vector<VkSemaphore>& waitSemaphore, VkSemaphore finishSemaphore, VkFence fence)
 {

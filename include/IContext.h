@@ -30,6 +30,10 @@ enum EResourceType : uint8_t
     FRAMEBUFFER         = 6,
     IMAGE               = 7,
     GRAPHICS_PIPELINE   = 8,
+    COMMAND_POOL        = 9,
+    COMMAND_BUFFER      = 10,
+    FENCE               = 11,
+    SEMAPHORE           = 12,
 };
 // SHOULD BE PRIVATE
 
@@ -685,6 +689,18 @@ class IContext
 
     virtual uint32_t CreateFramebuffer(const DFramebufferAttachments& attachments) = 0;
     virtual void     DestroyFramebuffer(uint32_t framebufferId)                    = 0;
+    virtual uint32_t CreateCommandPool(uint32_t maxCommands)                       = 0;
+    virtual void     DestroyCommandPool(uint32_t commandPoolId)                    = 0;
+    virtual void     ResetCommandPool(uint32_t commandPoolId)                      = 0;
+
+    virtual uint32_t CreateFence(bool signaled)     = 0;
+    virtual void     DestroyFence(uint32_t fenceId) = 0;
+    virtual bool     IsFenceSignaled(uint32_t fenceId) = 0;
+    virtual void     WaitForFence(uint32_t fenceId, uint64_t timeoutNanoseconds) = 0;
+    virtual void     ResetFence(uint32_t fenceId)                                = 0;
+
+    virtual uint32_t CreateGpuSemaphore()     = 0;
+    virtual void     DestroyGpuSemaphore(uint32_t semaphoreId) = 0;
 
     virtual void SubmitPass(RenderPassData&& data)  = 0;
     virtual void SubmitCopy(CopyDataCommand&& data) = 0;

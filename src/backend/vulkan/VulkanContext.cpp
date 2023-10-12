@@ -1017,6 +1017,106 @@ VulkanContext::DestroyFramebuffer(uint32_t framebufferId)
     framebufferRef.Id = FREE;
 }
 
+uint32_t
+VulkanContext::CreateCommandPool(uint32_t maxCommands)
+{
+    const auto index          = AllocResource<DCommandPoolVulkan, MAX_RESOURCES>(_commandPools);
+    auto&      commandPoolRef = _commandPools.at(index);
+
+    commandPoolRef.Pool = Device.CreateCommandPool2(Device.GetQueueFamilyIndex());
+
+    return *ResourceId(EResourceType::COMMAND_POOL, commandPoolRef.Id, index);
+}
+
+void
+VulkanContext::DestroyCommandPool(uint32_t commandPoolId)
+{
+    auto& commandPoolRef = GetResource<DCommandPoolVulkan, EResourceType::COMMAND_POOL, MAX_RESOURCES>(_commandPools, commandPoolId);
+
+    Device.DestroyCommandPool2(commandPoolRef.Pool);
+
+    commandPoolRef.Id = FREE;
+}
+
+void
+VulkanContext::ResetCommandPool(uint32_t commandPoolId)
+{
+    auto& commandPoolRef = GetResource<DCommandPoolVulkan, EResourceType::COMMAND_POOL, MAX_RESOURCES>(_commandPools, commandPoolId);
+    Device.ResetCommandPool2(commandPoolRef.Pool);
+}
+
+uint32_t
+VulkanContext::CreateFence(bool signaled)
+{
+    const auto index    = AllocResource<DFenceVulkan, MAX_RESOURCES>(_fences);
+    auto&      fenceRef = _fences.at(index);
+    fenceRef.Fence      = Device.CreateFence(signaled);
+    fenceRef.IsSignaled = signaled;
+
+    return *ResourceId(EResourceType::FENCE, fenceRef.Id, index);
+}
+
+void
+VulkanContext::DestroyFence(uint32_t fenceId)
+{
+    auto& fenceRef = GetResource<DFenceVulkan, EResourceType::FENCE, MAX_RESOURCES>(_fences, fenceId);
+
+    Device.DestroyFence(fenceRef.Fence);
+
+    fenceRef.Id = FREE;
+}
+
+bool
+VulkanContext::IsFenceSignaled(uint32_t fenceId)
+{
+    auto& fenceRef = GetResource<DFenceVulkan, EResourceType::FENCE, MAX_RESOURCES>(_fences, fenceId);
+    return fenceRef.IsSignaled;
+}
+
+void
+VulkanContext::WaitForFence(uint32_t fenceId, uint64_t timeoutNanoseconds)
+{
+
+    auto& fenceRef = GetResource<DFenceVulkan, EResourceType::FENCE, MAX_RESOURCES>(_fences, fenceId);
+
+    const VkResult result = vkWaitForFences(Device.Device, 1, &fenceRef.Fence, VK_TRUE /*Wait all*/, timeoutNanoseconds);
+    if (VKFAILED(result))
+        {
+            throw std::runtime_error(VkUtils::VkErrorString(result));
+        }
+
+    fenceRef.IsSignaled = true;
+}
+
+void
+VulkanContext::ResetFence(uint32_t fenceId)
+{
+    auto& fenceRef = GetResource<DFenceVulkan, EResourceType::FENCE, MAX_RESOURCES>(_fences, fenceId);
+
+    vkResetFences(Device.Device, 1, &fenceRef.Fence);
+
+    fenceRef.IsSignaled = false;
+}
+
+uint32_t
+VulkanContext::CreateGpuSemaphore()
+{
+    const auto index        = AllocResource<DSemaphoreVulkan, MAX_RESOURCES>(_semaphores);
+    auto&      semaphoreRef = _semaphores.at(index);
+
+    semaphoreRef.Semaphore = Device.CreateVkSemaphore();
+    return *ResourceId(EResourceType::SEMAPHORE, semaphoreRef.Id, index);
+}
+
+void
+VulkanContext::DestroyGpuSemaphore(uint32_t semaphoreId)
+{
+    auto& semaphoreRef = GetResource<DSemaphoreVulkan, EResourceType::SEMAPHORE, MAX_RESOURCES>(_semaphores, semaphoreId);
+    Device.DestroyVkSemaphore(semaphoreRef.Semaphore);
+
+    semaphoreRef.Id = FREE;
+}
+
 void
 VulkanContext::_deferDestruction(DeleteFn&& fn)
 {

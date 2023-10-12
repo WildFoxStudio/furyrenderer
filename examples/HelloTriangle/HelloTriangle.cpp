@@ -137,6 +137,22 @@ main()
                 swapchainFbos.push_back(context->CreateFramebuffer(att));
             }
 
+        std::vector<uint32_t> commandPools;
+        commandPools.push_back(context->CreateCommandPool(10));
+        commandPools.push_back(context->CreateCommandPool(10));
+
+        std::vector<uint32_t> fences;
+        fences.push_back(context->CreateFence(true));
+        fences.push_back(context->CreateFence(true));
+
+        std::vector<uint32_t> imageAvailableSemaphore;
+        imageAvailableSemaphore.push_back(context->CreateGpuSemaphore());
+        imageAvailableSemaphore.push_back(context->CreateGpuSemaphore());
+
+        std::vector<uint32_t> workFinishedSemaphore;
+        workFinishedSemaphore.push_back(context->CreateGpuSemaphore());
+        workFinishedSemaphore.push_back(context->CreateGpuSemaphore());
+
         Fox::DRenderPassAttachment  colorAttachment(format,
         Fox::ESampleBit::COUNT_1_BIT,
         Fox::ERenderPassLoad::Clear,
@@ -177,6 +193,19 @@ main()
             {
                 context->DestroyFramebuffer(swapchainFbos[i]);
             }
+        for (size_t i = 0; i < commandPools.size(); i++)
+            {
+                context->DestroyCommandPool(commandPools[i]);
+            }
+
+        for (auto fence : fences)
+            context->DestroyFence(fence);
+
+        for (auto semaphore : imageAvailableSemaphore)
+            context->DestroyGpuSemaphore(semaphore);
+
+        for (auto semaphore : workFinishedSemaphore)
+            context->DestroyGpuSemaphore(semaphore);
 
         glfwDestroyWindow(window);
 

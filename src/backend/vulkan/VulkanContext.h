@@ -87,6 +87,21 @@ struct DPipelineVulkan : public DResource
     const VkPipelineLayout* PipelineLayout{};
 };
 
+struct DCommandPoolVulkan : public DResource
+{
+    VkCommandPool Pool{};
+};
+struct DFenceVulkan : public DResource
+{
+    VkFence Fence{};
+    bool    IsSignaled{};
+};
+
+struct DSemaphoreVulkan : public DResource
+{
+    VkSemaphore Semaphore{};
+};
+
 struct DPipelinePermutations
 {
     std::unordered_map<PipelineFormat, VkPipeline, PipelineFormatHashFn, PipelineFormatEqualFn> Pipeline{};
@@ -143,6 +158,20 @@ class VulkanContext final : public IContext
     uint32_t CreateFramebuffer(const DFramebufferAttachments& attachments) override;
     void     DestroyFramebuffer(uint32_t framebufferId) override;
 
+    uint32_t CreateCommandPool(uint32_t maxCommands) override;
+    void     DestroyCommandPool(uint32_t commandPoolId) override;
+    void     ResetCommandPool(uint32_t commandPoolId) override;
+
+    uint32_t CreateFence(bool signaled) override;
+    void     DestroyFence(uint32_t fenceId) override;
+
+    bool IsFenceSignaled(uint32_t fenceId) override;
+    void WaitForFence(uint32_t fenceId, uint64_t timeoutNanoseconds ) override;
+    void     ResetFence(uint32_t fenceId) override;
+
+    uint32_t CreateGpuSemaphore() override;
+    void     DestroyGpuSemaphore(uint32_t semaphoreId) override;
+
     void SubmitPass(RenderPassData&& data) override;
     void SubmitCopy(CopyDataCommand&& data) override;
     void AdvanceFrame() override;
@@ -173,6 +202,10 @@ class VulkanContext final : public IContext
     std::array<DVertexInputLayoutVulkan, MAX_RESOURCES>      _vertexLayouts;
     std::array<DImageVulkan, MAX_RESOURCES>                  _images;
     std::array<DPipelineVulkan, MAX_RESOURCES>               _pipelines;
+    std::array<DCommandPoolVulkan, MAX_RESOURCES>            _commandPools_DEPRECATED;
+    std::array<DFenceVulkan, MAX_RESOURCES>                  _fences;
+    std::array<DSemaphoreVulkan, MAX_RESOURCES>              _semaphores;
+    std::array<DCommandPoolVulkan, MAX_RESOURCES>            _commandPools;
     std::vector<DFramebufferVulkan>                          _transientFramebuffers;
 
     std::unordered_set<VkRenderPass> _renderPasses;

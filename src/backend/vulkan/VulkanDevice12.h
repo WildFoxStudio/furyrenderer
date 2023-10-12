@@ -97,9 +97,14 @@ class RIVulkanDevice12 : public RIVulkanDevice11
 
     void SubmitToMainQueue(const std::vector<RICommandBuffer*>& cmds, const std::vector<VkSemaphore>& waitSemaphore, VkSemaphore finishSemaphore, VkFence fence);
 
+
+    VkCommandPool CreateCommandPool2(uint32_t queueFamilyIndex);
+    void          DestroyCommandPool2(VkCommandPool commandPool);
+    void          ResetCommandPool2(VkCommandPool commandPool);
   public:
     virtual ~RIVulkanDevice12();
 
     std::list<RICommandPool> _cachedPools;
+    std::list<VkCommandPool> _cachedPools2;
 };
 }
