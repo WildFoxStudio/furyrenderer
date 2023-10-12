@@ -263,7 +263,7 @@ main()
         copy.CopyVertex(quad, 0, (void*)ndcQuad.data(), bufSize);
         context->SubmitCopy(std::move(copy));
 
-        Fox::FramebufferId swapchainFbo = context->CreateSwapchainFramebuffer(swapchain);
+        Fox::FramebufferId swapchainFbo = context->CreateSwapchainFramebuffer_DEPRECATED(swapchain);
 
         Fox::DRenderPassAttachment  colorAttachment(format,
         Fox::ESampleBit::COUNT_1_BIT,

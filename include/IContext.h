@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <array>
 
 #if defined(_WIN32) || defined(WIN32) || defined(_WIN64) || defined(WIN64)
 #define WIN32_LEAN_AND_MEAN
@@ -28,6 +29,7 @@ enum EResourceType : uint8_t
     SWAPCHAIN           = 5,
     FRAMEBUFFER         = 6,
     IMAGE               = 7,
+    GRAPHICS_PIPELINE   = 8,
 };
 // SHOULD BE PRIVATE
 
@@ -621,27 +623,65 @@ struct RenderPassData
     inline void AddDrawCommand(DrawCommand&& command) { DrawCommands.emplace_back(std::move(command)); }
 };
 
+struct DFramebufferAttachments
+{
+    static constexpr uint32_t             MAX_ATTACHMENTS = 10;
+    std::array<uint32_t, MAX_ATTACHMENTS> ImageIds{};
+};
+
+struct DFramebufferAttachmentsHashFn
+{
+    size_t operator()(const DFramebufferAttachments& attachments)
+    {
+        size_t hash{};
+        for (size_t i = 0; i < DFramebufferAttachments::MAX_ATTACHMENTS; i++)
+            {
+                hash += std::hash<uint32_t>{}(attachments.ImageIds[i]);
+            }
+        return hash;
+    };
+};
+
+struct DFramebufferAttachmentEqualFn
+{
+    bool operator()(const DFramebufferAttachments& lhs, const DFramebufferAttachments& rhs)
+    {
+
+        for (size_t i = 0; i < DFramebufferAttachments::MAX_ATTACHMENTS; i++)
+            {
+                if (lhs.ImageIds[i] != rhs.ImageIds[i])
+                    {
+                        return false;
+                    }
+            }
+        return true;
+    };
+};
+
 class IContext
 {
   public:
     virtual ~IContext(){};
+    virtual void                 WaitDeviceIdle()                                                                             = 0;
     virtual SwapchainId          CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat) = 0;
     virtual std::vector<ImageId> GetSwapchainImages(SwapchainId swapchainId)                                                  = 0;
     virtual void                 DestroySwapchain(SwapchainId swapchainId)                                                    = 0;
 
-    virtual FramebufferId CreateSwapchainFramebuffer(SwapchainId swapchainId) = 0;
-    virtual void          DestroyFramebuffer(FramebufferId framebufferId)     = 0;
+    virtual FramebufferId CreateSwapchainFramebuffer_DEPRECATED(SwapchainId swapchainId) = 0;
+    virtual void          DestroyFramebuffer(FramebufferId framebufferId)                = 0;
 
-    virtual BufferId CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usage) = 0;
-    virtual void*    BeginMapBuffer(BufferId buffer)                                     = 0;
-    virtual void     EndMapBuffer(BufferId buffer)                                       = 0;
-    virtual void                DestroyBuffer(BufferId buffer)                                                     = 0;
-    virtual ImageId             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) = 0;
-    virtual EFormat             GetImageFormat(ImageId) const                                                      = 0;
-    virtual void                DestroyImage(ImageId imageId)                                                      = 0;
-    virtual VertexInputLayoutId CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)                      = 0;
-    virtual ShaderId            CreateShader(const ShaderSource& source)                                           = 0;
-    virtual void                DestroyShader(const ShaderId shader)                                               = 0;
+    virtual BufferId            CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usage)                                             = 0;
+    virtual void*               BeginMapBuffer(BufferId buffer)                                                                                 = 0;
+    virtual void                EndMapBuffer(BufferId buffer)                                                                                   = 0;
+    virtual void                DestroyBuffer(BufferId buffer)                                                                                  = 0;
+    virtual ImageId             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount)                              = 0;
+    virtual EFormat             GetImageFormat(ImageId) const                                                                                   = 0;
+    virtual void                DestroyImage(ImageId imageId)                                                                                   = 0;
+    virtual VertexInputLayoutId CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)                                                   = 0;
+    virtual ShaderId            CreateShader(const ShaderSource& source)                                                                        = 0;
+    virtual void                DestroyShader(const ShaderId shader)                                                                            = 0;
+    virtual uint32_t            CreatePipeline(const ShaderId shader, const DFramebufferAttachments& attachments, const PipelineFormat& format) = 0;
+    virtual void                DestroyPipeline(uint32_t pipelineId)                                                                            = 0;
 
     virtual void SubmitPass(RenderPassData&& data)  = 0;
     virtual void SubmitCopy(CopyDataCommand&& data) = 0;

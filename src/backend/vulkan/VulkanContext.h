@@ -51,41 +51,6 @@ struct DFramebufferVulkan
     VkFramebuffer Framebuffer{};
 };
 
-struct DFramebufferAttachments
-{
-    static constexpr uint32_t             MAX_ATTACHMENTS = 10;
-    std::array<uint32_t, MAX_ATTACHMENTS> ImageIds;
-};
-
-struct DFramebufferAttachmentsHashFn
-{
-    size_t operator()(const DFramebufferAttachments& attachments)
-    {
-        size_t hash{};
-        for (size_t i = 0; i < DFramebufferAttachments::MAX_ATTACHMENTS; i++)
-            {
-                hash += std::hash<uint32_t>{}(attachments.ImageIds[i]);
-            }
-        return hash;
-    };
-};
-
-struct DFramebufferAttachmentEqualFn
-{
-    bool operator()(const DFramebufferAttachments& lhs, const DFramebufferAttachments& rhs)
-    {
-
-        for (size_t i = 0; i < DFramebufferAttachments::MAX_ATTACHMENTS; i++)
-            {
-                if (lhs.ImageIds[i] != rhs.ImageIds[i])
-                    {
-                        return false;
-                    }
-            }
-        return true;
-    };
-};
-
 struct DSwapchainVulkan : public DResource
 {
     static constexpr uint32_t             MAX_IMAGE_COUNT = 4;
@@ -109,11 +74,17 @@ struct DVertexInputLayoutVulkan : public DResource
     std::vector<VkVertexInputAttributeDescription> VertexInputAttributes;
 };
 
-struct DPipelineVulkan : public DPipeline_T
+struct DPipelineVulkan_DEPRECATED : public DPipeline_T
 {
     VkPipeline           Pipeline{};
     VkPipelineLayout     PipelineLayout{};
     std::vector<EFormat> Attachments;
+};
+
+struct DPipelineVulkan : public DResource
+{
+    VkPipeline              Pipeline{};
+    const VkPipelineLayout* PipelineLayout{};
 };
 
 struct DPipelinePermutations
@@ -147,17 +118,17 @@ class VulkanContext final : public IContext
   public:
     VulkanContext(const DContextConfig* const config);
     ~VulkanContext();
-
+    void                 WaitDeviceIdle() override;
     SwapchainId          CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat) override;
     std::vector<ImageId> GetSwapchainImages(SwapchainId swapchainId) override;
     void                 DestroySwapchain(SwapchainId swapchainId) override;
 
-    FramebufferId CreateSwapchainFramebuffer(SwapchainId swapchainId) override;
+    FramebufferId CreateSwapchainFramebuffer_DEPRECATED(SwapchainId swapchainId) override;
     void          DestroyFramebuffer(FramebufferId framebufferId) override;
 
-    BufferId CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usage) override;
-    void*    BeginMapBuffer(BufferId buffer) override;
-    void     EndMapBuffer(BufferId buffer) override;
+    BufferId            CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usage) override;
+    void*               BeginMapBuffer(BufferId buffer) override;
+    void                EndMapBuffer(BufferId buffer) override;
     void                DestroyBuffer(BufferId buffer) override;
     ImageId             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) override;
     EFormat             GetImageFormat(ImageId) const override;
@@ -165,6 +136,9 @@ class VulkanContext final : public IContext
     VertexInputLayoutId CreateVertexLayout(const std::vector<VertexLayoutInfo>& info) override;
     ShaderId            CreateShader(const ShaderSource& source) override;
     void                DestroyShader(const ShaderId shader) override;
+
+    uint32_t CreatePipeline(const ShaderId shader, const DFramebufferAttachments& attachments, const PipelineFormat& format) override;
+    void     DestroyPipeline(uint32_t pipelineId) override;
 
     void SubmitPass(RenderPassData&& data) override;
     void SubmitCopy(CopyDataCommand&& data) override;
@@ -175,7 +149,6 @@ class VulkanContext final : public IContext
     size_t         GetAdapterDedicatedVideoMemory() const override;
 
 #pragma region Utility
-    void              WaitDeviceIdle();
     RIVulkanDevice13& GetDevice() { return Device; }
 #pragma endregion
 
@@ -195,6 +168,7 @@ class VulkanContext final : public IContext
     std::array<DShaderVulkan, MAX_RESOURCES>                 _shaders;
     std::array<DVertexInputLayoutVulkan, MAX_RESOURCES>      _vertexLayouts;
     std::array<DImageVulkan, MAX_RESOURCES>                  _images;
+    std::array<DPipelineVulkan, MAX_RESOURCES>               _pipelines;
     std::vector<DFramebufferVulkan>                          _transientFramebuffers;
 
     std::unordered_set<VkRenderPass> _renderPasses;
@@ -263,25 +237,26 @@ class VulkanContext final : public IContext
     void _initializeStagingBuffer(uint32_t stagingBufferSize);
     void _deinitializeStagingBuffer();
 
-    void               _createSwapchain(DSwapchainVulkan& swapchain, const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat);
-    uint32_t           _createImageFromVkImage(VkImage vkimage, VkFormat format, uint32_t width, uint32_t height);
-    void               _createVertexBuffer(uint32_t size, DBufferVulkan& buffer);
-    void               _createUniformBuffer(uint32_t size, DBufferVulkan& buffer);
-    void               _createShader(const ShaderSource& source, DShaderVulkan& shader);
-    void               _createFramebufferFromSwapchain(DSwapchainVulkan& swapchain);
-    void               _performDeletionQueue();
-    void               _performCopyOperations();
-    void               _submitCommands(const std::vector<VkSemaphore>& imageAvailableSemaphores);
-    void               _deferDestruction(DeleteFn&& fn);
-    VkPipeline         _createPipeline(VkPipelineLayout         pipelineLayout,
-            VkRenderPass                                        renderPass,
-            const std::vector<VkPipelineShaderStageCreateInfo>& shaderStages,
-            const PipelineFormat&                               format,
-            const DVertexInputLayoutVulkan&                     vertexLayout,
-            uint32_t                                            stride);
-    void               _recreateSwapchainBlocking(DSwapchainVulkan& swapchain);
-    RIVkRenderPassInfo _computeFramebufferAttachmentsRenderPassInfo(const std::vector<VkFormat>& attachmentFormat);
-    VkPipeline         _queryPipelineFromAttachmentsAndFormat(DShaderVulkan& shader, const DRenderPassAttachments& renderPass, const PipelineFormat& format);
+    DRenderPassAttachments _createGenericRenderPassAttachments(const DFramebufferAttachments& att);
+    void                   _createSwapchain(DSwapchainVulkan& swapchain, const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat);
+    uint32_t               _createImageFromVkImage(VkImage vkimage, VkFormat format, uint32_t width, uint32_t height);
+    void                   _createVertexBuffer(uint32_t size, DBufferVulkan& buffer);
+    void                   _createUniformBuffer(uint32_t size, DBufferVulkan& buffer);
+    void                   _createShader(const ShaderSource& source, DShaderVulkan& shader);
+    void                   _createFramebufferFromSwapchain(DSwapchainVulkan& swapchain);
+    void                   _performDeletionQueue();
+    void                   _performCopyOperations();
+    void                   _submitCommands(const std::vector<VkSemaphore>& imageAvailableSemaphores);
+    void                   _deferDestruction(DeleteFn&& fn);
+    VkPipeline             _createPipeline(VkPipelineLayout         pipelineLayout,
+                VkRenderPass                                        renderPass,
+                const std::vector<VkPipelineShaderStageCreateInfo>& shaderStages,
+                const PipelineFormat&                               format,
+                const DVertexInputLayoutVulkan&                     vertexLayout,
+                uint32_t                                            stride);
+    void                   _recreateSwapchainBlocking(DSwapchainVulkan& swapchain);
+    RIVkRenderPassInfo     _computeFramebufferAttachmentsRenderPassInfo(const std::vector<VkFormat>& attachmentFormat);
+    VkPipeline             _queryPipelineFromAttachmentsAndFormat(DShaderVulkan& shader, const DRenderPassAttachments& renderPass, const PipelineFormat& format);
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL _vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT                                                                   messageType,
