@@ -70,11 +70,12 @@ GenIdentifier()
         a = a ^ (a >> 4);
         a = a * 0x27d4eb2d;
         a = a ^ (a >> 15);
+        a = (a ^ 61) ^ (a >> 16);
         return a;
     };
     static size_t counter = 0;
     const auto    value   = hash(counter++);
-    check(value != 0);
+    check(value != 0); // must not be 0
     return (uint8_t)value;
 }
 
@@ -88,7 +89,12 @@ AllocResource(std::array<T, maxSize>& container)
             if (element.Id == NULL)
                 {
                     // memset(&element, NULL, sizeof(T));//Only works with POD style
-                    element.Id = GenIdentifier();
+                    while (element.Id == FREE || element.Id == PENDING_DESTROY)
+                        {
+                            element.Id = GenIdentifier();
+                        } // Messy but makes sure that id is never NULL
+                    check(element.Id != FREE);
+                    check(element.Id != PENDING_DESTROY);
                     return i;
                 }
         }
@@ -102,12 +108,12 @@ VulkanContext::_createGenericRenderPassAttachments(const DFramebufferAttachments
 {
     DRenderPassAttachments rp;
 
-    const auto attachmentCount = DFramebufferAttachments::MAX_ATTACHMENTS - std::count(att.ImageIds.begin(), att.ImageIds.end(), NULL);
+    const auto attachmentCount = DFramebufferAttachments::MAX_ATTACHMENTS - std::count(att.RenderTargets.begin(), att.RenderTargets.end(), NULL);
     for (size_t i = 0; i < attachmentCount; i++)
         {
-            const auto& image = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, att.ImageIds[i]);
+            const auto& renderTargetRef = GetResource<DRenderTargetVulkan, EResourceType::RENDER_TARGET, MAX_RESOURCES>(_renderTargets, att.RenderTargets[i]);
 
-            DRenderPassAttachment o(GetImageFormat(att.ImageIds[i]),
+            DRenderPassAttachment o(VkUtils::convertVkFormat(renderTargetRef.Image.Format),
             ESampleBit::COUNT_1_BIT,
             ERenderPassLoad::Clear,
             ERenderPassStore::DontCare,
@@ -133,34 +139,9 @@ VulkanContext::VulkanContext(const DContextConfig* const config) : _warningOutpu
     _initializeVersion();
     _initializeDevice();
     _initializeStagingBuffer(config->stagingBufferSize);
-    // Command pools per frame
-    {
-        for (auto& e : _cmdPool)
-            {
-                auto instance = std::make_unique<RICommandPoolManager>(Device.CreateCommandPool());
-                e             = std::move(instance);
-            }
-    }
+
     // Initialize per frame pipeline layout map to descriptor pool manager
     _pipelineLayoutToDescriptorPool.resize(NUM_OF_FRAMES_IN_FLIGHT);
-
-    // Fences per frame
-    {
-        constexpr bool fenceSignaled = true; // since the loop begins waiting on a fence the fence must be already signaled otherwise it will timeout
-        for (auto& e : _fence)
-            {
-                e = Device.CreateFence(fenceSignaled);
-            }
-    }
-
-    // Semaphores per frame
-    {
-        for (auto& e : _workFinishedSemaphores)
-            {
-                e = Device.CreateVkSemaphore();
-            }
-    }
-
     _deletionQueue.reserve(MAX_RESOURCES);
 }
 
@@ -309,6 +290,16 @@ VulkanContext::_deinitializeStagingBuffer()
 
 VulkanContext::~VulkanContext()
 {
+
+    for (auto& fbo : _framebuffers)
+        {
+            if (fbo.Id == FREE)
+                continue;
+
+            Device.DestroyFramebuffer(fbo.Framebuffer);
+            fbo.Id = FREE;
+        }
+
 #if _DEBUG
     const auto validSwapchainsCount = std::count_if(_swapchains.begin(), _swapchains.end(), [](const DSwapchainVulkan& swapchain) { return IsValidId(swapchain.Id); });
     check(validSwapchainsCount == 0);
@@ -316,42 +307,11 @@ VulkanContext::~VulkanContext()
     check(validVertexBufferCount == 0);
     const auto validUniformBufferCount = std::count_if(_uniformBuffers.begin(), _uniformBuffers.end(), [](const DBufferVulkan& buffer) { return IsValidId(buffer.Id); });
     check(validUniformBufferCount == 0);
-    const auto validFramebufferCount =
-    std::count_if(_framebuffers_DEPRECATED.begin(), _framebuffers_DEPRECATED.end(), [](const DFramebufferVulkan_DEPRECATED& buffer) { return IsValidId(buffer.Id); });
+    const auto validFramebufferCount = std::count_if(_framebuffers.begin(), _framebuffers.end(), [](const DFramebufferVulkan& buffer) { return IsValidId(buffer.Id); });
     check(validFramebufferCount == 0);
     const auto validShaderCount = std::count_if(_shaders.begin(), _shaders.end(), [](const DShaderVulkan& shader) { return IsValidId(shader.Id); });
     check(validShaderCount == 0);
 #endif
-
-    vkDeviceWaitIdle(Device.Device);
-
-    // Wait for all fences to signal
-    std::for_each(_fence.begin(), _fence.end(), [this](VkFence fence) {
-        const VkResult result = vkWaitForFences(Device.Device, 1, &fence, VK_TRUE /*Wait all*/, MAX_FENCE_TIMEOUT);
-        if (VKFAILED(result))
-            {
-                throw std::runtime_error(VkUtils::VkErrorString(result));
-            }
-    });
-    // Destroy fences
-    std::for_each(_fence.begin(), _fence.end(), [this](VkFence fence) { Device.DestroyFence(fence); });
-
-    // Free command pools
-    std::for_each(_cmdPool.begin(), _cmdPool.end(), [this](const std::unique_ptr<RICommandPoolManager>& pool) { Device.DestroyCommandPool(pool->GetCommandPool()); });
-
-    std::for_each(_workFinishedSemaphores.begin(), _workFinishedSemaphores.end(), [this](VkSemaphore semaphore) { Device.DestroyVkSemaphore(semaphore); });
-
-    // Free pipeline layouts and their descriptor set layouts used to create them
-    // for (const auto& pair : _pipelineLayoutToSetIndexDescriptorSetLayout)
-    //    {
-    //        Device.DestroyPipelineLayout(pair.first);
-
-    //        for (const auto& p : pair.second)
-    //            {
-    //                Device.DestroyDescriptorSetLayout(p.second);
-    //            }
-    //    }
-    //_pipelineLayoutToSetIndexDescriptorSetLayout.clear();
 
     // Destroy all descriptor pools managers
     _pipelineLayoutToDescriptorPool.clear();
@@ -461,6 +421,25 @@ VulkanContext::_createSwapchain(DSwapchainVulkan& swapchain, const WindowData* w
     });
 
     std::generate_n(std::back_inserter(swapchain.ImageAvailableSemaphore), NUM_OF_FRAMES_IN_FLIGHT, [this]() { return Device.CreateVkSemaphore(); });
+
+    // Create render targets
+    for (size_t i = 0; i < swapchainImages.size(); i++)
+        {
+            const auto index           = AllocResource<DRenderTargetVulkan, MAX_RESOURCES>(_renderTargets);
+            auto&      renderTargetRef = _renderTargets.at(index);
+
+            const auto& imageRef        = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, swapchain.ImagesId[i]);
+            renderTargetRef.Image       = imageRef.Image;
+            renderTargetRef.ImageAspect = imageRef.ImageAspect;
+
+            const auto result = Device.CreateImageView(imageRef.Image.Format, imageRef.Image.Image, imageRef.ImageAspect, 0, 1, &renderTargetRef.View);
+            if (VKFAILED(result))
+                {
+                    throw std::runtime_error("Failed to create swapchain imageView " + std::string(VkUtils::VkErrorString(result)));
+                }
+
+            swapchain.RenderTargetsId[i] = *ResourceId(EResourceType::RENDER_TARGET, renderTargetRef.Id, index);
+        }
 }
 
 std::vector<ImageId>
@@ -480,6 +459,76 @@ VulkanContext::GetSwapchainImages(SwapchainId swapchainId)
     return images;
 }
 
+std::vector<uint32_t>
+VulkanContext::GetSwapchainRenderTargets(SwapchainId swapchainId)
+{
+    ResourceId resource(swapchainId);
+
+    check(resource.First() == EResourceType::SWAPCHAIN);
+
+    DSwapchainVulkan& swapchain = GetResource<DSwapchainVulkan, EResourceType::SWAPCHAIN, MAX_RESOURCES>(_swapchains, swapchainId);
+
+    std::vector<uint32_t> images;
+    images.resize(swapchain.ImagesCount);
+
+    for (size_t i = 0; i < swapchain.ImagesCount; i++)
+        {
+            images[i] = swapchain.RenderTargetsId[i];
+        }
+
+    return images;
+}
+
+bool
+VulkanContext::SwapchainAcquireNextImageIndex(SwapchainId swapchainId, uint64_t timeoutNanoseconds, uint32_t sempahoreid, uint32_t* outImageIndex)
+{
+    DSwapchainVulkan& swapchain    = GetResource<DSwapchainVulkan, EResourceType::SWAPCHAIN, MAX_RESOURCES>(_swapchains, swapchainId);
+    DSemaphoreVulkan& semaphoreRef = GetResource<DSemaphoreVulkan, EResourceType::SEMAPHORE, MAX_RESOURCES>(_semaphores, sempahoreid);
+
+    const VkResult result = Device.AcquireNextImage(swapchain.Swapchain, timeoutNanoseconds, outImageIndex, semaphoreRef.Semaphore, VK_NULL_HANDLE);
+    /*Spec: https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkQueueSubmit.html*/
+    /*
+    Return Codes
+
+    On success, this command returns true
+            VK_SUCCESS
+
+            VK_TIMEOUT
+
+            VK_NOT_READY
+
+            VK_SUBOPTIMAL_KHR
+
+    On failure, this command returns false
+            VK_ERROR_OUT_OF_HOST_MEMORY
+
+            VK_ERROR_OUT_OF_DEVICE_MEMORY
+
+            VK_ERROR_DEVICE_LOST
+
+            VK_ERROR_OUT_OF_DATE_KHR
+
+            VK_ERROR_SURFACE_LOST_KHR
+
+            VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT
+    */
+    switch (result)
+        {
+            case VK_SUCCESS:
+            case VK_NOT_READY:
+                break;
+            case VK_SUBOPTIMAL_KHR:
+            case VK_ERROR_OUT_OF_DATE_KHR:
+                return false;
+                break;
+            case VK_TIMEOUT:
+            default:
+                throw std::runtime_error(VkUtils::VkErrorString(result));
+                break;
+        }
+    return true;
+}
+
 uint32_t
 VulkanContext::_createImageFromVkImage(VkImage vkimage, VkFormat format, uint32_t width, uint32_t height)
 {
@@ -494,7 +543,7 @@ VulkanContext::_createImageFromVkImage(VkImage vkimage, VkFormat format, uint32_
     image.Image.MipLevels  = 1;
     image.Image.UsageFlags = NULL;
 
-    // Create image view
+    // Create renderTargetRef view
     image.ImageAspect = VkUtils::isColorFormat(format) ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
     {
         const VkResult result = Device.CreateImageView(format, image.Image.Image, image.ImageAspect, 0, 1, &image.View);
@@ -538,77 +587,13 @@ VulkanContext::DestroySwapchain(SwapchainId swapchainId)
         {
             const auto image = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, swapchain.ImagesId[i]);
             Device.DestroyImageView(image.View);
+
+            auto& renderTargetRef = GetResource<DRenderTargetVulkan, EResourceType::RENDER_TARGET, MAX_RESOURCES>(_renderTargets, swapchain.RenderTargetsId[i]);
+
+            Device.DestroyImageView(renderTargetRef.View);
+            renderTargetRef.Id = FREE;
         }
     swapchain.ImagesCount = 0;
-}
-
-FramebufferId
-VulkanContext::CreateSwapchainFramebuffer_DEPRECATED(SwapchainId swapchainId)
-{
-
-    const auto                     index       = AllocResource<DFramebufferVulkan_DEPRECATED, MAX_RESOURCES>(_framebuffers_DEPRECATED);
-    DFramebufferVulkan_DEPRECATED& framebuffer = _framebuffers_DEPRECATED.at(index);
-
-    DSwapchainVulkan& swapchain = GetResource<DSwapchainVulkan, EResourceType::SWAPCHAIN, MAX_RESOURCES>(_swapchains, swapchainId);
-    swapchain.Framebuffers      = *ResourceId(EResourceType::FRAMEBUFFER, framebuffer.Id, index);
-
-    _createFramebufferFromSwapchain(swapchain);
-
-    return swapchain.Framebuffers;
-}
-
-void
-VulkanContext::_createFramebufferFromSwapchain(DSwapchainVulkan& swapchain)
-{
-    const auto  swapchainFormat     = swapchain.Format.format;
-    const auto& swapchainImageViews = swapchain.ImageViews;
-    const auto& capabilities        = swapchain.Capabilities;
-
-    std::vector<VkFormat> attachments{ swapchainFormat };
-
-    DFramebufferVulkan_DEPRECATED& framebuffer = GetResource<DFramebufferVulkan_DEPRECATED, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers_DEPRECATED, swapchain.Framebuffers);
-    framebuffer.Attachments.Attachments.push_back(DRenderPassAttachment(VkUtils::convertVkFormat(swapchainFormat),
-    ESampleBit::COUNT_1_BIT,
-    ERenderPassLoad::Load,
-    ERenderPassStore::DontCare,
-    ERenderPassLayout::Undefined,
-    ERenderPassLayout::Undefined,
-    EAttachmentReference::COLOR_ATTACHMENT));
-
-    framebuffer.RenderPassInfo = _computeFramebufferAttachmentsRenderPassInfo(attachments);
-
-    VkRenderPass renderPass = _createRenderPassFromInfo(framebuffer.RenderPassInfo);
-
-    std::transform(swapchainImageViews.begin(), swapchainImageViews.end(), std::back_inserter(framebuffer.Framebuffers), [this, &capabilities, renderPass](VkImageView view) {
-        std::vector<VkImageView> views{ view };
-        return Device.CreateFramebuffer(views, capabilities.currentExtent.width, capabilities.currentExtent.height, renderPass);
-    });
-    framebuffer.Width  = capabilities.currentExtent.width;
-    framebuffer.Height = capabilities.currentExtent.height;
-}
-
-void
-VulkanContext::DestroyFramebuffer_DEPRECATED(FramebufferId framebufferId)
-{
-    auto& framebuffer = GetResource<DFramebufferVulkan_DEPRECATED, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers_DEPRECATED, framebufferId);
-    check(IsValidId(framebuffer.Id));
-    framebuffer.Id = PENDING_DESTROY;
-
-    // Find if the framebuffer is from a swapchain, remove it from the swapchain
-    auto foundSwapchain = std::find_if(_swapchains.begin(), _swapchains.end(), [framebufferId](const DSwapchainVulkan& swapchain) { return swapchain.Framebuffers == framebufferId; });
-    if (foundSwapchain != _swapchains.end())
-        {
-            foundSwapchain->Framebuffers = NULL;
-        }
-
-    _deferDestruction([this, framebufferId]() {
-        DFramebufferVulkan_DEPRECATED& framebuffer = GetResourceUnsafe<DFramebufferVulkan_DEPRECATED, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers_DEPRECATED, framebufferId);
-
-        std::for_each(framebuffer.Framebuffers.begin(), framebuffer.Framebuffers.end(), [this](const VkFramebuffer& framebuffer) { Device.DestroyFramebuffer(framebuffer); });
-        framebuffer.Framebuffers.clear();
-
-        framebuffer.Id = FREE;
-    });
 }
 
 BufferId
@@ -976,33 +961,33 @@ VulkanContext::CreateFramebuffer(const DFramebufferAttachments& attachments)
     const auto rpAttachments = _createGenericRenderPassAttachments(attachments);
     const auto vkRenderPass  = _createRenderPass(rpAttachments);
 
-    // Extrapolate all the image views
-    const auto attachmentCount = DFramebufferAttachments::MAX_ATTACHMENTS - std::count(attachments.ImageIds.begin(), attachments.ImageIds.end(), NULL);
+    // Extrapolate all the renderTargetRef views
+    const auto attachmentCount = DFramebufferAttachments::MAX_ATTACHMENTS - std::count(attachments.RenderTargets.begin(), attachments.RenderTargets.end(), NULL);
     check(attachmentCount > 0); // Must have at least one attachment
 
     std::vector<VkImageView> imageViewsAttachments;
     imageViewsAttachments.resize(attachmentCount);
 
-    uint32_t width, height;
     {
         // First attachment must always exists
-        const auto& imageRef = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, attachments.ImageIds[0]);
-        width                = imageRef.Image.Width;
-        height               = imageRef.Image.Height;
+        const auto& renderTargetRef = GetResource<DRenderTargetVulkan, EResourceType::RENDER_TARGET, MAX_RESOURCES>(_renderTargets, attachments.RenderTargets[0]);
+        framebufferRef.Width        = renderTargetRef.Image.Width;
+        framebufferRef.Height       = renderTargetRef.Image.Height;
     }
 
     for (size_t i = 0; i < attachmentCount; i++)
         {
-            check(attachments.ImageIds[i] != NULL);
-            const auto& imageRef     = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, attachments.ImageIds[i]);
-            imageViewsAttachments[i] = imageRef.View;
+            check(attachments.RenderTargets[i] != NULL);
+            const auto& renderTargetRef = GetResource<DRenderTargetVulkan, EResourceType::RENDER_TARGET, MAX_RESOURCES>(_renderTargets, attachments.RenderTargets[i]);
+            imageViewsAttachments[i]    = renderTargetRef.View;
 
-            check(imageRef.Image.Width == width); // All images must have the same width
-            check(imageRef.Image.Height == height); // All images must have the same height
-            check(imageRef.Image.MipLevels == 1); // Must have only 1 layer
+            check(renderTargetRef.Image.Width == framebufferRef.Width); // All images must have the same width
+            check(renderTargetRef.Image.Height == framebufferRef.Height); // All images must have the same height
+            check(renderTargetRef.Image.MipLevels == 1); // Must have only 1 layer
         }
 
-    framebufferRef.Framebuffer = Device.CreateFramebuffer(imageViewsAttachments, width, height, vkRenderPass);
+    framebufferRef.Framebuffer = Device.CreateFramebuffer(imageViewsAttachments, framebufferRef.Width, framebufferRef.Height, vkRenderPass);
+    framebufferRef.Attachments = attachments;
 
     return *ResourceId(EResourceType::FRAMEBUFFER, framebufferRef.Id, index);
 }
@@ -1018,7 +1003,7 @@ VulkanContext::DestroyFramebuffer(uint32_t framebufferId)
 }
 
 uint32_t
-VulkanContext::CreateCommandPool(uint32_t maxCommands)
+VulkanContext::CreateCommandPool()
 {
     const auto index          = AllocResource<DCommandPoolVulkan, MAX_RESOURCES>(_commandPools);
     auto&      commandPoolRef = _commandPools.at(index);
@@ -1043,6 +1028,304 @@ VulkanContext::ResetCommandPool(uint32_t commandPoolId)
 {
     auto& commandPoolRef = GetResource<DCommandPoolVulkan, EResourceType::COMMAND_POOL, MAX_RESOURCES>(_commandPools, commandPoolId);
     Device.ResetCommandPool2(commandPoolRef.Pool);
+}
+
+uint32_t
+VulkanContext::CreateCommandBuffer(uint32_t commandPoolId)
+{
+    const auto index            = AllocResource<DCommandBufferVulkan, MAX_RESOURCES>(_commandBuffers);
+    auto&      commandBufferRef = _commandBuffers.at(index);
+
+    // Reset internals
+    {
+        commandBufferRef.ActiveRenderPass = nullptr;
+        commandBufferRef.IsRecording      = false;
+    }
+
+    auto& commandPoolRef = GetResource<DCommandPoolVulkan, EResourceType::COMMAND_POOL, MAX_RESOURCES>(_commandPools, commandPoolId);
+
+    VkCommandBufferAllocateInfo info{};
+    info.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    info.pNext              = NULL;
+    info.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    info.commandPool        = commandPoolRef.Pool;
+    info.commandBufferCount = (uint32_t)1;
+
+    const VkResult result = vkAllocateCommandBuffers(Device.Device, &info, &commandBufferRef.Cmd);
+
+    if (VKFAILED(result))
+        {
+            throw std::runtime_error(VkUtils::VkErrorString(result));
+        }
+
+    return *ResourceId(EResourceType::COMMAND_BUFFER, commandBufferRef.Id, index);
+}
+
+void
+VulkanContext::DestroyCommandBuffer(uint32_t commandBufferId)
+{
+    auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
+    check(!commandBufferRef.IsRecording); // Must not be in recording state
+    commandBufferRef.Id = FREE;
+}
+
+void
+VulkanContext::BeginCommandBuffer(uint32_t commandBufferId)
+{
+    auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
+    check(!commandBufferRef.IsRecording); // Must not be in recording state
+    commandBufferRef.IsRecording = true;
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(commandBufferRef.Cmd, &beginInfo);
+}
+
+void
+VulkanContext::EndCommandBuffer(uint32_t commandBufferId)
+{
+    auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
+
+    check(commandBufferRef.IsRecording); // Must be in recording state
+    commandBufferRef.IsRecording = false;
+
+    // If previous active render pass end it
+    if (commandBufferRef.ActiveRenderPass)
+        {
+            vkCmdEndRenderPass(commandBufferRef.Cmd);
+            commandBufferRef.ActiveRenderPass = nullptr;
+        }
+
+    vkEndCommandBuffer(commandBufferRef.Cmd);
+}
+
+void
+VulkanContext::BindRenderTargets(uint32_t commandBufferId, const DFramebufferAttachments& colorAttachments, const DLoadOpPass& loadOP)
+{
+
+    // Find existing framebuffer
+    auto framebufferIt = std::find_if(_framebuffers.begin(), _framebuffers.end(), [colorAttachments](const DFramebufferVulkan& fbo) {
+        if (fbo.Id == FREE || fbo.Id == PENDING_DESTROY)
+            return false;
+
+        return DFramebufferAttachmentEqualFn{}(fbo.Attachments, colorAttachments);
+    });
+
+    DFramebufferVulkan* framebufferPtr{};
+    if (framebufferIt != _framebuffers.end())
+        {
+            framebufferPtr = &(*framebufferIt);
+        }
+    else
+        {
+            // Create framebuffer from colorAttachments
+            const auto framebufferId = CreateFramebuffer(colorAttachments);
+            framebufferPtr           = &GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, framebufferId);
+        }
+
+    // Create right render pass
+    auto renderPassAttachments = _createGenericRenderPassAttachments(colorAttachments);
+
+    VkClearValue clearValues[DFramebufferAttachments::MAX_ATTACHMENTS];
+    uint32_t     clearValueIndex{};
+
+    // Process color colorAttachments
+    for (size_t i = 0; i < renderPassAttachments.Attachments.size(); i++)
+        {
+            renderPassAttachments.Attachments.at(i).LoadOP  = loadOP.LoadColor[i];
+            renderPassAttachments.Attachments.at(i).StoreOP = loadOP.StoreActionsColor[i];
+
+            renderPassAttachments.Attachments.at(i).InitialLayout = ERenderPassLayout::AsAttachment;
+            renderPassAttachments.Attachments.at(i).FinalLayout   = ERenderPassLayout::AsAttachment;
+
+            if (loadOP.LoadColor[i] == ERenderPassLoad::Clear)
+                {
+                    renderPassAttachments.Attachments.at(i).InitialLayout = ERenderPassLayout::Undefined;
+
+                    clearValues[clearValueIndex].color.float32[0] = loadOP.ClearColor[i].color.float32[0];
+                    clearValues[clearValueIndex].color.float32[1] = loadOP.ClearColor[i].color.float32[1];
+                    clearValues[clearValueIndex].color.float32[2] = loadOP.ClearColor[i].color.float32[2];
+                    clearValues[clearValueIndex].color.float32[3] = loadOP.ClearColor[i].color.float32[3];
+                    clearValueIndex++;
+                }
+        }
+
+    VkRenderPass renderPass = _createRenderPass(renderPassAttachments);
+
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType             = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass        = renderPass;
+    renderPassInfo.framebuffer       = framebufferPtr->Framebuffer;
+    renderPassInfo.renderArea.offset = { 0, 0 };
+    renderPassInfo.renderArea.extent = { framebufferPtr->Width, framebufferPtr->Height };
+    renderPassInfo.clearValueCount   = clearValueIndex;
+    renderPassInfo.pClearValues      = clearValues;
+
+    auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
+    check(commandBufferRef.IsRecording); // Must be in recording state
+    // If previous active render pass end it
+    if (commandBufferRef.ActiveRenderPass)
+        {
+            vkCmdEndRenderPass(commandBufferRef.Cmd);
+            commandBufferRef.ActiveRenderPass = nullptr;
+        }
+
+    vkCmdBeginRenderPass(commandBufferRef.Cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    commandBufferRef.ActiveRenderPass = renderPass;
+}
+
+void
+VulkanContext::SetViewport(uint32_t commandBufferId, uint32_t x, uint32_t y, uint32_t width, uint32_t height, float znear, float zfar)
+{
+    auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
+    check(commandBufferRef.IsRecording); // Must be in recording state
+    check(commandBufferRef.ActiveRenderPass); // Must be in a render pass
+
+    VkViewport viewport{ x, y, width, height, znear, zfar };
+
+    vkCmdSetViewport(commandBufferRef.Cmd, 0, 1, &viewport);
+}
+
+void
+VulkanContext::SetScissor(uint32_t commandBufferId, uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+{
+    auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
+    check(commandBufferRef.IsRecording); // Must be in recording state
+    check(commandBufferRef.ActiveRenderPass); // Must be in a render pass
+
+    VkRect2D rect{ x, y, width, height };
+    vkCmdSetScissor(commandBufferRef.Cmd, 0, 1, &rect);
+}
+
+void
+VulkanContext::BindPipeline(uint32_t commandBufferId, uint32_t pipeline)
+{
+    auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
+    check(commandBufferRef.IsRecording); // Must be in recording state
+    check(commandBufferRef.ActiveRenderPass); // Must be in a render pass
+
+    auto& pipelineRef = GetResource<DPipelineVulkan, EResourceType::GRAPHICS_PIPELINE, MAX_RESOURCES>(_pipelines, pipeline);
+
+    vkCmdBindPipeline(commandBufferRef.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineRef.Pipeline);
+}
+
+void
+VulkanContext::BindVertexBuffer(uint32_t commandBufferId, uint32_t bufferId)
+{
+    auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
+    check(commandBufferRef.IsRecording); // Must be in recording state
+    check(commandBufferRef.ActiveRenderPass); // Must be in a render pass
+
+    auto& vertexBufRef = GetResource<DBufferVulkan, EResourceType::VERTEX_INDEX_BUFFER, MAX_RESOURCES>(_vertexBuffers, bufferId);
+
+    VkDeviceSize offset{};
+    vkCmdBindVertexBuffers(commandBufferRef.Cmd, 0, 1, &vertexBufRef.Buffer.Buffer, &offset);
+}
+
+void
+VulkanContext::Draw(uint32_t commandBufferId, uint32_t firstVertex, uint32_t count)
+{
+    auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
+    check(commandBufferRef.IsRecording); // Must be in recording state
+    check(commandBufferRef.ActiveRenderPass); // Must be in a render pass
+
+    vkCmdDraw(commandBufferRef.Cmd, count, 1, firstVertex, 0);
+}
+
+void
+VulkanContext::QueueSubmit(const std::vector<uint32_t>& waitSemaphore, const std::vector<uint32_t>& finishSemaphore, const std::vector<uint32_t>& cmdIds, uint32_t fenceId)
+{
+    std::vector<VkCommandBuffer> commandBuffers;
+    for (auto cmdId : cmdIds)
+        {
+            auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, cmdId);
+            commandBuffers.push_back(commandBufferRef.Cmd);
+        }
+
+    std::vector<VkSemaphore>          waitSemaphores;
+    std::vector<VkPipelineStageFlags> waitStages;
+    for (auto semaphoreId : waitSemaphore)
+        {
+            auto& semaphoreRef = GetResource<DSemaphoreVulkan, EResourceType::SEMAPHORE, MAX_RESOURCES>(_semaphores, semaphoreId);
+            waitSemaphores.push_back(semaphoreRef.Semaphore);
+
+            waitStages.push_back(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+        }
+
+    std::vector<VkSemaphore> finishSemaphores;
+    for (auto semaphoreId : finishSemaphore)
+        {
+            auto& semaphoreRef = GetResource<DSemaphoreVulkan, EResourceType::SEMAPHORE, MAX_RESOURCES>(_semaphores, semaphoreId);
+            finishSemaphores.push_back(semaphoreRef.Semaphore);
+        }
+
+    auto& fenceRef = GetResource<DFenceVulkan, EResourceType::FENCE, MAX_RESOURCES>(_fences, fenceId);
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.waitSemaphoreCount   = (uint32_t)waitSemaphores.size();
+    submitInfo.pWaitSemaphores      = waitSemaphores.data();
+    submitInfo.pWaitDstStageMask    = waitStages.data();
+    submitInfo.commandBufferCount   = (uint32_t)commandBuffers.size();
+    submitInfo.pCommandBuffers      = commandBuffers.data();
+    submitInfo.signalSemaphoreCount = (uint32_t)finishSemaphores.size();
+    submitInfo.pSignalSemaphores    = finishSemaphores.data();
+
+    const VkResult result = vkQueueSubmit(Device.MainQueue, 1, &submitInfo, fenceRef.Fence);
+    if (VKFAILED(result))
+        {
+            throw std::runtime_error(VkUtils::VkErrorString(result));
+        }
+}
+
+void
+VulkanContext::QueuePresent(uint32_t swapchainId, uint32_t imageIndex, const std::vector<uint32_t>& waitSemaphore)
+{
+    std::vector<VkSemaphore> waitSemaphores;
+    for (auto semaphoreId : waitSemaphore)
+        {
+            auto& semaphoreRef = GetResource<DSemaphoreVulkan, EResourceType::SEMAPHORE, MAX_RESOURCES>(_semaphores, semaphoreId);
+            waitSemaphores.push_back(semaphoreRef.Semaphore);
+        }
+
+    auto& swapchainRef = GetResource<DSwapchainVulkan, EResourceType::SWAPCHAIN, MAX_RESOURCES>(_swapchains, swapchainId);
+
+    VkPresentInfoKHR presentInfo{};
+    presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    presentInfo.waitSemaphoreCount = (uint32_t)waitSemaphores.size();
+    presentInfo.pWaitSemaphores    = waitSemaphores.data();
+    presentInfo.swapchainCount     = (uint32_t)1;
+    presentInfo.pSwapchains        = &swapchainRef.Swapchain;
+    presentInfo.pImageIndices      = &imageIndex;
+    presentInfo.pResults           = nullptr;
+
+    const VkResult result = vkQueuePresentKHR(Device.MainQueue, &presentInfo);
+    if (result == VK_SUCCESS || VK_SUBOPTIMAL_KHR)
+        {
+            return;
+        }
+
+    throw std::runtime_error(VkUtils::VkErrorString(result));
+
+    // On success,
+    // this command returns VK_SUCCESS
+
+    // VK_SUBOPTIMAL_KHR
+
+    // On failure,
+    // this command returns VK_ERROR_OUT_OF_HOST_MEMORY
+
+    // VK_ERROR_OUT_OF_DEVICE_MEMORY
+
+    // VK_ERROR_DEVICE_LOST
+
+    // VK_ERROR_OUT_OF_DATE_KHR
+
+    // VK_ERROR_SURFACE_LOST_KHR
+
+    // VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT
 }
 
 uint32_t
@@ -1115,6 +1398,204 @@ VulkanContext::DestroyGpuSemaphore(uint32_t semaphoreId)
     Device.DestroyVkSemaphore(semaphoreRef.Semaphore);
 
     semaphoreRef.Id = FREE;
+}
+
+uint32_t
+VulkanContext::CreateRenderTarget(EFormat format, ESampleBit samples, bool isDepth, uint32_t width, uint32_t height, uint32_t arrayLength, uint32_t mipMapCount, EResourceState initialState)
+{
+    check(samples == ESampleBit::COUNT_1_BIT);
+
+    VkImageUsageFlags usageFlags{};
+
+    if (isDepth)
+        {
+            usageFlags = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        }
+    else
+        {
+            usageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        }
+
+    VkImageLayout initialLayout{};
+
+    const VkFormat vkFormat = VkUtils::convertFormat(format);
+    bool           hasStencil{};
+    if (VkUtils::isColorFormat(vkFormat))
+        {
+            hasStencil = VkUtils::formatHasStencil(vkFormat);
+        }
+
+    switch (initialState)
+        {
+            case EResourceState::UNDEFINED:
+                initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+                break;
+            case EResourceState::RENDER_TARGET:
+                initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+                if (!VkUtils::isColorFormat(vkFormat))
+                    {
+                        initialLayout = VkUtils::formatHasStencil(vkFormat) ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+                    }
+                break;
+            case EResourceState::UNORDERED_ACCESS:
+                initialLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL; // Valid?
+                check(0); // Verify is correct
+                break;
+            case EResourceState::DEPTH_WRITE:
+                initialLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+                if (hasStencil)
+                    {
+                        initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+                    }
+                break;
+            case EResourceState::DEPTH_READ:
+                initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+                if (hasStencil)
+                    {
+                        initialLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL;
+                    }
+                break;
+            case EResourceState::COPY_DEST:
+                initialLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                break;
+            case EResourceState::COPY_SOURCE:
+                initialLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+                break;
+            case EResourceState::GENERAL_READ:
+                initialLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
+                break;
+            case EResourceState::COMMON:
+                initialLayout = VK_IMAGE_LAYOUT_GENERAL;
+                break;
+            case EResourceState::PRESENT:
+                initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+                break;
+
+            case EResourceState::INDEX_BUFFER:
+            case EResourceState::NON_PIXEL_SHADER_RESOURCE:
+            case EResourceState::PIXEL_SHADER_RESOURCE:
+            case EResourceState::SHADER_RESOURCE:
+            case EResourceState::STREAM_OUT:
+            case EResourceState::INDIRECT_ARGUMENT:
+            case EResourceState::VERTEX_AND_CONSTANT_BUFFER:
+            case EResourceState::RAYTRACING_ACCELERATION_STRUCTURE:
+            case EResourceState::SHADING_RATE_SOURCE:
+            default:
+                check(0);
+                break;
+        }
+
+    const auto index           = AllocResource<DRenderTargetVulkan, MAX_RESOURCES>(_renderTargets);
+    auto&      renderTargetRef = _renderTargets.at(index);
+    renderTargetRef.Image      = Device.CreateImageDeviceLocal(width, height, mipMapCount, vkFormat, usageFlags, VK_IMAGE_TILING_OPTIMAL, initialLayout);
+
+    renderTargetRef.ImageAspect = VkUtils::isColorFormat(vkFormat) ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
+    if (VkUtils::formatHasStencil(vkFormat))
+        {
+            renderTargetRef.ImageAspect |= VK_IMAGE_ASPECT_STENCIL_BIT;
+        }
+
+    {
+        const VkResult result = Device.CreateImageView(vkFormat, renderTargetRef.Image.Image, renderTargetRef.ImageAspect, 0, mipMapCount, &renderTargetRef.View);
+        if (VKFAILED(result))
+            {
+                throw std::runtime_error("Failed to create image view");
+            }
+    }
+
+    return *ResourceId(EResourceType::RENDER_TARGET, renderTargetRef.Id, index);
+}
+
+void
+VulkanContext::ResourceBarrier(uint32_t commandBufferId,
+uint32_t                                buffer_barrier_count,
+BufferBarrier*                          p_buffer_barriers,
+uint32_t                                texture_barrier_count,
+TextureBarrier*                         p_texture_barriers,
+uint32_t                                rt_barrier_count,
+RenderTargetBarrier*                    p_rt_barriers)
+{
+
+    std::vector<VkImageMemoryBarrier> imageBarriers;
+    imageBarriers.resize(rt_barrier_count);
+
+    VkAccessFlags srcAccessFlags = 0;
+    VkAccessFlags dstAccessFlags = 0;
+
+    for (uint32_t i = 0; i < rt_barrier_count; ++i)
+        {
+            RenderTargetBarrier* pTrans = &p_rt_barriers[i];
+
+            auto& renderTargetRef = GetResource<DRenderTargetVulkan, EResourceType::RENDER_TARGET, MAX_RESOURCES>(_renderTargets, pTrans->RenderTarget);
+
+            VkImageMemoryBarrier* pImageBarrier = &imageBarriers[i];
+
+            if (EResourceState::UNORDERED_ACCESS == pTrans->mCurrentState && EResourceState::UNORDERED_ACCESS == pTrans->mNewState)
+                {
+                    pImageBarrier->sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                    pImageBarrier->pNext = NULL;
+
+                    pImageBarrier->srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                    pImageBarrier->dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+                    pImageBarrier->oldLayout     = VK_IMAGE_LAYOUT_GENERAL;
+                    pImageBarrier->newLayout     = VK_IMAGE_LAYOUT_GENERAL;
+                }
+            else
+                {
+                    pImageBarrier->sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                    pImageBarrier->pNext = NULL;
+
+                    pImageBarrier->srcAccessMask = VkUtils::resourceStateToAccessFlag(pTrans->mCurrentState);
+                    pImageBarrier->dstAccessMask = VkUtils::resourceStateToAccessFlag(pTrans->mNewState);
+                    pImageBarrier->oldLayout     = VkUtils::resourceStateToImageLayout(pTrans->mCurrentState);
+                    pImageBarrier->newLayout     = VkUtils::resourceStateToImageLayout(pTrans->mNewState);
+                }
+
+            if (pImageBarrier)
+                {
+                    pImageBarrier->image                           = renderTargetRef.Image.Image;
+                    pImageBarrier->subresourceRange.aspectMask     = (VkImageAspectFlags)renderTargetRef.ImageAspect;
+                    pImageBarrier->subresourceRange.baseMipLevel   = pTrans->mSubresourceBarrier ? pTrans->mMipLevel : 0;
+                    pImageBarrier->subresourceRange.levelCount     = pTrans->mSubresourceBarrier ? 1 : VK_REMAINING_MIP_LEVELS;
+                    pImageBarrier->subresourceRange.baseArrayLayer = pTrans->mSubresourceBarrier ? pTrans->mArrayLayer : 0;
+                    pImageBarrier->subresourceRange.layerCount     = pTrans->mSubresourceBarrier ? 1 : VK_REMAINING_ARRAY_LAYERS;
+
+                    // if (pTrans->mAcquire && pTrans->mCurrentState != EResourceState::UNDEFINED)
+                    //     {
+                    //         pImageBarrier->srcQueueFamilyIndex = pCmd->pRenderer->mVulkan.mQueueFamilyIndices[pTrans->mQueueType];
+                    //         pImageBarrier->dstQueueFamilyIndex = pCmd->pQueue->mVulkan.mVkQueueFamilyIndex;
+                    //     }
+                    // else if (pTrans->mRelease && pTrans->mCurrentState != EResourceState::UNDEFINED)
+                    //     {
+                    //         pImageBarrier->srcQueueFamilyIndex = pCmd->pQueue->mVulkan.mVkQueueFamilyIndex;
+                    //         pImageBarrier->dstQueueFamilyIndex = pCmd->pRenderer->mVulkan.mQueueFamilyIndices[pTrans->mQueueType];
+                    //     }
+                    // else
+                    {
+                        pImageBarrier->srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                        pImageBarrier->dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    }
+
+                    srcAccessFlags |= pImageBarrier->srcAccessMask;
+                    dstAccessFlags |= pImageBarrier->dstAccessMask;
+                }
+        }
+
+    VkPipelineStageFlags srcStageMask = VkUtils::determinePipelineStageFlags(srcAccessFlags, EQueueType::GRAPHICS);
+    VkPipelineStageFlags dstStageMask = VkUtils::determinePipelineStageFlags(dstAccessFlags, EQueueType::GRAPHICS);
+
+    {
+        auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
+        check(commandBufferRef.IsRecording); // Must be in recording state
+        // If previous active render pass end it
+        if (commandBufferRef.ActiveRenderPass)
+            {
+                vkCmdEndRenderPass(commandBufferRef.Cmd);
+                commandBufferRef.ActiveRenderPass = nullptr;
+            }
+
+        vkCmdPipelineBarrier(commandBufferRef.Cmd, srcStageMask, dstStageMask, 0, 0, NULL, 0, NULL, (uint32_t)imageBarriers.size(), imageBarriers.data());
+    }
 }
 
 void
@@ -1233,269 +1714,6 @@ uint32_t                                            stride)
 }
 
 void
-VulkanContext::SubmitPass(RenderPassData&& data)
-{
-    _drawCommands.emplace_back(std::move(data));
-}
-
-void
-VulkanContext::SubmitCopy(CopyDataCommand&& data)
-{
-    _transferCommands.emplace_back(std::move(data));
-}
-
-void
-VulkanContext::AdvanceFrame()
-{
-    // Wait for previous work to complete wait fence to signal
-    const VkResult result = vkWaitForFences(Device.Device, 1, &_fence[_frameIndex], VK_TRUE /*Wait all*/, MAX_FENCE_TIMEOUT);
-    if (VKFAILED(result))
-        {
-            throw std::runtime_error(VkUtils::VkErrorString(result));
-        }
-
-    // Reset command pool
-    auto& commandPool = _cmdPool[_frameIndex];
-    commandPool->Reset();
-
-    _performDeletionQueue();
-
-    _performCopyOperations();
-
-    // Acquire swapchain images
-    // Recreate swapchain if necessary
-    std::vector<VkSemaphore> imageAvailableSemaphores;
-    imageAvailableSemaphores.reserve(_swapchains.size());
-    std::vector<std::pair<VkSwapchainKHR, uint32_t>> swapchainImageIndex;
-    swapchainImageIndex.reserve(_swapchains.size());
-    {
-        for (auto& swapchain : _swapchains)
-            {
-                if (swapchain.Id == NULL)
-                    {
-                        continue;
-                    }
-
-                const VkResult result = Device.AcquireNextImage(swapchain.Swapchain, UINT64_MAX, &swapchain.CurrentImageIndex, swapchain.ImageAvailableSemaphore[_frameIndex], VK_NULL_HANDLE);
-                /*Spec: https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkQueueSubmit.html*/
-                /*
-                Return Codes
-
-                On success, this command returns
-                        VK_SUCCESS
-
-                        VK_TIMEOUT
-
-                        VK_NOT_READY
-
-                        VK_SUBOPTIMAL_KHR
-
-                On failure, this command returns
-                        VK_ERROR_OUT_OF_HOST_MEMORY
-
-                        VK_ERROR_OUT_OF_DEVICE_MEMORY
-
-                        VK_ERROR_DEVICE_LOST
-
-                        VK_ERROR_OUT_OF_DATE_KHR
-
-                        VK_ERROR_SURFACE_LOST_KHR
-
-                        VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT
-                */
-                switch (result)
-                    {
-                        case VK_SUCCESS:
-                        case VK_NOT_READY:
-                            break;
-                        case VK_SUBOPTIMAL_KHR:
-                        case VK_ERROR_OUT_OF_DATE_KHR:
-                            {
-                                _recreateSwapchainBlocking(swapchain);
-                                const VkResult lastResult =
-                                Device.AcquireNextImage(swapchain.Swapchain, UINT64_MAX, &swapchain.CurrentImageIndex, swapchain.ImageAvailableSemaphore[_frameIndex], VK_NULL_HANDLE);
-                                if (VKFAILED(lastResult))
-                                    {
-                                        throw std::runtime_error(VkUtils::VkErrorString(result));
-                                    }
-                            }
-                            break;
-                        case VK_TIMEOUT:
-                        default:
-                            throw std::runtime_error(VkUtils::VkErrorString(result));
-                            break;
-                    }
-
-                imageAvailableSemaphores.push_back(swapchain.ImageAvailableSemaphore[_frameIndex]);
-                swapchainImageIndex.push_back(std::make_pair(swapchain.Swapchain, swapchain.CurrentImageIndex));
-            }
-    }
-
-    // record drawing commands
-    {
-        for (const auto& pass : _drawCommands)
-            {
-                auto cmd = commandPool->Allocate()->Cmd;
-
-                VkCommandBufferBeginInfo beginInfo{};
-                beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-                beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-                vkBeginCommandBuffer(cmd, &beginInfo);
-                {
-                    // For each render pass bind all necessary
-                    {
-                        VkRenderPassBeginInfo renderPassInfo{};
-                        renderPassInfo.sType      = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-                        renderPassInfo.renderPass = _createRenderPass(pass.RenderPass);
-
-                        DFramebufferVulkan_DEPRECATED& framebuffer = GetResource<DFramebufferVulkan_DEPRECATED, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers_DEPRECATED, pass.Framebuffer);
-                        {
-                            // Bind framebuffer or swapchain framebuffer based on the current image index
-                            if (framebuffer.Framebuffers.size() == 1)
-                                {
-                                    renderPassInfo.framebuffer = framebuffer.Framebuffers.front();
-                                }
-                            else
-                                {
-                                    auto swapchain =
-                                    std::find_if(_swapchains.begin(), _swapchains.end(), [id = pass.Framebuffer](const DSwapchainVulkan& swapchain) { return swapchain.Framebuffers == id; });
-                                    check(swapchain != _swapchains.end());
-                                    renderPassInfo.framebuffer = framebuffer.Framebuffers[swapchain->CurrentImageIndex];
-                                }
-                        }
-
-                        renderPassInfo.renderArea.offset = { 0, 0 };
-                        renderPassInfo.renderArea.extent = { framebuffer.Width, framebuffer.Height };
-
-                        check(pass.ClearValues.size() >= std::count_if(pass.RenderPass.Attachments.begin(), pass.RenderPass.Attachments.end(), [](const DRenderPassAttachment& att) {
-                            return att.LoadOP == ERenderPassLoad::Clear;
-                        })); // Need same number of clear for each clear layout attachament
-
-                        // Convert clear values to vkClearValues
-                        std::vector<VkClearValue> vkClearValues;
-                        std::transform(pass.ClearValues.begin(), pass.ClearValues.end(), std::back_inserter(vkClearValues), [](const DClearValue& v) {
-                            VkClearValue value;
-                            //@TODO Risky copy of union, find a better way to handle this
-                            memcpy(value.color.float32, v.color.float32, sizeof(VkClearValue));
-                            return value;
-                        });
-
-                        renderPassInfo.clearValueCount = (uint32_t)vkClearValues.size();
-                        renderPassInfo.pClearValues    = vkClearValues.data();
-                        vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-                    }
-                    {
-                        // Flip viewport
-                        VkViewport viewport{ pass.Viewport.x, pass.Viewport.h - pass.Viewport.y, pass.Viewport.w, -pass.Viewport.h, pass.Viewport.znear, pass.Viewport.zfar };
-                        vkCmdSetViewport(cmd, 0, 1, &viewport);
-                        VkRect2D scissor{ pass.Viewport.x, pass.Viewport.y, pass.Viewport.w, pass.Viewport.h };
-                        vkCmdSetScissor(cmd, 0, 1, &scissor);
-                    }
-                    // for each draw command
-                    {
-                        for (const auto& draw : pass.DrawCommands)
-                            {
-                                auto& shader = GetResource<DShaderVulkan, EResourceType::SHADER, MAX_RESOURCES>(_shaders, draw.Shader);
-
-                                auto pipeline       = _queryPipelineFromAttachmentsAndFormat(shader, pass.RenderPass, draw.PipelineFormat);
-                                auto pipelineLayout = shader.PipelineLayout;
-
-                                // Bind pipeline
-                                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-                                // find descriptor set from cache and bind them
-                                auto descriptorPoolManager = _pipelineLayoutToDescriptorPool[_frameIndex].find(pipelineLayout)->second;
-
-                                // For each set to bind
-                                for (const auto& set : draw.DescriptorSetBindings)
-                                    {
-                                        // Get descriptor set layout for this set
-                                        auto descriptorSetLayout = _pipelineLayoutToSetIndexDescriptorSetLayout.find(pipelineLayout)->second[set.first];
-
-                                        auto binder = descriptorPoolManager->CreateDescriptorSetBinder();
-                                        for (const auto& bindingPair : set.second)
-                                            {
-                                                const auto  bindingIndex = bindingPair.first;
-                                                const auto& binding      = bindingPair.second;
-                                                switch (binding.Type)
-                                                    {
-                                                        case EBindingType::UNIFORM_BUFFER_OBJECT:
-                                                            {
-                                                                check(binding.Buffers.size() == 1);
-                                                                const auto&    b      = binding.Buffers.front();
-                                                                DBufferVulkan& buffer = GetResource<DBufferVulkan, EResourceType::UNIFORM_BUFFER, MAX_RESOURCES>(_uniformBuffers, b);
-                                                                binder.BindUniformBuffer(bindingIndex, buffer.Buffer.Buffer, 0, buffer.Size);
-                                                            }
-                                                            break;
-                                                        case EBindingType::SAMPLER:
-                                                            {
-                                                                std::vector<std::pair<VkImageView, VkSampler>> pair;
-
-                                                                std::transform(binding.Images.begin(), binding.Images.end(), std::back_inserter(pair), [this](const ImageId id) {
-                                                                    const DImageVulkan& image = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, id);
-                                                                    return std::make_pair(image.View, image.Sampler);
-                                                                });
-
-                                                                binder.BindCombinedImageSamplerArray(bindingIndex, pair);
-                                                            }
-                                                            break;
-                                                        default:
-                                                            check(0);
-                                                            break;
-                                                    }
-                                            }
-
-                                        binder.BindDescriptorSet(cmd, pipelineLayout, descriptorSetLayout, set.first);
-                                    }
-
-                                // draw call
-                                DBufferVulkan& vertexBuffer = GetResource<DBufferVulkan, EResourceType::VERTEX_INDEX_BUFFER, MAX_RESOURCES>(_vertexBuffers, draw.VertexBuffer);
-                                VkDeviceSize   offset{ 0 };
-                                vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer.Buffer.Buffer, &offset);
-                                vkCmdDraw(cmd, draw.VerticesCount, 1, draw.BeginVertex, 0);
-                            }
-                    }
-
-                    // end renderpass
-                    vkCmdEndRenderPass(cmd);
-                }
-
-                vkEndCommandBuffer(cmd);
-            }
-
-        // Clear draw commands vector
-        _drawCommands.clear();
-    }
-
-    _submitCommands(imageAvailableSemaphores);
-
-    // Present
-    {
-        auto recordedCommandBuffers = commandPool->GetRecorded();
-
-        if (recordedCommandBuffers.size() > 0 && _swapchains.size() > 0)
-            {
-                std::vector<VkResult> presentError = Device.Present(swapchainImageIndex, { _workFinishedSemaphores[_frameIndex] });
-                for (size_t i = 0; i < presentError.size(); i++)
-                    {
-                        if (presentError[i] != VK_SUCCESS)
-                            {
-                                const VkSwapchainKHR swapchainInErrorState = swapchainImageIndex[i].first;
-                                auto                 found =
-                                std::find_if(_swapchains.begin(), _swapchains.end(), [swapchainInErrorState](DSwapchainVulkan swapchain) { return swapchain.Swapchain == swapchainInErrorState; });
-
-                                _recreateSwapchainBlocking(*found);
-                                // throw std::runtime_error(VkErrorString(presentError[i]));
-                            }
-                    }
-            }
-    }
-
-    // Increment the frame index
-    _frameIndex = (_frameIndex + 1) % NUM_OF_FRAMES_IN_FLIGHT;
-}
-
-void
 VulkanContext::FlushDeletedBuffers()
 {
     if (_deletionQueue.size() > 0)
@@ -1538,147 +1756,6 @@ VulkanContext::Log(const std::string& error)
         }
 }
 
-void
-VulkanContext::_performCopyOperations()
-{
-    // Reset command pool
-    auto& commandPool = _cmdPool[_frameIndex];
-
-    // Perform copy commands
-    {
-        // Sort from smallest to largest data
-        std::sort(_transferCommands.begin(), _transferCommands.end(), [](const CopyDataCommand& a, const CopyDataCommand& b) {
-            uint32_t aSize{};
-            if (a.UniformCommand.has_value())
-                {
-                    aSize = a.UniformCommand.value().Data.size();
-                }
-            if (a.VertexCommand.has_value())
-                {
-                    aSize = a.VertexCommand.value().Data.size();
-                }
-            uint32_t bSize{};
-            if (b.UniformCommand.has_value())
-                {
-                    bSize = b.UniformCommand.value().Data.size();
-                }
-            if (a.VertexCommand.has_value())
-                {
-                    bSize = b.VertexCommand.value().Data.size();
-                }
-
-            return aSize < bSize;
-        });
-
-        // Pop previous frame allocation, freeing space
-        {
-            for (const uint32_t bytes : _perFrameCopySizes[_frameIndex])
-                {
-                    _stagingBufferManager->Pop(bytes);
-                }
-            _perFrameCopySizes[_frameIndex].clear();
-        }
-
-        // Copy
-        CResourceTransfer transfer(commandPool->Allocate()->Cmd);
-        auto              it = _transferCommands.begin();
-        for (; it != _transferCommands.end(); it++)
-            {
-
-                if (it->VertexCommand.has_value() || it->UniformCommand.has_value())
-                    {
-                        DBufferVulkan*                    destination{};
-                        const std::vector<unsigned char>* data{};
-                        uint32_t*                         offset{};
-                        if (it->VertexCommand.has_value())
-                            {
-                                destination = &GetResource<DBufferVulkan, EResourceType::VERTEX_INDEX_BUFFER, MAX_RESOURCES>(_vertexBuffers, it->VertexCommand.value().Destination);
-                                data        = &it->VertexCommand.value().Data;
-                                offset      = &it->VertexCommand.value().DestOffset;
-                            }
-                        if (it->UniformCommand.has_value())
-                            {
-                                destination = &GetResource<DBufferVulkan, EResourceType::UNIFORM_BUFFER, MAX_RESOURCES>(_uniformBuffers, it->UniformCommand.value().Destination);
-                                data        = &it->UniformCommand.value().Data;
-                                offset      = &it->UniformCommand.value().DestOffset;
-                            }
-                        check(destination != nullptr);
-                        check(data != nullptr);
-                        check(offset != nullptr);
-
-                        // If not space left in staging buffer stop copying
-                        const auto capacity = _stagingBufferManager->Capacity();
-                        if (capacity < data->size())
-                            {
-                                const auto freeSpace = _stagingBufferManager->MaxSize - _stagingBufferManager->Size();
-                                if (freeSpace - capacity < data->size())
-                                    {
-                                        break;
-                                    }
-                                else
-                                    {
-                                        _stagingBufferManager->Push(nullptr, capacity);
-                                        _perFrameCopySizes[_frameIndex].push_back(capacity);
-                                    }
-                            }
-                        const uint32_t stagingOffset = _stagingBufferManager->Push((void*)data->data(), data->size());
-                        _perFrameCopySizes[_frameIndex].push_back(data->size());
-                        transfer.CopyBuffer(_stagingBuffer.Buffer, destination->Buffer.Buffer, data->size(), stagingOffset);
-                    }
-                else if (it->ImageCommand.has_value())
-                    {
-                        // Copy mip maps
-                        const CopyImageCommand& v = it->ImageCommand.value();
-
-                        uint32_t mipMapsBytes{};
-                        for (const auto& mip : v.MipMapCopy)
-                            {
-                                mipMapsBytes += mip.Data.size();
-                            }
-
-                        // If not space left in staging buffer stop copying
-                        const auto capacity = _stagingBufferManager->Capacity();
-                        if (capacity < mipMapsBytes)
-                            {
-                                const auto freeSpace = _stagingBufferManager->MaxSize - _stagingBufferManager->Size();
-                                if (freeSpace - capacity < mipMapsBytes)
-                                    {
-                                        break;
-                                    }
-                                else
-                                    {
-                                        _stagingBufferManager->Push(nullptr, capacity);
-                                        _perFrameCopySizes[_frameIndex].push_back(capacity);
-                                    }
-                            }
-                        for (const auto& mip : v.MipMapCopy)
-                            {
-                                DImageVulkan&  destination   = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, v.Destination);
-                                const uint32_t stagingOffset = _stagingBufferManager->Push((void*)mip.Data.data(), mip.Data.size());
-                                transfer.CopyMipMap(_stagingBuffer.Buffer, destination.Image.Image, VkExtent2D{ mip.Width, mip.Height }, mip.MipLevel, mip.Offset, stagingOffset);
-                            }
-                    }
-            }
-
-        transfer.FinishCommandBuffer();
-
-        // If we couldn't transfer all data print log
-        if (it != _transferCommands.end())
-            {
-                uint32_t bytesLeft{};
-                std::for_each(it, _transferCommands.end(), [&bytesLeft](const CopyDataCommand& c) {
-                    bytesLeft += c.VertexCommand.has_value() ? c.VertexCommand.value().Data.size() : 0;
-                    bytesLeft += c.UniformCommand.has_value() ? c.UniformCommand.value().Data.size() : 0;
-                });
-                const std::string out = "Warning: Staging buffer could not copy " + std::to_string(bytesLeft) + " bytes. Condider increase the staging buffer size";
-                Log(out);
-            }
-
-        // Clear all transfer commands we've processed
-        _transferCommands.erase(_transferCommands.begin(), it);
-    }
-}
-
 VkPipeline
 VulkanContext::_queryPipelineFromAttachmentsAndFormat(DShaderVulkan& shader, const DRenderPassAttachments& renderPass, const PipelineFormat& format)
 {
@@ -1696,22 +1773,6 @@ VulkanContext::_queryPipelineFromAttachmentsAndFormat(DShaderVulkan& shader, con
     VkPipeline pipeline             = _createPipeline(shader.PipelineLayout, renderPassVk, shader.ShaderStageCreateInfo, format, vertexLayout, shader.VertexStride);
     permutationMap.Pipeline[format] = pipeline;
     return pipeline;
-}
-
-void
-VulkanContext::_submitCommands(const std::vector<VkSemaphore>& imageAvailableSemaphores)
-{
-    // Reset command pool
-    auto& commandPool = _cmdPool[_frameIndex];
-    // Queue submit
-    auto recordedCommandBuffers = commandPool->GetRecorded();
-    if (recordedCommandBuffers.size() > 0)
-        {
-            // Reset only when there is work submitted otherwise we'll wait indefinetly
-            vkResetFences(Device.Device, 1, &_fence[_frameIndex]);
-
-            Device.SubmitToMainQueue(recordedCommandBuffers, imageAvailableSemaphores, _workFinishedSemaphores[_frameIndex], _fence[_frameIndex]);
-        }
 }
 
 void
@@ -1734,53 +1795,53 @@ VulkanContext::_performDeletionQueue()
 void
 VulkanContext::_recreateSwapchainBlocking(DSwapchainVulkan& swapchain)
 {
-    // We must be sure that the framebuffer is not used anymore before destroying it
-    // This can be a valid approach since a game doesn't resize very often
-    vkDeviceWaitIdle(Device.Device);
+    //// We must be sure that the framebuffer is not used anymore before destroying it
+    //// This can be a valid approach since a game doesn't resize very often
+    // vkDeviceWaitIdle(Device.Device);
 
-    DFramebufferVulkan_DEPRECATED& framebuffer = GetResource<DFramebufferVulkan_DEPRECATED, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers_DEPRECATED, swapchain.Framebuffers);
-    // Destroy all framebuffers
-    {
-        std::for_each(framebuffer.Framebuffers.begin(), framebuffer.Framebuffers.end(), [this](const VkFramebuffer& framebuffer) { Device.DestroyFramebuffer(framebuffer); });
-        framebuffer.Framebuffers.clear();
-    }
+    // DFramebufferVulkan_DEPRECATED& framebuffer = GetResource<DFramebufferVulkan_DEPRECATED, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers_DEPRECATED, swapchain.Framebuffers);
+    //// Destroy all framebuffers
+    //{
+    //    std::for_each(framebuffer.Framebuffers.begin(), framebuffer.Framebuffers.end(), [this](const VkFramebuffer& framebuffer) { Device.DestroyFramebuffer(framebuffer); });
+    //    framebuffer.Framebuffers.clear();
+    //}
 
-    // Destroy all image views
-    std::for_each(swapchain.ImageViews.begin(), swapchain.ImageViews.end(), [this](const VkImageView& imageView) { Device.DestroyImageView(imageView); });
-    swapchain.ImageViews.clear();
+    //// Destroy all renderTargetRef views
+    // std::for_each(swapchain.ImageViews.begin(), swapchain.ImageViews.end(), [this](const VkImageView& imageView) { Device.DestroyImageView(imageView); });
+    // swapchain.ImageViews.clear();
 
-    // Create from old
-    {
-        // Refresh capabilities
-        swapchain.Capabilities = Device.GetSurfaceCapabilities(swapchain.Surface);
+    //// Create from old
+    //{
+    //    // Refresh capabilities
+    //    swapchain.Capabilities = Device.GetSurfaceCapabilities(swapchain.Surface);
 
-        VkSwapchainKHR oldSwapchain = swapchain.Swapchain;
+    //    VkSwapchainKHR oldSwapchain = swapchain.Swapchain;
 
-        const VkResult result = Device.CreateSwapchainFromSurface(swapchain.Surface, swapchain.Format, swapchain.PresentMode, swapchain.Capabilities, &swapchain.Swapchain, oldSwapchain);
-        if (VKFAILED(result))
-            {
-                throw std::runtime_error(VkUtils::VkErrorString(result));
-            }
-        Device.DestroySwapchain(oldSwapchain);
-        swapchain.Images.clear();
-    }
+    //    const VkResult result = Device.CreateSwapchainFromSurface(swapchain.Surface, swapchain.Format, swapchain.PresentMode, swapchain.Capabilities, &swapchain.Swapchain, oldSwapchain);
+    //    if (VKFAILED(result))
+    //        {
+    //            throw std::runtime_error(VkUtils::VkErrorString(result));
+    //        }
+    //    Device.DestroySwapchain(oldSwapchain);
+    //    swapchain.Images.clear();
+    //}
 
-    // Get image views
-    swapchain.Images = Device.GetSwapchainImages(swapchain.Swapchain);
+    //// Get renderTargetRef views
+    // swapchain.Images = Device.GetSwapchainImages(swapchain.Swapchain);
 
-    // Create image views
-    std::transform(swapchain.Images.begin(), swapchain.Images.end(), std::back_inserter(swapchain.ImageViews), [this, format = swapchain.Format.format](const VkImage& image) {
-        VkImageView imageView{};
-        const auto  result = Device.CreateImageView(format, image, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, &imageView);
-        if (VKFAILED(result))
-            {
-                throw std::runtime_error("Failed to create swapchain imageView " + std::string(VkUtils::VkErrorString(result)));
-            }
-        return imageView;
-    });
+    //// Create renderTargetRef views
+    // std::transform(swapchain.Images.begin(), swapchain.Images.end(), std::back_inserter(swapchain.ImageViews), [this, format = swapchain.Format.format](const VkImage& image) {
+    //     VkImageView imageView{};
+    //     const auto  result = Device.CreateImageView(format, image, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, &imageView);
+    //     if (VKFAILED(result))
+    //         {
+    //             throw std::runtime_error("Failed to create swapchain imageView " + std::string(VkUtils::VkErrorString(result)));
+    //         }
+    //     return imageView;
+    // });
 
-    // Create a framebuffer
-    _createFramebufferFromSwapchain(swapchain);
+    //// Create a framebuffer
+    //_createFramebufferFromSwapchain(swapchain);
 }
 
 RIVkRenderPassInfo

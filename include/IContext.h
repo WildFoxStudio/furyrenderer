@@ -34,6 +34,7 @@ enum EResourceType : uint8_t
     COMMAND_BUFFER      = 10,
     FENCE               = 11,
     SEMAPHORE           = 12,
+    RENDER_TARGET       = 13,
 };
 // SHOULD BE PRIVATE
 
@@ -629,8 +630,9 @@ struct RenderPassData
 
 struct DFramebufferAttachments
 {
+    //@TODO USE RAW ARRAY
     static constexpr uint32_t             MAX_ATTACHMENTS = 10;
-    std::array<uint32_t, MAX_ATTACHMENTS> ImageIds{};
+    std::array<uint32_t, MAX_ATTACHMENTS> RenderTargets{};
 };
 
 struct DFramebufferAttachmentsHashFn
@@ -640,7 +642,7 @@ struct DFramebufferAttachmentsHashFn
         size_t hash{};
         for (size_t i = 0; i < DFramebufferAttachments::MAX_ATTACHMENTS; i++)
             {
-                hash += std::hash<uint32_t>{}(attachments.ImageIds[i]);
+                hash += std::hash<uint32_t>{}(attachments.RenderTargets[i]);
             }
         return hash;
     };
@@ -653,7 +655,7 @@ struct DFramebufferAttachmentEqualFn
 
         for (size_t i = 0; i < DFramebufferAttachments::MAX_ATTACHMENTS; i++)
             {
-                if (lhs.ImageIds[i] != rhs.ImageIds[i])
+                if (lhs.RenderTargets[i] != rhs.RenderTargets[i])
                     {
                         return false;
                     }
@@ -662,17 +664,105 @@ struct DFramebufferAttachmentEqualFn
     };
 };
 
+struct DLoadOpPass
+{
+    ERenderPassLoad  LoadColor[DFramebufferAttachments::MAX_ATTACHMENTS];
+    ERenderPassLoad  LoadDepth;
+    ERenderPassLoad  LoadStencil;
+    DClearValue      ClearColor[DFramebufferAttachments::MAX_ATTACHMENTS];
+    DClearValue      ClearDepthStencil;
+    ERenderPassStore StoreActionsColor[DFramebufferAttachments::MAX_ATTACHMENTS];
+    ERenderPassStore StoreDepth;
+    ERenderPassStore StoreStencil;
+};
+
+enum class EResourceState
+{
+    UNDEFINED                         = 0,
+    VERTEX_AND_CONSTANT_BUFFER        = 0x1,
+    INDEX_BUFFER                      = 0x2,
+    RENDER_TARGET                     = 0x4,
+    UNORDERED_ACCESS                  = 0x8,
+    DEPTH_WRITE                       = 0x10,
+    DEPTH_READ                        = 0x20,
+    NON_PIXEL_SHADER_RESOURCE         = 0x40,
+    PIXEL_SHADER_RESOURCE             = 0x80,
+    SHADER_RESOURCE                   = 0x40 | 0x80,
+    STREAM_OUT                        = 0x100,
+    INDIRECT_ARGUMENT                 = 0x200,
+    COPY_DEST                         = 0x400,
+    COPY_SOURCE                       = 0x800,
+    GENERAL_READ                      = (((((0x1 | 0x2) | 0x40) | 0x80) | 0x200) | 0x800),
+    PRESENT                           = 0x1000,
+    COMMON                            = 0x2000,
+    RAYTRACING_ACCELERATION_STRUCTURE = 0x4000,
+    SHADING_RATE_SOURCE               = 0x8000,
+};
+
+enum EQueueType
+{
+    GRAPHICS = 0,
+    TRANSFER,
+    COMPUTE,
+    MAX_QUEUE_TYPE
+};
+
+typedef struct BufferBarrier
+{
+    uint32_t       BufferId;
+    EResourceState CurrentState;
+    EResourceState NewState;
+    uint8_t        BeginOnly : 1;
+    uint8_t        EndOnly : 1;
+    uint8_t        Acquire : 1;
+    uint8_t        Release : 1;
+    uint8_t        QueueType : 5;
+} BufferBarrier;
+
+typedef struct TextureBarrier
+{
+    uint32_t*      ImageId;
+    EResourceState CurrentState;
+    EResourceState NewState;
+    uint8_t        BeginOnly : 1;
+    uint8_t        EndOnly : 1;
+    uint8_t        Acquire : 1;
+    uint8_t        Release : 1;
+    uint8_t        QueueType : 5;
+    /// Specifiy whether following barrier targets particular subresource
+    uint8_t mSubresourceBarrier : 1;
+    /// Following values are ignored if mSubresourceBarrier is false
+    uint8_t  mMipLevel : 7;
+    uint16_t mArrayLayer;
+} TextureBarrier;
+
+typedef struct RenderTargetBarrier
+{
+    uint32_t       RenderTarget;
+    EResourceState mCurrentState;
+    EResourceState mNewState;
+    uint8_t        mBeginOnly : 1;
+    uint8_t        mEndOnly : 1;
+    uint8_t        mAcquire : 1;
+    uint8_t        mRelease : 1;
+    uint8_t        mQueueType : 5;
+    /// Specifiy whether following barrier targets particular subresource
+    uint8_t mSubresourceBarrier : 1;
+    /// Following values are ignored if mSubresourceBarrier is false
+    uint8_t  mMipLevel : 7;
+    uint16_t mArrayLayer;
+} RenderTargetBarrier;
+
 class IContext
 {
   public:
     virtual ~IContext(){};
-    virtual void                 WaitDeviceIdle()                                                                             = 0;
-    virtual SwapchainId          CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat) = 0;
-    virtual std::vector<ImageId> GetSwapchainImages(SwapchainId swapchainId)                                                  = 0;
-    virtual void                 DestroySwapchain(SwapchainId swapchainId)                                                    = 0;
-
-    virtual FramebufferId CreateSwapchainFramebuffer_DEPRECATED(SwapchainId swapchainId) = 0;
-    virtual void          DestroyFramebuffer_DEPRECATED(FramebufferId framebufferId)     = 0;
+    virtual void                  WaitDeviceIdle()                                                                                                                    = 0;
+    virtual SwapchainId           CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat)                                        = 0;
+    virtual std::vector<ImageId>  GetSwapchainImages(SwapchainId swapchainId)                                                                                         = 0;
+    virtual std::vector<uint32_t> GetSwapchainRenderTargets(SwapchainId swapchainId)                                                                                  = 0;
+    virtual bool                  SwapchainAcquireNextImageIndex(SwapchainId swapchainId, uint64_t timeoutNanoseconds, uint32_t sempahoreid, uint32_t* outImageIndex) = 0;
+    virtual void                  DestroySwapchain(SwapchainId swapchainId)                                                                                           = 0;
 
     virtual BufferId            CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usage)                                             = 0;
     virtual void*               BeginMapBuffer(BufferId buffer)                                                                                 = 0;
@@ -687,25 +777,44 @@ class IContext
     virtual uint32_t            CreatePipeline(const ShaderId shader, const DFramebufferAttachments& attachments, const PipelineFormat& format) = 0;
     virtual void                DestroyPipeline(uint32_t pipelineId)                                                                            = 0;
 
-    virtual uint32_t CreateFramebuffer(const DFramebufferAttachments& attachments) = 0;
-    virtual void     DestroyFramebuffer(uint32_t framebufferId)                    = 0;
-    virtual uint32_t CreateCommandPool(uint32_t maxCommands)                       = 0;
-    virtual void     DestroyCommandPool(uint32_t commandPoolId)                    = 0;
-    virtual void     ResetCommandPool(uint32_t commandPoolId)                      = 0;
+    virtual uint32_t CreateFramebuffer(const DFramebufferAttachments& attachments)                                                           = 0;
+    virtual void     DestroyFramebuffer(uint32_t framebufferId)                                                                              = 0;
+    virtual uint32_t CreateCommandPool()                                                                                                     = 0;
+    virtual void     DestroyCommandPool(uint32_t commandPoolId)                                                                              = 0;
+    virtual void     ResetCommandPool(uint32_t commandPoolId)                                                                                = 0;
+    virtual uint32_t CreateCommandBuffer(uint32_t commandPoolId)                                                                             = 0;
+    virtual void     DestroyCommandBuffer(uint32_t commandBufferId)                                                                          = 0;
+    virtual void     BeginCommandBuffer(uint32_t commandBufferId)                                                                            = 0;
+    virtual void     EndCommandBuffer(uint32_t commandBufferId)                                                                              = 0;
+    virtual void     BindRenderTargets(uint32_t commandBufferId, const DFramebufferAttachments& attachments, const DLoadOpPass& loadOP)      = 0;
+    virtual void     SetViewport(uint32_t commandBufferId, uint32_t x, uint32_t y, uint32_t width, uint32_t height, float znear, float zfar) = 0;
+    virtual void     SetScissor(uint32_t commandBufferId, uint32_t x, uint32_t y, uint32_t width, uint32_t height)                           = 0;
+    virtual void     BindPipeline(uint32_t commandBufferId, uint32_t pipeline)                                                               = 0;
+    virtual void     BindVertexBuffer(uint32_t commandBufferId, uint32_t bufferId)                                                           = 0;
+    virtual void     Draw(uint32_t commandBufferId, uint32_t firstVertex, uint32_t count)                                                    = 0;
 
-    virtual uint32_t CreateFence(bool signaled)     = 0;
-    virtual void     DestroyFence(uint32_t fenceId) = 0;
-    virtual bool     IsFenceSignaled(uint32_t fenceId) = 0;
+    virtual uint32_t CreateRenderTarget(EFormat format, ESampleBit samples, bool isDepth, uint32_t width, uint32_t height, uint32_t arrayLength, uint32_t mipMapCount, EResourceState initialState) = 0;
+    virtual void     ResourceBarrier(uint32_t commandBufferId,
+        uint32_t                              buffer_barrier_count,
+        BufferBarrier*                        p_buffer_barriers,
+        uint32_t                              texture_barrier_count,
+        TextureBarrier*                       p_texture_barriers,
+        uint32_t                              rt_barrier_count,
+        RenderTargetBarrier*                  p_rt_barriers)                                                                                                                                                         = 0;
+
+    virtual uint32_t CreateFence(bool signaled)                                  = 0;
+    virtual void     DestroyFence(uint32_t fenceId)                              = 0;
+    virtual bool     IsFenceSignaled(uint32_t fenceId)                           = 0;
     virtual void     WaitForFence(uint32_t fenceId, uint64_t timeoutNanoseconds) = 0;
     virtual void     ResetFence(uint32_t fenceId)                                = 0;
 
-    virtual uint32_t CreateGpuSemaphore()     = 0;
+    virtual void QueueSubmit(const std::vector<uint32_t>& waitSemaphore, const std::vector<uint32_t>& finishSemaphore, const std::vector<uint32_t>& cmdIds, uint32_t fenceId) = 0;
+    virtual void QueuePresent(uint32_t swapchainId, uint32_t imageIndex, const std::vector<uint32_t>& waitSemaphore)                                                          = 0;
+
+    virtual uint32_t CreateGpuSemaphore()                      = 0;
     virtual void     DestroyGpuSemaphore(uint32_t semaphoreId) = 0;
 
-    virtual void SubmitPass(RenderPassData&& data)  = 0;
-    virtual void SubmitCopy(CopyDataCommand&& data) = 0;
-    virtual void AdvanceFrame()                     = 0;
-    virtual void FlushDeletedBuffers()              = 0;
+    virtual void FlushDeletedBuffers() = 0;
 
     virtual unsigned char* GetAdapterDescription() const          = 0;
     virtual size_t         GetAdapterDedicatedVideoMemory() const = 0;

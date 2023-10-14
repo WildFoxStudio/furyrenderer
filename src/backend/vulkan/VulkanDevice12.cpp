@@ -95,7 +95,7 @@ RIVulkanDevice12::CreateCommandPool2(uint32_t queueFamilyIndex)
     {
         VkCommandPoolCreateInfo poolInfo{};
         poolInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        poolInfo.flags            = 0; /* they all have to be reset together*/
+        poolInfo.flags            = VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT; /* they all have to be reset together*/
         poolInfo.queueFamilyIndex = queueFamilyIndex;
 
         const VkResult result = vkCreateCommandPool(Device, &poolInfo, nullptr, &commandPool);

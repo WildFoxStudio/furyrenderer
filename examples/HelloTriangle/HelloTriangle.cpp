@@ -121,25 +121,21 @@ main()
             context->EndMapBuffer(triangle);
         }
 
+        std::vector<uint32_t> swapchainRenderTargets = context->GetSwapchainRenderTargets(swapchain);
+
         Fox::PipelineFormat          pipelineFormat;
         Fox::DFramebufferAttachments attachments;
-        attachments.ImageIds[0] = swapchainImages[0];
+        attachments.RenderTargets[0] = swapchainRenderTargets[0];
 
         uint32_t pipeline = context->CreatePipeline(shader, attachments, pipelineFormat);
 
-        Fox::FramebufferId swapchainFbo = context->CreateSwapchainFramebuffer_DEPRECATED(swapchain);
-
-        std::vector<uint32_t> swapchainFbos;
-        for (size_t i = 0; i < swapchainImages.size(); i++)
-            {
-                Fox::DFramebufferAttachments att;
-                att.ImageIds[0] = swapchainImages[i];
-                swapchainFbos.push_back(context->CreateFramebuffer(att));
-            }
-
         std::vector<uint32_t> commandPools;
-        commandPools.push_back(context->CreateCommandPool(10));
-        commandPools.push_back(context->CreateCommandPool(10));
+        commandPools.push_back(context->CreateCommandPool());
+        commandPools.push_back(context->CreateCommandPool());
+
+        std::vector<uint32_t> cmds;
+        cmds.push_back(context->CreateCommandBuffer(commandPools[0]));
+        cmds.push_back(context->CreateCommandBuffer(commandPools[1]));
 
         std::vector<uint32_t> fences;
         fences.push_back(context->CreateFence(true));
@@ -163,6 +159,9 @@ main()
         Fox::DRenderPassAttachments renderPass;
         renderPass.Attachments.push_back(colorAttachment);
 
+        uint32_t frameIndex     = 0;
+        uint32_t swapchainIndex = 0;
+
         while (!glfwWindowShouldClose(window))
             {
                 // Keep running
@@ -172,30 +171,55 @@ main()
                 glfwGetWindowSize(window, &w, &h);
                 Fox::DViewport viewport{ 0, 0, w, h, 0.f, 1.f };
 
-                Fox::RenderPassData draw(swapchainFbo, viewport, renderPass);
-                draw.ClearColor(1, 0, 0, 1);
+                if (!context->IsFenceSignaled(fences[frameIndex]))
+                    {
+                        context->WaitForFence(fences[frameIndex], 0xffffff);
+                    }
 
-                Fox::DrawCommand drawTriangle(shader);
-                drawTriangle.Draw(triangle, 0, 3);
+                context->ResetCommandPool(commandPools[frameIndex]);
 
-                draw.AddDrawCommand(std::move(drawTriangle));
+                const bool success = context->SwapchainAcquireNextImageIndex(swapchain, 0xFFFFFFF, imageAvailableSemaphore[frameIndex], &swapchainIndex);
 
-                context->SubmitPass(std::move(draw));
+                auto cmd = cmds[frameIndex];
+                context->BeginCommandBuffer(cmd);
 
-                context->AdvanceFrame();
+                Fox::DFramebufferAttachments attachments;
+                attachments.RenderTargets[0] = swapchainRenderTargets[swapchainIndex];
+
+                Fox::DLoadOpPass loadOp;
+                loadOp.LoadColor[0]         = Fox::ERenderPassLoad::Clear;
+                loadOp.ClearColor->color    = { 1, 1, 1, 1 };
+                loadOp.StoreActionsColor[0] = Fox::ERenderPassStore::Store;
+                context->BindRenderTargets(cmd, attachments, loadOp);
+
+                Fox::RenderTargetBarrier presentBarrier;
+                presentBarrier.RenderTarget  = swapchainRenderTargets[swapchainIndex];
+                presentBarrier.mArrayLayer   = 1;
+                presentBarrier.mCurrentState = Fox::EResourceState::RENDER_TARGET;
+                presentBarrier.mNewState     = Fox::EResourceState::PRESENT;
+
+                context->ResourceBarrier(cmd, 0, nullptr, 0, nullptr, 1, &presentBarrier);
+
+                context->EndCommandBuffer(cmd);
+
+
+                context->ResetFence(fences[frameIndex]);
+                context->QueueSubmit({ imageAvailableSemaphore[frameIndex] }, { workFinishedSemaphore[frameIndex] }, { cmd }, fences[frameIndex]);
+
+               
+
+                context->QueuePresent(swapchain, swapchainIndex, { workFinishedSemaphore[frameIndex] });
             }
         context->WaitDeviceIdle();
         context->DestroyShader(shader);
         context->DestroyBuffer(triangle);
         context->DestroySwapchain(swapchain);
         context->DestroyPipeline(pipeline);
-        for (size_t i = 0; i < swapchainFbos.size(); i++)
-            {
-                context->DestroyFramebuffer(swapchainFbos[i]);
-            }
+
         for (size_t i = 0; i < commandPools.size(); i++)
             {
                 context->DestroyCommandPool(commandPools[i]);
+                context->DestroyCommandBuffer(cmds[i]);
             }
 
         for (auto fence : fences)

@@ -37,18 +37,18 @@ struct DImageVulkan : public DResource
     VkSampler          Sampler{};
 };
 
-struct DFramebufferVulkan_DEPRECATED : public DResource
+struct DRenderTargetVulkan : public DResource
 {
-    /*Per frame or single framebuffer*/
-    std::vector<VkFramebuffer> Framebuffers;
-    uint32_t                   Width{}, Height{};
-    DRenderPassAttachments     Attachments;
-    RIVkRenderPassInfo         RenderPassInfo;
+    RIVulkanImage      Image;
+    VkImageView        View{};
+    VkImageAspectFlags ImageAspect{};
 };
 
 struct DFramebufferVulkan : public DResource
 {
-    VkFramebuffer Framebuffer{};
+    VkFramebuffer           Framebuffer{};
+    uint32_t                Width{}, Height{};
+    DFramebufferAttachments Attachments; // Used for comparing framebuffers
 };
 
 struct DSwapchainVulkan : public DResource
@@ -61,6 +61,7 @@ struct DSwapchainVulkan : public DResource
     VkSwapchainKHR                        Swapchain{};
     uint32_t                              ImagesCount{};
     std::array<uint32_t, MAX_IMAGE_COUNT> ImagesId;
+    uint32_t                              RenderTargetsId[MAX_IMAGE_COUNT]{};
     // Deprecated below
     std::vector<VkImage>     Images;
     std::vector<VkImageView> ImageViews;
@@ -89,8 +90,16 @@ struct DPipelineVulkan : public DResource
 
 struct DCommandPoolVulkan : public DResource
 {
-    VkCommandPool Pool{};
+    VkCommandPool                Pool{};
 };
+
+struct DCommandBufferVulkan : public DResource
+{
+    VkCommandBuffer Cmd{};
+    bool            IsRecording{};
+    VkRenderPass    ActiveRenderPass{};
+};
+
 struct DFenceVulkan : public DResource
 {
     VkFence Fence{};
@@ -133,13 +142,12 @@ class VulkanContext final : public IContext
   public:
     VulkanContext(const DContextConfig* const config);
     ~VulkanContext();
-    void                 WaitDeviceIdle() override;
-    SwapchainId          CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat) override;
-    std::vector<ImageId> GetSwapchainImages(SwapchainId swapchainId) override;
-    void                 DestroySwapchain(SwapchainId swapchainId) override;
-
-    FramebufferId CreateSwapchainFramebuffer_DEPRECATED(SwapchainId swapchainId) override;
-    void          DestroyFramebuffer_DEPRECATED(FramebufferId framebufferId) override;
+    void                  WaitDeviceIdle() override;
+    SwapchainId           CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat) override;
+    std::vector<ImageId>  GetSwapchainImages(SwapchainId swapchainId) override;
+    std::vector<uint32_t> GetSwapchainRenderTargets(SwapchainId swapchainId) override;
+    bool                  SwapchainAcquireNextImageIndex(SwapchainId swapchainId, uint64_t timeoutNanoseconds, uint32_t sempahoreid, uint32_t* outImageIndex) override;
+    void                  DestroySwapchain(SwapchainId swapchainId) override;
 
     BufferId            CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usage) override;
     void*               BeginMapBuffer(BufferId buffer) override;
@@ -158,24 +166,45 @@ class VulkanContext final : public IContext
     uint32_t CreateFramebuffer(const DFramebufferAttachments& attachments) override;
     void     DestroyFramebuffer(uint32_t framebufferId) override;
 
-    uint32_t CreateCommandPool(uint32_t maxCommands) override;
+    uint32_t CreateCommandPool() override;
     void     DestroyCommandPool(uint32_t commandPoolId) override;
     void     ResetCommandPool(uint32_t commandPoolId) override;
+
+    uint32_t CreateCommandBuffer(uint32_t commandPoolId) override;
+    void     DestroyCommandBuffer(uint32_t commandBufferId) override;
+    void     BeginCommandBuffer(uint32_t commandBufferId) override;
+    void     EndCommandBuffer(uint32_t commandBufferId) override;
+
+    void BindRenderTargets(uint32_t commandBufferId, const DFramebufferAttachments& attachments, const DLoadOpPass& loadOP) override;
+    void SetViewport(uint32_t commandBufferId, uint32_t x, uint32_t y, uint32_t width, uint32_t height, float znear, float zfar) override;
+    void SetScissor(uint32_t commandBufferId, uint32_t x, uint32_t y, uint32_t width, uint32_t height) override;
+    void BindPipeline(uint32_t commandBufferId, uint32_t pipeline) override;
+    void BindVertexBuffer(uint32_t commandBufferId, uint32_t bufferId) override;
+    void Draw(uint32_t commandBufferId, uint32_t firstVertex, uint32_t count) override;
 
     uint32_t CreateFence(bool signaled) override;
     void     DestroyFence(uint32_t fenceId) override;
 
     bool IsFenceSignaled(uint32_t fenceId) override;
-    void WaitForFence(uint32_t fenceId, uint64_t timeoutNanoseconds ) override;
-    void     ResetFence(uint32_t fenceId) override;
+    void WaitForFence(uint32_t fenceId, uint64_t timeoutNanoseconds) override;
+    void ResetFence(uint32_t fenceId) override;
 
     uint32_t CreateGpuSemaphore() override;
     void     DestroyGpuSemaphore(uint32_t semaphoreId) override;
 
-    void SubmitPass(RenderPassData&& data) override;
-    void SubmitCopy(CopyDataCommand&& data) override;
-    void AdvanceFrame() override;
+    uint32_t CreateRenderTarget(EFormat format, ESampleBit samples, bool isDepth, uint32_t width, uint32_t height, uint32_t arrayLength, uint32_t mipMapCount, EResourceState initialState) override;
+    void     ResourceBarrier(uint32_t commandBufferId,
+        uint32_t                      buffer_barrier_count,
+        BufferBarrier*                p_buffer_barriers,
+        uint32_t                      texture_barrier_count,
+        TextureBarrier*               p_texture_barriers,
+        uint32_t                      rt_barrier_count,
+        RenderTargetBarrier*          p_rt_barriers) override;
+
     void FlushDeletedBuffers() override;
+
+    void QueueSubmit(const std::vector<uint32_t>& waitSemaphore, const std::vector<uint32_t>& finishSemaphore, const std::vector<uint32_t>& cmdIds, uint32_t fenceId) override;
+    void QueuePresent(uint32_t swapchainId, uint32_t imageIndex, const std::vector<uint32_t>& waitSemaphore) override;
 
     unsigned char* GetAdapterDescription() const override;
     size_t         GetAdapterDedicatedVideoMemory() const override;
@@ -193,31 +222,27 @@ class VulkanContext final : public IContext
     void (*_warningOutput)(const char*);
     void (*_logOutput)(const char*);
 
-    std::array<DSwapchainVulkan, MAX_RESOURCES>              _swapchains;
-    std::array<DBufferVulkan, MAX_RESOURCES>                 _vertexBuffers;
-    std::array<DBufferVulkan, MAX_RESOURCES>                 _uniformBuffers;
-    std::array<DFramebufferVulkan_DEPRECATED, MAX_RESOURCES> _framebuffers_DEPRECATED;
-    std::array<DFramebufferVulkan, MAX_RESOURCES>            _framebuffers;
-    std::array<DShaderVulkan, MAX_RESOURCES>                 _shaders;
-    std::array<DVertexInputLayoutVulkan, MAX_RESOURCES>      _vertexLayouts;
-    std::array<DImageVulkan, MAX_RESOURCES>                  _images;
-    std::array<DPipelineVulkan, MAX_RESOURCES>               _pipelines;
-    std::array<DCommandPoolVulkan, MAX_RESOURCES>            _commandPools_DEPRECATED;
-    std::array<DFenceVulkan, MAX_RESOURCES>                  _fences;
-    std::array<DSemaphoreVulkan, MAX_RESOURCES>              _semaphores;
-    std::array<DCommandPoolVulkan, MAX_RESOURCES>            _commandPools;
-    std::vector<DFramebufferVulkan>                          _transientFramebuffers;
+    std::array<DSwapchainVulkan, MAX_RESOURCES>         _swapchains;
+    std::array<DBufferVulkan, MAX_RESOURCES>            _vertexBuffers;
+    std::array<DBufferVulkan, MAX_RESOURCES>            _uniformBuffers;
+    std::array<DFramebufferVulkan, MAX_RESOURCES>       _framebuffers;
+    std::array<DShaderVulkan, MAX_RESOURCES>            _shaders;
+    std::array<DVertexInputLayoutVulkan, MAX_RESOURCES> _vertexLayouts;
+    std::array<DImageVulkan, MAX_RESOURCES>             _images;
+    std::array<DPipelineVulkan, MAX_RESOURCES>          _pipelines;
+    std::array<DCommandPoolVulkan, MAX_RESOURCES>       _commandPools_DEPRECATED;
+    std::array<DFenceVulkan, MAX_RESOURCES>             _fences;
+    std::array<DSemaphoreVulkan, MAX_RESOURCES>         _semaphores;
+    std::array<DCommandPoolVulkan, MAX_RESOURCES>       _commandPools;
+    std::array<DCommandBufferVulkan, MAX_RESOURCES>     _commandBuffers;
+    std::array<DRenderTargetVulkan, MAX_RESOURCES>      _renderTargets;
+    std::unordered_set<VkRenderPass>                    _renderPasses;
 
-    std::unordered_set<VkRenderPass> _renderPasses;
     using DeleteFn                 = std::function<void()>;
     using FramesWaitToDeletionList = std::pair<uint32_t, std::vector<DeleteFn>>;
-    uint32_t                                                                   _frameIndex{};
-    std::vector<FramesWaitToDeletionList>                                      _deletionQueue;
-    std::array<std::unique_ptr<RICommandPoolManager>, NUM_OF_FRAMES_IN_FLIGHT> _cmdPool;
-    std::array<VkSemaphore, NUM_OF_FRAMES_IN_FLIGHT>                           _workFinishedSemaphores;
-    std::array<VkFence, NUM_OF_FRAMES_IN_FLIGHT>                               _fence;
-    std::vector<CopyDataCommand>                                               _transferCommands;
-    std::vector<RenderPassData>                                                _drawCommands;
+    uint32_t                              _frameIndex{};
+    std::vector<FramesWaitToDeletionList> _deletionQueue;
+
     // Staging buffer, used to copy stuff from ram to CPU-VISIBLE-MEMORY then to GPU-ONLY-MEMORY
     std::vector<std::vector<uint32_t>> _perFrameCopySizes;
     RIVulkanBuffer                     _stagingBuffer;
@@ -280,10 +305,7 @@ class VulkanContext final : public IContext
     void                   _createVertexBuffer(uint32_t size, DBufferVulkan& buffer);
     void                   _createUniformBuffer(uint32_t size, DBufferVulkan& buffer);
     void                   _createShader(const ShaderSource& source, DShaderVulkan& shader);
-    void                   _createFramebufferFromSwapchain(DSwapchainVulkan& swapchain);
     void                   _performDeletionQueue();
-    void                   _performCopyOperations();
-    void                   _submitCommands(const std::vector<VkSemaphore>& imageAvailableSemaphores);
     void                   _deferDestruction(DeleteFn&& fn);
     VkPipeline             _createPipeline(VkPipelineLayout         pipelineLayout,
                 VkRenderPass                                        renderPass,

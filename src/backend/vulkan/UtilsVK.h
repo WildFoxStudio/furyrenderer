@@ -258,6 +258,21 @@ isColorFormat(const VkFormat format)
     return true;
 }
 
+inline bool
+formatHasStencil(const VkFormat format)
+{
+    switch (format)
+        {
+            case VK_FORMAT_S8_UINT:
+            case VK_FORMAT_D16_UNORM_S8_UINT:
+            case VK_FORMAT_D24_UNORM_S8_UINT:
+            case VK_FORMAT_D32_SFLOAT_S8_UINT:
+                return true;
+        }
+
+    return false;
+}
+
 inline VkImageLayout
 convertRenderPassLayout(const Fox::ERenderPassLayout layout, bool isColor = true)
 {
@@ -586,6 +601,185 @@ createShaderStageInfo(VkShaderStageFlagBits stage, VkShaderModule shaderModule)
     stageInfo.pSpecializationInfo = nullptr;
 
     return stageInfo;
+}
+
+inline VkPipelineStageFlags
+determinePipelineStageFlags(VkAccessFlags accessFlags, Fox::EQueueType queueType)
+{
+    // This function was copied from TheForge rendering framework
+    VkPipelineStageFlags flags = 0;
+
+    switch (queueType)
+        {
+            case Fox::EQueueType::GRAPHICS:
+                {
+                    if ((accessFlags & (VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT)) != 0)
+                        flags |= VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
+
+                    if ((accessFlags & (VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT)) != 0)
+                        {
+                            flags |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
+                            flags |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+                            // if (pRenderer->pActiveGpuSettings->mGeometryShaderSupported)
+                            //     {
+                            //         flags |= VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT;
+                            //     }
+                            // if (pRenderer->pActiveGpuSettings->mTessellationSupported)
+                            //     {
+                            //         flags |= VK_PIPELINE_STAGE_TESSELLATION_CONTROL_SHADER_BIT;
+                            //         flags |= VK_PIPELINE_STAGE_TESSELLATION_EVALUATION_SHADER_BIT;
+                            //     }
+                            flags |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+#ifdef VK_RAYTRACING_AVAILABLE
+                            if (pRenderer->mVulkan.mRaytracingSupported)
+                                {
+                                    flags |= VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
+                                }
+#endif
+                        }
+
+                    if ((accessFlags & VK_ACCESS_INPUT_ATTACHMENT_READ_BIT) != 0)
+                        flags |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+
+                    if ((accessFlags & (VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT)) != 0)
+                        flags |= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+                    if ((accessFlags & (VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)) != 0)
+                        flags |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+
+#if defined(QUEST_VR)
+                    if ((accessFlags & VK_ACCESS_FRAGMENT_DENSITY_MAP_READ_BIT_EXT) != 0)
+                        flags |= VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT;
+#endif
+                    break;
+                }
+            case Fox::EQueueType::COMPUTE:
+                {
+                    if ((accessFlags & (VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT)) != 0 || (accessFlags & VK_ACCESS_INPUT_ATTACHMENT_READ_BIT) != 0 ||
+                    (accessFlags & (VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT)) != 0 ||
+                    (accessFlags & (VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT)) != 0)
+                        return VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+
+                    if ((accessFlags & (VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT)) != 0)
+                        flags |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+
+                    break;
+                }
+            case Fox::EQueueType::TRANSFER:
+                return VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+            default:
+                break;
+        }
+
+    // Compatible with both compute and graphics queues
+    if ((accessFlags & VK_ACCESS_INDIRECT_COMMAND_READ_BIT) != 0)
+        flags |= VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT;
+
+    if ((accessFlags & (VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT)) != 0)
+        flags |= VK_PIPELINE_STAGE_TRANSFER_BIT;
+
+    if ((accessFlags & (VK_ACCESS_HOST_READ_BIT | VK_ACCESS_HOST_WRITE_BIT)) != 0)
+        flags |= VK_PIPELINE_STAGE_HOST_BIT;
+
+    if (flags == 0)
+        flags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+
+    return flags;
+}
+
+inline VkImageLayout
+resourceStateToImageLayout(Fox::EResourceState usage)
+{
+    if ((uint32_t)usage & (uint32_t)Fox::EResourceState::COPY_SOURCE )
+        return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+
+    if ((uint32_t)usage & (uint32_t)Fox::EResourceState::COPY_DEST)
+        return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+
+    if ((uint32_t)usage & (uint32_t)Fox::EResourceState::RENDER_TARGET)
+        return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    if ((uint32_t)usage & (uint32_t)Fox::EResourceState::DEPTH_WRITE)
+        return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    if ((uint32_t)usage & (uint32_t)Fox::EResourceState::UNORDERED_ACCESS)
+        return VK_IMAGE_LAYOUT_GENERAL;
+
+    if ((uint32_t)usage & (uint32_t)Fox::EResourceState::SHADER_RESOURCE)
+        return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    if ((uint32_t)usage & (uint32_t)Fox::EResourceState::PRESENT)
+        return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    if ((uint32_t)usage == (uint32_t)Fox::EResourceState::COMMON)
+        return VK_IMAGE_LAYOUT_GENERAL;
+
+#if defined(QUEST_VR)
+    if ((uint32_t)usage == (uint32_t)Fox::EResourceState::SHADING_RATE_SOURCE)
+        return VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT;
+#endif
+    check(0);
+    return VK_IMAGE_LAYOUT_UNDEFINED;
+}
+
+inline VkAccessFlags
+resourceStateToAccessFlag(Fox::EResourceState state)
+{
+    VkAccessFlags ret = 0;
+    if ((uint32_t)state & (uint32_t)Fox::EResourceState::COPY_SOURCE)
+        {
+            ret |= VK_ACCESS_TRANSFER_READ_BIT;
+        }
+    if ((uint32_t)state & (uint32_t)Fox::EResourceState::COPY_DEST)
+        {
+            ret |= VK_ACCESS_TRANSFER_WRITE_BIT;
+        }
+    if ((uint32_t)state & (uint32_t)Fox::EResourceState::VERTEX_AND_CONSTANT_BUFFER)
+        {
+            ret |= VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+        }
+    if ((uint32_t)state & (uint32_t)Fox::EResourceState::INDEX_BUFFER)
+        {
+            ret |= VK_ACCESS_INDEX_READ_BIT;
+        }
+    if ((uint32_t)state & (uint32_t)Fox::EResourceState::UNORDERED_ACCESS)
+        {
+            ret |= VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        }
+    if ((uint32_t)state & (uint32_t)Fox::EResourceState::INDIRECT_ARGUMENT)
+        {
+            ret |= VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+        }
+    if ((uint32_t)state & (uint32_t)Fox::EResourceState::RENDER_TARGET)
+        {
+            ret |= VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        }
+    if ((uint32_t)state & (uint32_t)Fox::EResourceState::DEPTH_WRITE)
+        {
+            ret |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        }
+    if ((uint32_t)state & (uint32_t)Fox::EResourceState::SHADER_RESOURCE)
+        {
+            ret |= VK_ACCESS_SHADER_READ_BIT;
+        }
+    if ((uint32_t)state & (uint32_t)Fox::EResourceState::PRESENT)
+        {
+            ret |= VK_ACCESS_MEMORY_READ_BIT;
+        }
+#if defined(QUEST_VR)
+    if ((uint32_t)state & (uint32_t)Fox::EResourceState::SHADING_RATE_SOURCE)
+        {
+            ret |= VK_ACCESS_FRAGMENT_DENSITY_MAP_READ_BIT_EXT;
+        }
+#endif
+
+#ifdef VK_RAYTRACING_AVAILABLE
+    if ((uint32_t)state & (uint32_t)Fox::EResourceState::RAYTRACING_ACCELERATION_STRUCTURE)
+        {
+            ret |= VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+        }
+#endif
+    return ret;
 }
 
 }
