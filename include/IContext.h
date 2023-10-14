@@ -759,7 +759,6 @@ class IContext
     virtual ~IContext(){};
     virtual void                  WaitDeviceIdle()                                                                                                                    = 0;
     virtual SwapchainId           CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat)                                        = 0;
-    virtual std::vector<ImageId>  GetSwapchainImages(SwapchainId swapchainId)                                                                                         = 0;
     virtual std::vector<uint32_t> GetSwapchainRenderTargets(SwapchainId swapchainId)                                                                                  = 0;
     virtual bool                  SwapchainAcquireNextImageIndex(SwapchainId swapchainId, uint64_t timeoutNanoseconds, uint32_t sempahoreid, uint32_t* outImageIndex) = 0;
     virtual void                  DestroySwapchain(SwapchainId swapchainId)                                                                                           = 0;
@@ -777,8 +776,6 @@ class IContext
     virtual uint32_t            CreatePipeline(const ShaderId shader, const DFramebufferAttachments& attachments, const PipelineFormat& format) = 0;
     virtual void                DestroyPipeline(uint32_t pipelineId)                                                                            = 0;
 
-    virtual uint32_t CreateFramebuffer(const DFramebufferAttachments& attachments)                                                           = 0;
-    virtual void     DestroyFramebuffer(uint32_t framebufferId)                                                                              = 0;
     virtual uint32_t CreateCommandPool()                                                                                                     = 0;
     virtual void     DestroyCommandPool(uint32_t commandPoolId)                                                                              = 0;
     virtual void     ResetCommandPool(uint32_t commandPoolId)                                                                                = 0;

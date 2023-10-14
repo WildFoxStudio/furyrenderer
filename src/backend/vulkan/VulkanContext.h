@@ -62,12 +62,6 @@ struct DSwapchainVulkan : public DResource
     uint32_t                              ImagesCount{};
     std::array<uint32_t, MAX_IMAGE_COUNT> ImagesId;
     uint32_t                              RenderTargetsId[MAX_IMAGE_COUNT]{};
-    // Deprecated below
-    std::vector<VkImage>     Images;
-    std::vector<VkImageView> ImageViews;
-    FramebufferId            Framebuffers{};
-    std::vector<VkSemaphore> ImageAvailableSemaphore;
-    uint32_t                 CurrentImageIndex{};
 };
 
 struct DVertexInputLayoutVulkan : public DResource
@@ -90,7 +84,7 @@ struct DPipelineVulkan : public DResource
 
 struct DCommandPoolVulkan : public DResource
 {
-    VkCommandPool                Pool{};
+    VkCommandPool Pool{};
 };
 
 struct DCommandBufferVulkan : public DResource
@@ -144,7 +138,6 @@ class VulkanContext final : public IContext
     ~VulkanContext();
     void                  WaitDeviceIdle() override;
     SwapchainId           CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat) override;
-    std::vector<ImageId>  GetSwapchainImages(SwapchainId swapchainId) override;
     std::vector<uint32_t> GetSwapchainRenderTargets(SwapchainId swapchainId) override;
     bool                  SwapchainAcquireNextImageIndex(SwapchainId swapchainId, uint64_t timeoutNanoseconds, uint32_t sempahoreid, uint32_t* outImageIndex) override;
     void                  DestroySwapchain(SwapchainId swapchainId) override;
@@ -162,9 +155,6 @@ class VulkanContext final : public IContext
 
     uint32_t CreatePipeline(const ShaderId shader, const DFramebufferAttachments& attachments, const PipelineFormat& format) override;
     void     DestroyPipeline(uint32_t pipelineId) override;
-
-    uint32_t CreateFramebuffer(const DFramebufferAttachments& attachments) override;
-    void     DestroyFramebuffer(uint32_t framebufferId) override;
 
     uint32_t CreateCommandPool() override;
     void     DestroyCommandPool(uint32_t commandPoolId) override;
@@ -214,7 +204,7 @@ class VulkanContext final : public IContext
 #pragma endregion
 
   private:
-    static constexpr uint32_t MAX_RESOURCES     = 4096;
+    static constexpr uint32_t MAX_RESOURCES     = 1024; // Change this number to increase number of allocations per resource
     static constexpr uint64_t MAX_FENCE_TIMEOUT = 0xffff; // 0xffffffffffffffff; // nanoseconds
     RIVulkanInstance          Instance;
     RIVulkanDevice13          Device;
@@ -222,9 +212,10 @@ class VulkanContext final : public IContext
     void (*_warningOutput)(const char*);
     void (*_logOutput)(const char*);
 
-    std::array<DSwapchainVulkan, MAX_RESOURCES>         _swapchains;
-    std::array<DBufferVulkan, MAX_RESOURCES>            _vertexBuffers;
-    std::array<DBufferVulkan, MAX_RESOURCES>            _uniformBuffers;
+    std::array<DSwapchainVulkan, MAX_RESOURCES> _swapchains;
+    std::array<DBufferVulkan, MAX_RESOURCES>    _vertexBuffers;
+    std::array<DBufferVulkan, MAX_RESOURCES>    _uniformBuffers;
+    /*Whenever a render target gets deleted remove also framebuffers that have that image id as attachment*/
     std::array<DFramebufferVulkan, MAX_RESOURCES>       _framebuffers;
     std::array<DShaderVulkan, MAX_RESOURCES>            _shaders;
     std::array<DVertexInputLayoutVulkan, MAX_RESOURCES> _vertexLayouts;
@@ -299,6 +290,8 @@ class VulkanContext final : public IContext
     void _initializeStagingBuffer(uint32_t stagingBufferSize);
     void _deinitializeStagingBuffer();
 
+    uint32_t               _createFramebuffer(const DFramebufferAttachments& attachments);
+    void                   _destroyFramebuffer(uint32_t framebufferId);
     DRenderPassAttachments _createGenericRenderPassAttachments(const DFramebufferAttachments& att);
     void                   _createSwapchain(DSwapchainVulkan& swapchain, const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat);
     uint32_t               _createImageFromVkImage(VkImage vkimage, VkFormat format, uint32_t width, uint32_t height);

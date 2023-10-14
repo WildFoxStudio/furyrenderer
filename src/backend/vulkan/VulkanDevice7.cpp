@@ -12,7 +12,7 @@ namespace Fox
 RIVulkanDevice7::~RIVulkanDevice7() { check(_framebuffers_DEPRECATED.size() == 0); }
 
 VkFramebuffer
-RIVulkanDevice7::CreateFramebuffer(const std::vector<VkImageView>& imageViews, uint32_t width, uint32_t height, VkRenderPass renderpass)
+RIVulkanDevice7::_createFramebuffer(const std::vector<VkImageView>& imageViews, uint32_t width, uint32_t height, VkRenderPass renderpass)
 {
     VkFramebufferCreateInfo framebufferInfo{};
     framebufferInfo.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -36,7 +36,7 @@ RIVulkanDevice7::CreateFramebuffer(const std::vector<VkImageView>& imageViews, u
 }
 
 void
-RIVulkanDevice7::DestroyFramebuffer(VkFramebuffer framebuffer)
+RIVulkanDevice7::_destroyFramebuffer(VkFramebuffer framebuffer)
 {
     vkDestroyFramebuffer(Device, framebuffer, nullptr);
     _framebuffers_DEPRECATED.erase(_framebuffers_DEPRECATED.find(framebuffer));

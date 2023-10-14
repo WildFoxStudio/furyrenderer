@@ -367,7 +367,7 @@ main()
         context->DestroyVertexBuffer(quad);
         context->DestroyUniformBuffer(transformUniformBuffer);
         context->DestroyUniformBuffer(cameraUniformBuffer);
-        context->DestroyFramebuffer(swapchainFbo);
+        context->_destroyFramebuffer(swapchainFbo);
         context->DestroySwapchain(swapchain);
 
         glfwDestroyWindow(window);

@@ -84,8 +84,6 @@ main()
                 throw std::runtime_error("Failed to CreateSwapchain");
             }
 
-        std::vector<Fox::ImageId> swapchainImages = context->GetSwapchainImages(swapchain);
-
         // Create vertex layout
         Fox::VertexLayoutInfo    position("SV_POSITION", Fox::EFormat::R32G32B32_FLOAT, 0, Fox::EVertexInputClassification::PER_VERTEX_DATA);
         Fox::VertexLayoutInfo    color("Color0", Fox::EFormat::R32G32B32A32_FLOAT, 3 * sizeof(float), Fox::EVertexInputClassification::PER_VERTEX_DATA);
@@ -179,6 +177,18 @@ main()
                 context->ResetCommandPool(commandPools[frameIndex]);
 
                 const bool success = context->SwapchainAcquireNextImageIndex(swapchain, 0xFFFFFFF, imageAvailableSemaphore[frameIndex], &swapchainIndex);
+                if (!success)
+                    {
+                        context->WaitDeviceIdle();
+                        context->DestroySwapchain(swapchain);
+                        swapchain = context->CreateSwapchain(&windowData, presentMode, format);
+                        if (swapchain == NULL)
+                            {
+                                throw std::runtime_error("Failed to CreateSwapchain");
+                            }
+                        swapchainRenderTargets = context->GetSwapchainRenderTargets(swapchain);
+                        context->SwapchainAcquireNextImageIndex(swapchain, 0xFFFFFFF, imageAvailableSemaphore[frameIndex], &swapchainIndex);
+                    }
 
                 auto cmd = cmds[frameIndex];
                 context->BeginCommandBuffer(cmd);
@@ -192,21 +202,23 @@ main()
                 loadOp.StoreActionsColor[0] = Fox::ERenderPassStore::Store;
                 context->BindRenderTargets(cmd, attachments, loadOp);
 
+                context->BindPipeline(cmd, pipeline);
+                context->SetViewport(cmd, 0, 0, w, h, 0.f, 1.f);
+                context->SetScissor(cmd, 0, 0, w, h);
+                context->BindVertexBuffer(cmd, triangle);
+                context->Draw(cmd, 0, 3);
+
                 Fox::RenderTargetBarrier presentBarrier;
                 presentBarrier.RenderTarget  = swapchainRenderTargets[swapchainIndex];
                 presentBarrier.mArrayLayer   = 1;
                 presentBarrier.mCurrentState = Fox::EResourceState::RENDER_TARGET;
                 presentBarrier.mNewState     = Fox::EResourceState::PRESENT;
-
                 context->ResourceBarrier(cmd, 0, nullptr, 0, nullptr, 1, &presentBarrier);
 
                 context->EndCommandBuffer(cmd);
 
-
                 context->ResetFence(fences[frameIndex]);
                 context->QueueSubmit({ imageAvailableSemaphore[frameIndex] }, { workFinishedSemaphore[frameIndex] }, { cmd }, fences[frameIndex]);
-
-               
 
                 context->QueuePresent(swapchain, swapchainIndex, { workFinishedSemaphore[frameIndex] });
             }

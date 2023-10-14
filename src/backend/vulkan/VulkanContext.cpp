@@ -296,7 +296,7 @@ VulkanContext::~VulkanContext()
             if (fbo.Id == FREE)
                 continue;
 
-            Device.DestroyFramebuffer(fbo.Framebuffer);
+            Device._destroyFramebuffer(fbo.Framebuffer);
             fbo.Id = FREE;
         }
 
@@ -384,24 +384,12 @@ VulkanContext::_createSwapchain(DSwapchainVulkan& swapchain, const WindowData* w
                 throw std::runtime_error("Failed to create swapchain " + std::string(VkUtils::VkErrorString(result)));
             }
     }
-
     // Setup new object
     swapchain.Surface      = surface;
     swapchain.Capabilities = capabilities;
     swapchain.Format       = formats.at(0);
     swapchain.PresentMode  = vkPresentMode;
     swapchain.Swapchain    = vkSwapchain;
-    swapchain.Images       = Device.GetSwapchainImages(vkSwapchain);
-
-    std::transform(swapchain.Images.begin(), swapchain.Images.end(), std::back_inserter(swapchain.ImageViews), [this, format = swapchain.Format.format](const VkImage& image) {
-        VkImageView imageView{};
-        const auto  result = Device.CreateImageView(format, image, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, &imageView);
-        if (VKFAILED(result))
-            {
-                throw std::runtime_error("Failed to create swapchain imageView " + std::string(VkUtils::VkErrorString(result)));
-            }
-        return imageView;
-    });
 
     const auto swapchainImages = Device.GetSwapchainImages(vkSwapchain);
     swapchain.ImagesCount      = swapchainImages.size();
@@ -409,18 +397,6 @@ VulkanContext::_createSwapchain(DSwapchainVulkan& swapchain, const WindowData* w
         {
             swapchain.ImagesId[i] = _createImageFromVkImage(swapchainImages.at(i), swapchain.Format.format, swapchain.Capabilities.currentExtent.width, swapchain.Capabilities.currentExtent.height);
         }
-
-    std::transform(swapchain.Images.begin(), swapchain.Images.end(), std::back_inserter(swapchain.ImageViews), [this, format = swapchain.Format.format](const VkImage& image) {
-        VkImageView imageView{};
-        const auto  result = Device.CreateImageView(format, image, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, &imageView);
-        if (VKFAILED(result))
-            {
-                throw std::runtime_error("Failed to create swapchain imageView " + std::string(VkUtils::VkErrorString(result)));
-            }
-        return imageView;
-    });
-
-    std::generate_n(std::back_inserter(swapchain.ImageAvailableSemaphore), NUM_OF_FRAMES_IN_FLIGHT, [this]() { return Device.CreateVkSemaphore(); });
 
     // Create render targets
     for (size_t i = 0; i < swapchainImages.size(); i++)
@@ -440,23 +416,6 @@ VulkanContext::_createSwapchain(DSwapchainVulkan& swapchain, const WindowData* w
 
             swapchain.RenderTargetsId[i] = *ResourceId(EResourceType::RENDER_TARGET, renderTargetRef.Id, index);
         }
-}
-
-std::vector<ImageId>
-VulkanContext::GetSwapchainImages(SwapchainId swapchainId)
-{
-    ResourceId resource(swapchainId);
-
-    check(resource.First() == EResourceType::SWAPCHAIN);
-
-    DSwapchainVulkan& swapchain = GetResource<DSwapchainVulkan, EResourceType::SWAPCHAIN, MAX_RESOURCES>(_swapchains, swapchainId);
-
-    std::vector<ImageId> images;
-    images.resize(swapchain.ImagesCount);
-
-    std::copy(swapchain.ImagesId.begin(), swapchain.ImagesId.begin() + swapchain.ImagesCount, images.data());
-
-    return images;
 }
 
 std::vector<uint32_t>
@@ -565,35 +524,54 @@ VulkanContext::DestroySwapchain(SwapchainId swapchainId)
 
     DSwapchainVulkan& swapchain = GetResource<DSwapchainVulkan, EResourceType::SWAPCHAIN, MAX_RESOURCES>(_swapchains, swapchainId);
 
-    check(swapchain.Framebuffers == NULL); // Must destroy framebuffer first
-    {
-        vkDeviceWaitIdle(Device.Device);
+    Device.DestroySwapchain(swapchain.Swapchain);
+    Instance.DestroySurface(swapchain.Surface);
 
-        swapchain.Images.clear();
-
-        std::for_each(swapchain.ImageViews.begin(), swapchain.ImageViews.end(), [this](const VkImageView& imageView) { Device.DestroyImageView(imageView); });
-        swapchain.ImageViews.clear();
-
-        std::for_each(swapchain.ImageAvailableSemaphore.begin(), swapchain.ImageAvailableSemaphore.end(), [this](const VkSemaphore& semaphore) { Device.DestroyVkSemaphore(semaphore); });
-        swapchain.ImageAvailableSemaphore.clear();
-
-        Device.DestroySwapchain(swapchain.Swapchain);
-        Instance.DestroySurface(swapchain.Surface);
-
-        swapchain.Id = NULL;
-    }
+    swapchain.Id = FREE;
 
     for (uint32_t i = 0; i < swapchain.ImagesCount; i++)
         {
-            const auto image = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, swapchain.ImagesId[i]);
-            Device.DestroyImageView(image.View);
+            auto& imageRef = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, swapchain.ImagesId[i]);
+            Device.DestroyImageView(imageRef.View);
+            imageRef.Id = FREE;
 
-            auto& renderTargetRef = GetResource<DRenderTargetVulkan, EResourceType::RENDER_TARGET, MAX_RESOURCES>(_renderTargets, swapchain.RenderTargetsId[i]);
+            const auto renderTargetId{ swapchain.RenderTargetsId[i] };
+            auto&      renderTargetRef = GetResource<DRenderTargetVulkan, EResourceType::RENDER_TARGET, MAX_RESOURCES>(_renderTargets, renderTargetId);
 
             Device.DestroyImageView(renderTargetRef.View);
             renderTargetRef.Id = FREE;
+
+            // Must destroy all framebuffers that reference this render target @TODO find a better algorithm without iterating over the array multiple times
+            const auto referenceCount = std::count_if(_framebuffers.begin(), _framebuffers.end(), [renderTargetId](const DFramebufferVulkan& fbo) {
+                for (size_t i = 0; i < DFramebufferAttachments::MAX_ATTACHMENTS; i++)
+                    {
+                        if (fbo.Attachments.RenderTargets[i] == renderTargetId)
+                            {
+                                return true;
+                            }
+                    }
+                return false;
+            });
+            for (uint32_t i = 0; i < referenceCount; i++)
+                {
+                    auto foundFbo = std::find_if(_framebuffers.begin(), _framebuffers.end(), [renderTargetId](const DFramebufferVulkan& fbo) {
+                        for (size_t i = 0; i < DFramebufferAttachments::MAX_ATTACHMENTS; i++)
+                            {
+                                if (fbo.Attachments.RenderTargets[i] == renderTargetId)
+                                    {
+                                        return true;
+                                    }
+                            }
+                        return false;
+                    });
+
+                    Device._destroyFramebuffer(foundFbo->Framebuffer);
+                    foundFbo->Id = FREE;
+                }
         }
     swapchain.ImagesCount = 0;
+
+    swapchain.Id = FREE;
 }
 
 BufferId
@@ -953,7 +931,7 @@ VulkanContext::DestroyPipeline(uint32_t pipelineId)
 }
 
 uint32_t
-VulkanContext::CreateFramebuffer(const DFramebufferAttachments& attachments)
+VulkanContext::_createFramebuffer(const DFramebufferAttachments& attachments)
 {
     const auto          index          = AllocResource<DFramebufferVulkan, MAX_RESOURCES>(_framebuffers);
     DFramebufferVulkan& framebufferRef = _framebuffers.at(index);
@@ -986,18 +964,18 @@ VulkanContext::CreateFramebuffer(const DFramebufferAttachments& attachments)
             check(renderTargetRef.Image.MipLevels == 1); // Must have only 1 layer
         }
 
-    framebufferRef.Framebuffer = Device.CreateFramebuffer(imageViewsAttachments, framebufferRef.Width, framebufferRef.Height, vkRenderPass);
+    framebufferRef.Framebuffer = Device._createFramebuffer(imageViewsAttachments, framebufferRef.Width, framebufferRef.Height, vkRenderPass);
     framebufferRef.Attachments = attachments;
 
     return *ResourceId(EResourceType::FRAMEBUFFER, framebufferRef.Id, index);
 }
 
 void
-VulkanContext::DestroyFramebuffer(uint32_t framebufferId)
+VulkanContext::_destroyFramebuffer(uint32_t framebufferId)
 {
     auto& framebufferRef = GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, framebufferId);
 
-    Device.DestroyFramebuffer(framebufferRef.Framebuffer);
+    Device._destroyFramebuffer(framebufferRef.Framebuffer);
 
     framebufferRef.Id = FREE;
 }
@@ -1120,7 +1098,7 @@ VulkanContext::BindRenderTargets(uint32_t commandBufferId, const DFramebufferAtt
     else
         {
             // Create framebuffer from colorAttachments
-            const auto framebufferId = CreateFramebuffer(colorAttachments);
+            const auto framebufferId = _createFramebuffer(colorAttachments);
             framebufferPtr           = &GetResource<DFramebufferVulkan, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers, framebufferId);
         }
 
@@ -1183,7 +1161,8 @@ VulkanContext::SetViewport(uint32_t commandBufferId, uint32_t x, uint32_t y, uin
     check(commandBufferRef.IsRecording); // Must be in recording state
     check(commandBufferRef.ActiveRenderPass); // Must be in a render pass
 
-    VkViewport viewport{ x, y, width, height, znear, zfar };
+    // Invert viewport on Y
+    VkViewport viewport{ static_cast<float>(x), static_cast<float>(y) + static_cast<float>(height), static_cast<float>(width), -static_cast<float>(height), znear, zfar };
 
     vkCmdSetViewport(commandBufferRef.Cmd, 0, 1, &viewport);
 }
@@ -1790,58 +1769,6 @@ VulkanContext::_performDeletionQueue()
 
     // Decrease the frame number to wait
     std::for_each(_deletionQueue.begin(), _deletionQueue.end(), [this](FramesWaitToDeletionList& pair) { pair.first--; });
-}
-
-void
-VulkanContext::_recreateSwapchainBlocking(DSwapchainVulkan& swapchain)
-{
-    //// We must be sure that the framebuffer is not used anymore before destroying it
-    //// This can be a valid approach since a game doesn't resize very often
-    // vkDeviceWaitIdle(Device.Device);
-
-    // DFramebufferVulkan_DEPRECATED& framebuffer = GetResource<DFramebufferVulkan_DEPRECATED, EResourceType::FRAMEBUFFER, MAX_RESOURCES>(_framebuffers_DEPRECATED, swapchain.Framebuffers);
-    //// Destroy all framebuffers
-    //{
-    //    std::for_each(framebuffer.Framebuffers.begin(), framebuffer.Framebuffers.end(), [this](const VkFramebuffer& framebuffer) { Device.DestroyFramebuffer(framebuffer); });
-    //    framebuffer.Framebuffers.clear();
-    //}
-
-    //// Destroy all renderTargetRef views
-    // std::for_each(swapchain.ImageViews.begin(), swapchain.ImageViews.end(), [this](const VkImageView& imageView) { Device.DestroyImageView(imageView); });
-    // swapchain.ImageViews.clear();
-
-    //// Create from old
-    //{
-    //    // Refresh capabilities
-    //    swapchain.Capabilities = Device.GetSurfaceCapabilities(swapchain.Surface);
-
-    //    VkSwapchainKHR oldSwapchain = swapchain.Swapchain;
-
-    //    const VkResult result = Device.CreateSwapchainFromSurface(swapchain.Surface, swapchain.Format, swapchain.PresentMode, swapchain.Capabilities, &swapchain.Swapchain, oldSwapchain);
-    //    if (VKFAILED(result))
-    //        {
-    //            throw std::runtime_error(VkUtils::VkErrorString(result));
-    //        }
-    //    Device.DestroySwapchain(oldSwapchain);
-    //    swapchain.Images.clear();
-    //}
-
-    //// Get renderTargetRef views
-    // swapchain.Images = Device.GetSwapchainImages(swapchain.Swapchain);
-
-    //// Create renderTargetRef views
-    // std::transform(swapchain.Images.begin(), swapchain.Images.end(), std::back_inserter(swapchain.ImageViews), [this, format = swapchain.Format.format](const VkImage& image) {
-    //     VkImageView imageView{};
-    //     const auto  result = Device.CreateImageView(format, image, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, &imageView);
-    //     if (VKFAILED(result))
-    //         {
-    //             throw std::runtime_error("Failed to create swapchain imageView " + std::string(VkUtils::VkErrorString(result)));
-    //         }
-    //     return imageView;
-    // });
-
-    //// Create a framebuffer
-    //_createFramebufferFromSwapchain(swapchain);
 }
 
 RIVkRenderPassInfo
