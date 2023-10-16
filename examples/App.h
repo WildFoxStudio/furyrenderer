@@ -32,7 +32,7 @@ class App
     Fox::EPresentMode presentMode = Fox::EPresentMode::IMMEDIATE_KHR;
     Fox::EFormat      format      = Fox::EFormat::B8G8R8A8_UNORM;
     uint32_t          _swapchain{};
-    uint32_t          _swapchainImageIndex;
+    uint32_t          _swapchainImageIndex{};
 
     struct PerFrameData
     {
@@ -41,9 +41,9 @@ class App
         uint32_t Cmd{};
         uint32_t ImageAvailableSemaphore;
         uint32_t WorkFinishedSemaphore;
-        uint32_t SwapchainRenderTarget;
     };
 
     std::array<PerFrameData, MAX_FRAMES> _frameData;
+    std::array<uint32_t, MAX_FRAMES>     _swapchainRenderTargets;
     uint32_t                             _frameIndex{};
 };

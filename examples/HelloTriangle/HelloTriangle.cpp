@@ -61,7 +61,7 @@ class TriangleApp : public App
         // Create pipeline
         Fox::PipelineFormat          pipelineFormat;
         Fox::DFramebufferAttachments attachments;
-        attachments.RenderTargets[0] = _frameData[0].SwapchainRenderTarget;
+        attachments.RenderTargets[0] = _swapchainRenderTargets[_swapchainImageIndex];
 
         _pipeline = _ctx->CreatePipeline(_shader, attachments, pipelineFormat);
 
@@ -97,7 +97,7 @@ class TriangleApp : public App
         _ctx->BeginCommandBuffer(cmd);
 
         Fox::DFramebufferAttachments attachments;
-        attachments.RenderTargets[0] = _frameData[_swapchainImageIndex].SwapchainRenderTarget;
+        attachments.RenderTargets[0] = _swapchainRenderTargets[_swapchainImageIndex];
 
         Fox::DLoadOpPass loadOp;
         loadOp.LoadColor[0]         = Fox::ERenderPassLoad::Clear;
@@ -112,7 +112,7 @@ class TriangleApp : public App
         _ctx->Draw(cmd, 0, 3);
 
         Fox::RenderTargetBarrier presentBarrier;
-        presentBarrier.RenderTarget  = _frameData[_swapchainImageIndex].SwapchainRenderTarget;
+        presentBarrier.RenderTarget  = _swapchainRenderTargets[_swapchainImageIndex];
         presentBarrier.mArrayLayer   = 1;
         presentBarrier.mCurrentState = Fox::EResourceState::RENDER_TARGET;
         presentBarrier.mNewState     = Fox::EResourceState::PRESENT;

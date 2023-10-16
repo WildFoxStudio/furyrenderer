@@ -57,7 +57,10 @@ App::App()
             _frameData[i].Cmd                     = _ctx->CreateCommandBuffer(_frameData[i].CmdPool);
             _frameData[i].ImageAvailableSemaphore = _ctx->CreateGpuSemaphore();
             _frameData[i].WorkFinishedSemaphore   = _ctx->CreateGpuSemaphore();
-            _frameData[i].SwapchainRenderTarget   = _ctx->GetSwapchainRenderTargets(_swapchain)[i];
+        }
+    for (uint32_t i = 0; i < MAX_FRAMES; i++)
+        {
+            _swapchainRenderTargets[i] = _ctx->GetSwapchainRenderTargets(_swapchain)[i];
         }
 }
 
@@ -110,7 +113,7 @@ App::Run()
                         }
                     for (uint32_t i = 0; i < MAX_FRAMES; i++)
                         {
-                            _frameData[i].SwapchainRenderTarget = _ctx->GetSwapchainRenderTargets(_swapchain)[i];
+                            _swapchainRenderTargets[i] = _ctx->GetSwapchainRenderTargets(_swapchain)[i];
                         }
                     _ctx->SwapchainAcquireNextImageIndex(_swapchain, 0xFFFFFFF, data.ImageAvailableSemaphore, &_swapchainImageIndex);
                 }
