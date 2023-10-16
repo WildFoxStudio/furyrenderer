@@ -25,6 +25,7 @@ template<class T, EResourceType type, size_t maxSize>
 inline T&
 GetResource(std::array<T, maxSize>& container, uint32_t id)
 {
+    check(id != NULL);//Uninitialized ID
     const auto resourceId = ResourceId(id);
     check(resourceId.First() == type); // Invalid resource id
     check(resourceId.Value() < maxSize); // Must be less than array size

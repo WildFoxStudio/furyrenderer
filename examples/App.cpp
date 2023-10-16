@@ -116,7 +116,7 @@ App::Run()
                 }
 
             // Perform drawing
-            Draw(data.Cmd);
+            Draw(data.Cmd, w, h);
 
             _ctx->ResetFence(data.Fence);
             _ctx->QueueSubmit({ data.ImageAvailableSemaphore }, { data.WorkFinishedSemaphore }, { data.Cmd }, data.Fence);

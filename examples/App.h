@@ -18,11 +18,11 @@ class App
 
   public:
     App();
-    ~App();
+    virtual ~App();
 
     void Run();
 
-    virtual void Draw(uint32_t cmd) = 0;
+    virtual void Draw(uint32_t cmd, uint32_t w, uint32_t h) = 0;
 
   protected:
     GLFWwindow* _window{};
