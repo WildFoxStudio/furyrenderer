@@ -129,6 +129,25 @@ struct DShaderVulkan : public DResource
     RenderPassFormatToPipelinePermutationMap;
 };
 
+struct DRootSignature : public DResource
+{
+    VkPipelineLayout      PipelineLayout{};
+    VkDescriptorSetLayout DescriptorSetLayouts[(uint32_t)EDescriptorFrequency::MAX_COUNT]{};
+    // VkDescriptorPool                  EmptyPools[(uint32_t)EDescriptorFrequency::MAX_COUNT];
+    // std::vector<VkDescriptorSet>      EmptyDescriptorSets[(uint32_t)EDescriptorFrequency::MAX_COUNT];
+    std::vector<VkDescriptorPoolSize>                                PoolSizes[(uint32_t)EDescriptorFrequency::MAX_COUNT];
+    std::map<uint32_t, std::map<uint32_t, ShaderDescriptorBindings>> SetsBindings;
+};
+
+struct DDescriptorSet : public DResource
+{
+    VkDescriptorPool                             DescriptorPool;
+    std::vector<VkDescriptorSet>                 Sets;
+    EDescriptorFrequency                         Frequency;
+    std::map<uint32_t, ShaderDescriptorBindings> Bindings;
+    const DRootSignature*                        RootSignature{};
+};
+
 class VulkanContext final : public IContext
 {
     inline static constexpr uint32_t NUM_OF_FRAMES_IN_FLIGHT{ 2 };
@@ -153,8 +172,13 @@ class VulkanContext final : public IContext
     ShaderId            CreateShader(const ShaderSource& source) override;
     void                DestroyShader(const ShaderId shader) override;
 
-    uint32_t CreatePipeline(const ShaderId shader, const DFramebufferAttachments& attachments, const PipelineFormat& format) override;
+    uint32_t CreatePipeline(const ShaderId shader, uint32_t rootSignatureId, const DFramebufferAttachments& attachments, const PipelineFormat& format) override;
     void     DestroyPipeline(uint32_t pipelineId) override;
+    uint32_t CreateRootSignature(const ShaderLayout& layout) override;
+    void     DestroyRootSignature(uint32_t rootSignatureId) override;
+    uint32_t CreateDescriptorSets(uint32_t rootSignatureId, EDescriptorFrequency frequency, uint32_t count) override;
+    void     DestroyDescriptorSet(uint32_t descriptorSetId) override;
+    void     UpdateDescriptorSet(uint32_t descriptorSetId, uint32_t setIndex, uint32_t paramCount, DescriptorData* params) override;
 
     uint32_t CreateCommandPool() override;
     void     DestroyCommandPool(uint32_t commandPoolId) override;
@@ -171,6 +195,7 @@ class VulkanContext final : public IContext
     void BindPipeline(uint32_t commandBufferId, uint32_t pipeline) override;
     void BindVertexBuffer(uint32_t commandBufferId, uint32_t bufferId) override;
     void Draw(uint32_t commandBufferId, uint32_t firstVertex, uint32_t count) override;
+    void BindDescriptorSet(uint32_t commandBufferId, uint32_t setIndex, uint32_t descriptorSetId) override;
 
     uint32_t CreateFence(bool signaled) override;
     void     DestroyFence(uint32_t fenceId) override;
@@ -227,6 +252,8 @@ class VulkanContext final : public IContext
     std::array<DCommandPoolVulkan, MAX_RESOURCES>       _commandPools;
     std::array<DCommandBufferVulkan, MAX_RESOURCES>     _commandBuffers;
     std::array<DRenderTargetVulkan, MAX_RESOURCES>      _renderTargets;
+    std::array<DRootSignature, MAX_RESOURCES>           _rootSignatures;
+    std::array<DDescriptorSet, MAX_RESOURCES>           _descriptorSets;
     std::unordered_set<VkRenderPass>                    _renderPasses;
 
     using DeleteFn                 = std::function<void()>;

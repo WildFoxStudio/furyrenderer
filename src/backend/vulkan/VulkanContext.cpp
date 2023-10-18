@@ -1,4 +1,5 @@
 
+
 #include "VulkanContext.h"
 
 #include "ResourceId.h"
@@ -7,6 +8,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <math.h>
 #include <string>
 
 namespace Fox
@@ -25,7 +27,7 @@ template<class T, EResourceType type, size_t maxSize>
 inline T&
 GetResource(std::array<T, maxSize>& container, uint32_t id)
 {
-    check(id != NULL);//Uninitialized ID
+    check(id != NULL); // Uninitialized ID
     const auto resourceId = ResourceId(id);
     check(resourceId.First() == type); // Invalid resource id
     check(resourceId.Value() < maxSize); // Must be less than array size
@@ -905,19 +907,20 @@ VulkanContext::DestroyShader(const ShaderId shader)
 }
 
 uint32_t
-VulkanContext::CreatePipeline(const ShaderId shader, const DFramebufferAttachments& attachments, const PipelineFormat& format)
+VulkanContext::CreatePipeline(const ShaderId shader, uint32_t rootSignatureId, const DFramebufferAttachments& attachments, const PipelineFormat& format)
 {
     const auto       index = AllocResource<DPipelineVulkan, MAX_RESOURCES>(_pipelines);
     DPipelineVulkan& pso   = _pipelines.at(index);
 
-    const auto& shaderRef = GetResource<DShaderVulkan, EResourceType::SHADER, MAX_RESOURCES>(_shaders, shader);
+    const auto&           shaderRef     = GetResource<DShaderVulkan, EResourceType::SHADER, MAX_RESOURCES>(_shaders, shader);
+    const DRootSignature& rootSignature = GetResource<DRootSignature, EResourceType::ROOT_SIGNATURE, MAX_RESOURCES>(_rootSignatures, rootSignatureId);
 
     pso.PipelineLayout = &shaderRef.PipelineLayout;
 
     auto  rpAttachments = _createGenericRenderPassAttachments(attachments);
     auto  renderPassVk  = _createRenderPass(rpAttachments);
     auto& vertexLayout  = GetResource<DVertexInputLayoutVulkan, EResourceType::VERTEX_INPUT_LAYOUT, MAX_RESOURCES>(_vertexLayouts, shaderRef.VertexLayout);
-    pso.Pipeline        = _createPipeline(shaderRef.PipelineLayout, renderPassVk, shaderRef.ShaderStageCreateInfo, format, vertexLayout, shaderRef.VertexStride);
+    pso.Pipeline        = _createPipeline(rootSignature.PipelineLayout, renderPassVk, shaderRef.ShaderStageCreateInfo, format, vertexLayout, shaderRef.VertexStride);
 
     return *ResourceId(EResourceType::GRAPHICS_PIPELINE, pso.Id, index);
 }
@@ -929,6 +932,169 @@ VulkanContext::DestroyPipeline(uint32_t pipelineId)
 
     Device.DestroyPipeline(pipelineRef.Pipeline);
     pipelineRef.Id = FREE;
+}
+
+uint32_t
+VulkanContext::CreateRootSignature(const ShaderLayout& layout)
+{
+    check(layout.SetsLayout.size() < (uint32_t)EDescriptorFrequency::MAX_COUNT);
+
+    const auto      index         = AllocResource<DRootSignature, MAX_RESOURCES>(_rootSignatures);
+    DRootSignature& rootSignature = _rootSignatures.at(index);
+
+    std::vector<VkDescriptorSetLayout>        descriptorSetLayout;
+    std::map<uint32_t, VkDescriptorSetLayout> setIndexToSetLayout;
+    for (const auto& setPair : layout.SetsLayout)
+        {
+            const auto descriptorSetBindings                  = VkUtils::convertDescriptorBindings(setPair.second);
+            rootSignature.DescriptorSetLayouts[setPair.first] = Device.CreateDescriptorSetLayout(descriptorSetBindings);
+            descriptorSetLayout.push_back(rootSignature.DescriptorSetLayouts[setPair.first]);
+
+            // Compute pool sizes
+            std::map<uint32_t, std::map<uint32_t, ShaderDescriptorBindings>> setBindings;
+            setBindings.insert(setPair);
+            rootSignature.PoolSizes[setPair.first] = VkUtils::computeDescriptorSetsPoolSize(setBindings);
+        }
+
+    // Can return already cached pipeline layout if exists
+    rootSignature.PipelineLayout = Device.CreatePipelineLayout(descriptorSetLayout, {});
+
+    rootSignature.SetsBindings = layout.SetsLayout;
+
+    return *ResourceId(EResourceType::ROOT_SIGNATURE, rootSignature.Id, index);
+}
+
+void
+VulkanContext::DestroyRootSignature(uint32_t rootSignatureId)
+{
+    DRootSignature& rootSignature = GetResource<DRootSignature, EResourceType::ROOT_SIGNATURE, MAX_RESOURCES>(_rootSignatures, rootSignatureId);
+
+    Device.DestroyPipelineLayout(rootSignature.PipelineLayout);
+
+    for (uint32_t i = 0; i < (uint32_t)EDescriptorFrequency::MAX_COUNT; i++)
+        {
+            if (rootSignature.DescriptorSetLayouts[i] != nullptr)
+                {
+                    Device.DestroyDescriptorSetLayout(rootSignature.DescriptorSetLayouts[i]);
+                }
+        }
+
+    rootSignature.Id = FREE;
+    memset(rootSignature.DescriptorSetLayouts, NULL, sizeof(rootSignature.DescriptorSetLayouts));
+    for (auto it = 0; it < (uint32_t)EDescriptorFrequency::MAX_COUNT; it++)
+        {
+            rootSignature.PoolSizes[it].clear();
+        }
+
+    rootSignature.SetsBindings.clear();
+}
+
+uint32_t
+VulkanContext::CreateDescriptorSets(uint32_t rootSignatureId, EDescriptorFrequency frequency, uint32_t count)
+{
+    DRootSignature& rootSignature = GetResource<DRootSignature, EResourceType::ROOT_SIGNATURE, MAX_RESOURCES>(_rootSignatures, rootSignatureId);
+
+    const auto index            = AllocResource<DDescriptorSet, MAX_RESOURCES>(_descriptorSets);
+    auto&      descriptorSetRef = _descriptorSets.at(index);
+
+    descriptorSetRef.Bindings       = rootSignature.SetsBindings[(uint32_t)frequency];
+    descriptorSetRef.RootSignature  = &GetResource<DRootSignature, EResourceType::ROOT_SIGNATURE, MAX_RESOURCES>(_rootSignatures, rootSignatureId);
+    descriptorSetRef.DescriptorPool = Device.CreateDescriptorPool(rootSignature.PoolSizes[(uint32_t)frequency], count);
+    descriptorSetRef.Sets.resize(count);
+    descriptorSetRef.Frequency = frequency;
+
+    check(count < 8196);
+    std::array<VkDescriptorSetLayout, 8196> descriptorSetLayouts;
+    std::fill(descriptorSetLayouts.begin(), descriptorSetLayouts.begin() + count, rootSignature.DescriptorSetLayouts[(uint32_t)frequency]);
+    {
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool     = descriptorSetRef.DescriptorPool;
+        allocInfo.descriptorSetCount = (uint32_t)count;
+        allocInfo.pSetLayouts        = descriptorSetLayouts.data();
+
+        VkDescriptorSet descriptorSet{};
+        const VkResult  result = vkAllocateDescriptorSets(Device.Device, &allocInfo, descriptorSetRef.Sets.data());
+        if (VKFAILED(result))
+            {
+                throw std::runtime_error(VkUtils::VkErrorString(result));
+            }
+    }
+
+    return *ResourceId(EResourceType::DESCRIPTOR_SET, descriptorSetRef.Id, index);
+}
+
+void
+VulkanContext::DestroyDescriptorSet(uint32_t descriptorSetId)
+{
+    DDescriptorSet& descriptorSetRef = GetResource<DDescriptorSet, EResourceType::DESCRIPTOR_SET, MAX_RESOURCES>(_descriptorSets, descriptorSetId);
+    Device.DestroyDescriptorPool(descriptorSetRef.DescriptorPool);
+
+    descriptorSetRef.Sets.clear();
+
+    descriptorSetRef.Id = FREE;
+}
+
+void
+VulkanContext::UpdateDescriptorSet(uint32_t descriptorSetId, uint32_t setIndex, uint32_t paramCount, DescriptorData* params)
+{
+    const DDescriptorSet& descriptorSetRef = GetResource<DDescriptorSet, EResourceType::DESCRIPTOR_SET, MAX_RESOURCES>(_descriptorSets, descriptorSetId);
+
+    check(paramCount < 8196);
+    std::array<VkWriteDescriptorSet, 8196>   write;
+    std::array<VkDescriptorImageInfo, 8196>  imageInfo;
+    std::array<VkDescriptorBufferInfo, 8196> bufferInfo;
+    uint32_t                                 writeSetCount{};
+    uint32_t                                 imageInfoCount{};
+    uint32_t                                 bufferInfoCount{};
+    for (uint32_t i = 0; i < paramCount; i++)
+        {
+            DescriptorData* param           = params + i;
+            const uint32_t  descriptorCount = std::max(1u, param->Count);
+
+            VkWriteDescriptorSet* writeSet = &write[writeSetCount++];
+            writeSet->sType                = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writeSet->pNext                = NULL;
+            writeSet->descriptorCount      = descriptorCount;
+
+            const ShaderDescriptorBindings& bindingDesc = descriptorSetRef.Bindings.at(param->Index);
+            switch (bindingDesc.StorageType)
+                {
+                    case EBindingType::STORAGE_BUFFER_OBJECT:
+                        writeSet->descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                        check(0); // UNSUPPORTED YET
+                        break;
+                    case EBindingType::UNIFORM_BUFFER_OBJECT:
+                        writeSet->descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+
+                        writeSet->pBufferInfo = &bufferInfo[bufferInfoCount];
+
+                        for (uint32_t i = 0; i < descriptorCount; i++)
+                            {
+                                VkDescriptorBufferInfo& buf    = bufferInfo[bufferInfoCount++];
+                                const DBufferVulkan&    bufRef = GetResource<DBufferVulkan, EResourceType::UNIFORM_BUFFER, MAX_RESOURCES>(_uniformBuffers, param->Buffers[i]);
+                                buf.buffer                     = bufRef.Buffer.Buffer;
+                                buf.offset                     = 0;
+                                buf.range                      = VK_WHOLE_SIZE;
+                            }
+                        break;
+                    case EBindingType::TEXTURE:
+                        writeSet->descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+                        check(0); // UNSUPPORTED YET
+                        // writeSet->pImageInfo = &imageInfo[imageInfoCount];
+                        break;
+                    case EBindingType::SAMPLER:
+                        check(0); // UNSUPPORTED YET
+                        writeSet->descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+                        break;
+                }
+
+            writeSet->dstArrayElement = param->ArrayOffset;
+            writeSet->dstBinding      = param->Index;
+            writeSet->dstSet          = descriptorSetRef.Sets.at(setIndex);
+        }
+
+    vkUpdateDescriptorSets(Device.Device, writeSetCount, write.data(), 0, nullptr);
 }
 
 uint32_t
@@ -1212,6 +1378,19 @@ VulkanContext::Draw(uint32_t commandBufferId, uint32_t firstVertex, uint32_t cou
     check(commandBufferRef.ActiveRenderPass); // Must be in a render pass
 
     vkCmdDraw(commandBufferRef.Cmd, count, 1, firstVertex, 0);
+}
+
+void
+VulkanContext::BindDescriptorSet(uint32_t commandBufferId, uint32_t setIndex, uint32_t descriptorSetId)
+{
+    auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
+    check(commandBufferRef.IsRecording); // Must be in recording state
+    check(commandBufferRef.ActiveRenderPass); // Must be in a render pass
+
+    const DDescriptorSet& descriptorSetRef = GetResource<DDescriptorSet, EResourceType::DESCRIPTOR_SET, MAX_RESOURCES>(_descriptorSets, descriptorSetId);
+
+    vkCmdBindDescriptorSets(
+    commandBufferRef.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, descriptorSetRef.RootSignature->PipelineLayout, (uint32_t)descriptorSetRef.Frequency, 1, &descriptorSetRef.Sets[setIndex], 0, nullptr);
 }
 
 void
