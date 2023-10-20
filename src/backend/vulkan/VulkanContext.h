@@ -105,11 +105,6 @@ struct DSemaphoreVulkan : public DResource
     VkSemaphore Semaphore{};
 };
 
-struct DPipelinePermutations
-{
-    std::unordered_map<PipelineFormat, VkPipeline, PipelineFormatHashFn, PipelineFormatEqualFn> Pipeline{};
-};
-
 struct DShaderVulkan : public DResource
 {
     VertexInputLayoutId                          VertexLayout{};
@@ -119,19 +114,12 @@ struct DShaderVulkan : public DResource
     std::vector<VkPipelineShaderStageCreateInfo> ShaderStageCreateInfo;
     uint32_t                                     ColorAttachments{ 1 };
     bool                                         DepthStencilAttachment{};
-    /*Since VkDescriptorSetLayout are cached it can be used by multiple shaders, be careful when deleting*/
-    std::vector<VkDescriptorSetLayout> DescriptorSetLayouts;
-    /*Since pipeline layouts are cached it can be used by multiple shaders, be careful when deleting*/
-    VkPipelineLayout PipelineLayout{};
-
-    // Hash to pipeline map
-    std::unordered_map<std::vector<DRenderPassAttachment>, DPipelinePermutations, DRenderPassAttachmentsFormatsOnlyHashFn, DRenderPassAttachmentsFormatsOnlyEqualFn>
-    RenderPassFormatToPipelinePermutationMap;
 };
 
 struct DRootSignature : public DResource
 {
-    VkPipelineLayout      PipelineLayout{};
+    VkPipelineLayout PipelineLayout{};
+    /*Since VkDescriptorSetLayout are cached it can be used by multiple shaders, be careful when deleting*/
     VkDescriptorSetLayout DescriptorSetLayouts[(uint32_t)EDescriptorFrequency::MAX_COUNT]{};
     // VkDescriptorPool                  EmptyPools[(uint32_t)EDescriptorFrequency::MAX_COUNT];
     // std::vector<VkDescriptorSet>      EmptyDescriptorSets[(uint32_t)EDescriptorFrequency::MAX_COUNT];
@@ -337,7 +325,6 @@ class VulkanContext final : public IContext
                 uint32_t                                            stride);
     void                   _recreateSwapchainBlocking(DSwapchainVulkan& swapchain);
     RIVkRenderPassInfo     _computeFramebufferAttachmentsRenderPassInfo(const std::vector<VkFormat>& attachmentFormat);
-    VkPipeline             _queryPipelineFromAttachmentsAndFormat(DShaderVulkan& shader, const DRenderPassAttachments& renderPass, const PipelineFormat& format);
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL _vulkanDebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT                                                                   messageType,

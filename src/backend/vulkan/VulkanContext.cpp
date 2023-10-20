@@ -851,27 +851,6 @@ VulkanContext::_createShader(const ShaderSource& source, DShaderVulkan& shader)
             descriptorSetLayout.push_back(Device.CreateDescriptorSetLayout(descriptorSetBindings));
             setIndexToSetLayout[setPair.first] = descriptorSetLayout.back();
         }
-
-    shader.DescriptorSetLayouts = std::move(descriptorSetLayout);
-
-    // Can return already cached pipeline layout if exists
-    shader.PipelineLayout = Device.CreatePipelineLayout(shader.DescriptorSetLayouts, {});
-
-    // Cache all descriptor sets layouts for this given pipeline layout
-    auto pipelineLayoutCacheIt = _pipelineLayoutToSetIndexDescriptorSetLayout.find(shader.PipelineLayout);
-    if (pipelineLayoutCacheIt == _pipelineLayoutToSetIndexDescriptorSetLayout.end())
-        {
-            _pipelineLayoutToSetIndexDescriptorSetLayout[shader.PipelineLayout] = setIndexToSetLayout;
-
-            // Create per frame descriptor pool for this pipeline layout
-            const auto poolDimensions = VkUtils::computeDescriptorSetsPoolSize(source.SetsLayout.SetsLayout);
-            for (auto i = 0; i < NUM_OF_FRAMES_IN_FLIGHT; i++)
-                {
-                    auto poolManager = std::make_shared<RIDescriptorPoolManager>(Device.Device, poolDimensions, MAX_SETS_PER_POOL);
-                    auto pair        = std::make_pair(shader.PipelineLayout, std::move(poolManager));
-                    _pipelineLayoutToDescriptorPool[i].emplace(std::move(pair));
-                }
-        }
 }
 }
 
@@ -888,41 +867,6 @@ VulkanContext::DestroyShader(const ShaderId shader)
 
         vkDestroyShaderModule(Device.Device, shaderVulkan.VertexShaderModule, nullptr);
         vkDestroyShaderModule(Device.Device, shaderVulkan.PixelShaderModule, nullptr);
-
-        // Destroy pipeline, this is unique
-        for (const auto& pair : shaderVulkan.RenderPassFormatToPipelinePermutationMap)
-            {
-                for (const auto& pipeline : pair.second.Pipeline)
-                    {
-                        Device.DestroyPipeline(pipeline.second);
-                    }
-            }
-
-        // Find if other shaders share the same pipeline layout
-        const auto foundIt =
-        std::find_if(_shaders.begin(), _shaders.end(), [shaderVulkan](const DShaderVulkan& shader) { return IsValidId(shader.Id) && (shader.PipelineLayout == shaderVulkan.PipelineLayout); });
-
-        // If not found means that no other shader use the same pipeline layout
-        if (foundIt == _shaders.end())
-            {
-                // We can safely delete this pipeline layout because we're sure is not used anywhere
-                Device.DestroyPipelineLayout(shaderVulkan.PipelineLayout);
-
-                // If no pipeline layout reference these descriptor set we can safely delete them
-                for (const auto& descSet : shaderVulkan.DescriptorSetLayouts)
-                    {
-                        // Count how many other shaders have this descriptor set layout
-                        const auto useCount = std::count_if(_shaders.begin(), _shaders.end(), [&descSet](const DShaderVulkan& shader) {
-                            return std::count_if(shader.DescriptorSetLayouts.begin(), shader.DescriptorSetLayouts.end(), [&descSet](const VkDescriptorSetLayout layout) { return descSet == layout; });
-                        });
-                        // If this is unique then destroy it
-                        if (useCount == 1)
-                            {
-                                Device.DestroyDescriptorSetLayout(descSet);
-                            }
-                    }
-            }
-
         _shaders.at(index).Id = FREE;
     });
 }
@@ -936,7 +880,7 @@ VulkanContext::CreatePipeline(const ShaderId shader, uint32_t rootSignatureId, c
     const auto&           shaderRef     = GetResource<DShaderVulkan, EResourceType::SHADER, MAX_RESOURCES>(_shaders, shader);
     const DRootSignature& rootSignature = GetResource<DRootSignature, EResourceType::ROOT_SIGNATURE, MAX_RESOURCES>(_rootSignatures, rootSignatureId);
 
-    pso.PipelineLayout = &shaderRef.PipelineLayout;
+    pso.PipelineLayout = &rootSignature.PipelineLayout;
 
     auto  rpAttachments = _createGenericRenderPassAttachments(attachments);
     auto  renderPassVk  = _createRenderPass(rpAttachments);
@@ -1773,21 +1717,21 @@ RenderTargetBarrier*                    p_rt_barriers)
                     pImageBarrier->subresourceRange.baseArrayLayer = pTrans->mSubresourceBarrier ? pTrans->mArrayLayer : 0;
                     pImageBarrier->subresourceRange.layerCount     = pTrans->mSubresourceBarrier ? 1 : VK_REMAINING_ARRAY_LAYERS;
 
-                    //if (pTrans->mAcquire && pTrans->mCurrentState != RESOURCE_STATE_UNDEFINED)
-                    //    {
-                    //        pImageBarrier->srcQueueFamilyIndex = pCmd->pRenderer->mVulkan.mQueueFamilyIndices[pTrans->mQueueType];
-                    //        pImageBarrier->dstQueueFamilyIndex = pCmd->pQueue->mVulkan.mVkQueueFamilyIndex;
-                    //    }
-                    //else if (pTrans->mRelease && pTrans->mCurrentState != RESOURCE_STATE_UNDEFINED)
-                    //    {
-                    //        pImageBarrier->srcQueueFamilyIndex = pCmd->pQueue->mVulkan.mVkQueueFamilyIndex;
-                    //        pImageBarrier->dstQueueFamilyIndex = pCmd->pRenderer->mVulkan.mQueueFamilyIndices[pTrans->mQueueType];
-                    //    }
-                    //else
-                        {
-                            pImageBarrier->srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                            pImageBarrier->dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                        }
+                    // if (pTrans->mAcquire && pTrans->mCurrentState != RESOURCE_STATE_UNDEFINED)
+                    //     {
+                    //         pImageBarrier->srcQueueFamilyIndex = pCmd->pRenderer->mVulkan.mQueueFamilyIndices[pTrans->mQueueType];
+                    //         pImageBarrier->dstQueueFamilyIndex = pCmd->pQueue->mVulkan.mVkQueueFamilyIndex;
+                    //     }
+                    // else if (pTrans->mRelease && pTrans->mCurrentState != RESOURCE_STATE_UNDEFINED)
+                    //     {
+                    //         pImageBarrier->srcQueueFamilyIndex = pCmd->pQueue->mVulkan.mVkQueueFamilyIndex;
+                    //         pImageBarrier->dstQueueFamilyIndex = pCmd->pRenderer->mVulkan.mQueueFamilyIndices[pTrans->mQueueType];
+                    //     }
+                    // else
+                    {
+                        pImageBarrier->srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                        pImageBarrier->dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    }
 
                     srcAccessFlags |= pImageBarrier->srcAccessMask;
                     dstAccessFlags |= pImageBarrier->dstAccessMask;
@@ -2026,25 +1970,6 @@ VulkanContext::Log(const std::string& error)
         {
             _logOutput(error.data());
         }
-}
-
-VkPipeline
-VulkanContext::_queryPipelineFromAttachmentsAndFormat(DShaderVulkan& shader, const DRenderPassAttachments& renderPass, const PipelineFormat& format)
-{
-    auto& permutationMap = shader.RenderPassFormatToPipelinePermutationMap[renderPass.Attachments];
-
-    auto foundPipeline = permutationMap.Pipeline.find(format);
-    if (foundPipeline != permutationMap.Pipeline.end())
-        {
-            return foundPipeline->second;
-        }
-
-    // Create on the fly
-    auto       renderPassVk         = _createRenderPass(renderPass);
-    auto&      vertexLayout         = GetResource<DVertexInputLayoutVulkan, EResourceType::VERTEX_INPUT_LAYOUT, MAX_RESOURCES>(_vertexLayouts, shader.VertexLayout);
-    VkPipeline pipeline             = _createPipeline(shader.PipelineLayout, renderPassVk, shader.ShaderStageCreateInfo, format, vertexLayout, shader.VertexStride);
-    permutationMap.Pipeline[format] = pipeline;
-    return pipeline;
 }
 
 void
