@@ -139,6 +139,8 @@ convertVkFormat(const VkFormat format)
                 return Fox::EFormat::R32G32B32_FLOAT;
             case VK_FORMAT_R32G32B32A32_SFLOAT:
                 return Fox::EFormat::R32G32B32A32_FLOAT;
+            case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
+                return Fox::EFormat::RGBA_DXT1;
         }
 
     check(0);
@@ -178,6 +180,8 @@ convertFormat(const Fox::EFormat format)
                 return VK_FORMAT_R32G32B32_SFLOAT;
             case Fox::EFormat::R32G32B32A32_FLOAT:
                 return VK_FORMAT_R32G32B32A32_SFLOAT;
+            case Fox::EFormat::RGBA_DXT1:
+                return VK_FORMAT_BC1_RGBA_UNORM_BLOCK;
         }
 
     check(0);
@@ -690,7 +694,7 @@ determinePipelineStageFlags(VkAccessFlags accessFlags, Fox::EQueueType queueType
 inline VkImageLayout
 resourceStateToImageLayout(Fox::EResourceState usage)
 {
-    if ((uint32_t)usage & (uint32_t)Fox::EResourceState::COPY_SOURCE )
+    if ((uint32_t)usage & (uint32_t)Fox::EResourceState::COPY_SOURCE)
         return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 
     if ((uint32_t)usage & (uint32_t)Fox::EResourceState::COPY_DEST)
@@ -718,7 +722,7 @@ resourceStateToImageLayout(Fox::EResourceState usage)
     if ((uint32_t)usage == (uint32_t)Fox::EResourceState::SHADING_RATE_SOURCE)
         return VK_IMAGE_LAYOUT_FRAGMENT_DENSITY_MAP_OPTIMAL_EXT;
 #endif
-    check(0);
+
     return VK_IMAGE_LAYOUT_UNDEFINED;
 }
 
@@ -780,6 +784,59 @@ resourceStateToAccessFlag(Fox::EResourceState state)
         }
 #endif
     return ret;
+}
+
+#define CASE(FIRST, SECOND) \
+    case FIRST: \
+        return SECOND;
+
+inline VkImageLayout
+convertResourceStateToImageLayout(Fox::EResourceState state, bool isDepth)
+{
+    using namespace Fox;
+    // UNDEFINED                         = 0,
+    // VERTEX_AND_CONSTANT_BUFFER        = 0x1,
+    // INDEX_BUFFER                      = 0x2,
+    // RENDER_TARGET                     = 0x4,
+    // UNORDERED_ACCESS                  = 0x8,
+    // DEPTH_WRITE                       = 0x10,
+    // DEPTH_READ                        = 0x20,
+    // NON_PIXEL_SHADER_RESOURCE         = 0x40,
+    // PIXEL_SHADER_RESOURCE             = 0x80,
+    // SHADER_RESOURCE                   = 0x40 | 0x80,
+    // STREAM_OUT                        = 0x100,
+    // INDIRECT_ARGUMENT                 = 0x200,
+    // COPY_DEST                         = 0x400,
+    // COPY_SOURCE                       = 0x800,
+    // GENERAL_READ                      = (((((0x1 | 0x2) | 0x40) | 0x80) | 0x200) | 0x800),
+    // PRESENT                           = 0x1000,
+    // COMMON                            = 0x2000,
+    // RAYTRACING_ACCELERATION_STRUCTURE = 0x4000,
+    // SHADING_RATE_SOURCE               = 0x8000,
+
+    switch (state)
+        {
+            case EResourceState::UNDEFINED:
+                return VK_IMAGE_LAYOUT_UNDEFINED;
+
+            case EResourceState::RENDER_TARGET:
+                return (!isDepth) ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+            case EResourceState::COPY_DEST:
+                return VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+
+            case EResourceState::COPY_SOURCE:
+                return VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+
+            case EResourceState::PRESENT:
+                return VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR;
+
+            default:
+                break;
+        }
+
+    check(0);
+    return VK_IMAGE_LAYOUT_UNDEFINED;
 }
 
 }

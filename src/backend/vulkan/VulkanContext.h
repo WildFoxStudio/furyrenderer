@@ -196,6 +196,7 @@ class VulkanContext final : public IContext
     void BindVertexBuffer(uint32_t commandBufferId, uint32_t bufferId) override;
     void Draw(uint32_t commandBufferId, uint32_t firstVertex, uint32_t count) override;
     void BindDescriptorSet(uint32_t commandBufferId, uint32_t setIndex, uint32_t descriptorSetId) override;
+    void CopyImage(uint32_t commandId, uint32_t imageId, uint32_t width, uint32_t height, uint32_t mipMapIndex, uint32_t stagingBufferId, uint32_t stagingBufferOffset) override;
 
     uint32_t CreateFence(bool signaled) override;
     void     DestroyFence(uint32_t fenceId) override;
@@ -239,6 +240,7 @@ class VulkanContext final : public IContext
 
     std::array<DSwapchainVulkan, MAX_RESOURCES> _swapchains;
     std::array<DBufferVulkan, MAX_RESOURCES>    _vertexBuffers;
+    std::array<DBufferVulkan, MAX_RESOURCES>    _transferBuffers;
     std::array<DBufferVulkan, MAX_RESOURCES>    _uniformBuffers;
     /*Whenever a render target gets deleted remove also framebuffers that have that image id as attachment*/
     std::array<DFramebufferVulkan, MAX_RESOURCES>       _framebuffers;

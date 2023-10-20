@@ -8,7 +8,7 @@ add_executable(${PROJECT_NAME}
 )
 
 
-target_link_libraries(${PROJECT_NAME} PRIVATE FoxFury glfw glm)
+target_link_libraries(${PROJECT_NAME} PRIVATE FoxFury glfw glm gli)
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "bin"

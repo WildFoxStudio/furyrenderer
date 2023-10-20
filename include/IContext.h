@@ -24,6 +24,7 @@ namespace Fox
 // SHOULD BE PRIVATE
 enum EResourceType : uint8_t
 {
+    TRANSFER            = 0,
     VERTEX_INPUT_LAYOUT = 1,
     SHADER              = 2,
     VERTEX_INDEX_BUFFER = 3,
@@ -115,6 +116,7 @@ enum class EFormat
     DEPTH16_UNORM_STENCIL8_UINT,
     DEPTH24_UNORM_STENCIL8_UINT,
     DEPTH32_FLOAT_STENCIL8_UINT,
+    RGBA_DXT1,
 };
 
 enum class EVertexInputClassification
@@ -623,7 +625,7 @@ typedef struct BufferBarrier
 
 typedef struct TextureBarrier
 {
-    uint32_t*      ImageId;
+    uint32_t       ImageId;
     EResourceState CurrentState;
     EResourceState NewState;
     uint8_t        BeginOnly : 1;
@@ -680,38 +682,39 @@ class IContext
     virtual bool                  SwapchainAcquireNextImageIndex(SwapchainId swapchainId, uint64_t timeoutNanoseconds, uint32_t sempahoreid, uint32_t* outImageIndex) = 0;
     virtual void                  DestroySwapchain(SwapchainId swapchainId)                                                                                           = 0;
 
-    virtual BufferId            CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usage)                                                                       = 0;
-    virtual void*               BeginMapBuffer(BufferId buffer)                                                                                                           = 0;
-    virtual void                EndMapBuffer(BufferId buffer)                                                                                                             = 0;
-    virtual void                DestroyBuffer(BufferId buffer)                                                                                                            = 0;
-    virtual ImageId             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount)                                                        = 0;
-    virtual EFormat             GetImageFormat(ImageId) const                                                                                                             = 0;
-    virtual void                DestroyImage(ImageId imageId)                                                                                                             = 0;
-    virtual VertexInputLayoutId CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)                                                                             = 0;
-    virtual ShaderId            CreateShader(const ShaderSource& source)                                                                                                  = 0;
-    virtual void                DestroyShader(const ShaderId shader)                                                                                                      = 0;
-    virtual uint32_t            CreatePipeline(const ShaderId shader, uint32_t rootSignatureId, const DFramebufferAttachments& attachments, const PipelineFormat& format) = 0;
-    virtual void                DestroyPipeline(uint32_t pipelineId)                                                                                                      = 0;
-    virtual uint32_t            CreateRootSignature(const ShaderLayout& layout)                                                                                           = 0;
-    virtual void                DestroyRootSignature(uint32_t rootSignatureId)                                                                                            = 0;
-    virtual uint32_t            CreateDescriptorSets(uint32_t rootSignatureId, EDescriptorFrequency frequency, uint32_t count)                                            = 0;
-    virtual void                DestroyDescriptorSet(uint32_t descriptorSetId)                                                                                            = 0;
-    virtual void                UpdateDescriptorSet(uint32_t descriptorSetId, uint32_t setIndex, uint32_t paramCount, DescriptorData* params)                             = 0;
+    virtual BufferId            CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usage)                                                                         = 0;
+    virtual void*               BeginMapBuffer(BufferId buffer)                                                                                                             = 0;
+    virtual void                EndMapBuffer(BufferId buffer)                                                                                                               = 0;
+    virtual void                DestroyBuffer(BufferId buffer)                                                                                                              = 0;
+    virtual ImageId             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) = 0;
+    virtual EFormat             GetImageFormat(ImageId) const                                                                                                               = 0;
+    virtual void                DestroyImage(ImageId imageId)                                                                                                               = 0;
+    virtual VertexInputLayoutId CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)                                                                               = 0;
+    virtual ShaderId            CreateShader(const ShaderSource& source)                                                                                                    = 0;
+    virtual void                DestroyShader(const ShaderId shader)                                                                                                        = 0;
+    virtual uint32_t            CreatePipeline(const ShaderId shader, uint32_t rootSignatureId, const DFramebufferAttachments& attachments, const PipelineFormat& format)   = 0;
+    virtual void                DestroyPipeline(uint32_t pipelineId)                                                                                                        = 0;
+    virtual uint32_t            CreateRootSignature(const ShaderLayout& layout)                                                                                             = 0;
+    virtual void                DestroyRootSignature(uint32_t rootSignatureId)                                                                                              = 0;
+    virtual uint32_t            CreateDescriptorSets(uint32_t rootSignatureId, EDescriptorFrequency frequency, uint32_t count)                                              = 0;
+    virtual void                DestroyDescriptorSet(uint32_t descriptorSetId)                                                                                              = 0;
+    virtual void                UpdateDescriptorSet(uint32_t descriptorSetId, uint32_t setIndex, uint32_t paramCount, DescriptorData* params)                               = 0;
 
-    virtual uint32_t CreateCommandPool()                                                                                                     = 0;
-    virtual void     DestroyCommandPool(uint32_t commandPoolId)                                                                              = 0;
-    virtual void     ResetCommandPool(uint32_t commandPoolId)                                                                                = 0;
-    virtual uint32_t CreateCommandBuffer(uint32_t commandPoolId)                                                                             = 0;
-    virtual void     DestroyCommandBuffer(uint32_t commandBufferId)                                                                          = 0;
-    virtual void     BeginCommandBuffer(uint32_t commandBufferId)                                                                            = 0;
-    virtual void     EndCommandBuffer(uint32_t commandBufferId)                                                                              = 0;
-    virtual void     BindRenderTargets(uint32_t commandBufferId, const DFramebufferAttachments& attachments, const DLoadOpPass& loadOP)      = 0;
-    virtual void     SetViewport(uint32_t commandBufferId, uint32_t x, uint32_t y, uint32_t width, uint32_t height, float znear, float zfar) = 0;
-    virtual void     SetScissor(uint32_t commandBufferId, uint32_t x, uint32_t y, uint32_t width, uint32_t height)                           = 0;
-    virtual void     BindPipeline(uint32_t commandBufferId, uint32_t pipeline)                                                               = 0;
-    virtual void     BindVertexBuffer(uint32_t commandBufferId, uint32_t bufferId)                                                           = 0;
-    virtual void     Draw(uint32_t commandBufferId, uint32_t firstVertex, uint32_t count)                                                    = 0;
-    virtual void     BindDescriptorSet(uint32_t commandBufferId, uint32_t setIndex, uint32_t descriptorSetId)                                = 0;
+    virtual uint32_t CreateCommandPool()                                                                                                                                            = 0;
+    virtual void     DestroyCommandPool(uint32_t commandPoolId)                                                                                                                     = 0;
+    virtual void     ResetCommandPool(uint32_t commandPoolId)                                                                                                                       = 0;
+    virtual uint32_t CreateCommandBuffer(uint32_t commandPoolId)                                                                                                                    = 0;
+    virtual void     DestroyCommandBuffer(uint32_t commandBufferId)                                                                                                                 = 0;
+    virtual void     BeginCommandBuffer(uint32_t commandBufferId)                                                                                                                   = 0;
+    virtual void     EndCommandBuffer(uint32_t commandBufferId)                                                                                                                     = 0;
+    virtual void     BindRenderTargets(uint32_t commandBufferId, const DFramebufferAttachments& attachments, const DLoadOpPass& loadOP)                                             = 0;
+    virtual void     SetViewport(uint32_t commandBufferId, uint32_t x, uint32_t y, uint32_t width, uint32_t height, float znear, float zfar)                                        = 0;
+    virtual void     SetScissor(uint32_t commandBufferId, uint32_t x, uint32_t y, uint32_t width, uint32_t height)                                                                  = 0;
+    virtual void     BindPipeline(uint32_t commandBufferId, uint32_t pipeline)                                                                                                      = 0;
+    virtual void     BindVertexBuffer(uint32_t commandBufferId, uint32_t bufferId)                                                                                                  = 0;
+    virtual void     Draw(uint32_t commandBufferId, uint32_t firstVertex, uint32_t count)                                                                                           = 0;
+    virtual void     BindDescriptorSet(uint32_t commandBufferId, uint32_t setIndex, uint32_t descriptorSetId)                                                                       = 0;
+    virtual void     CopyImage(uint32_t commandId, uint32_t imageId, uint32_t width, uint32_t height, uint32_t mipMapIndex, uint32_t stagingBufferId, uint32_t stagingBufferOffset) = 0;
 
     virtual uint32_t CreateRenderTarget(EFormat format, ESampleBit samples, bool isDepth, uint32_t width, uint32_t height, uint32_t arrayLength, uint32_t mipMapCount, EResourceState initialState) = 0;
     virtual void     ResourceBarrier(uint32_t commandBufferId,

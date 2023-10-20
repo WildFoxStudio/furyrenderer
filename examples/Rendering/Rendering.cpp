@@ -5,8 +5,11 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include <gli/gli.hpp>
+
 #include <fstream>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 
 void
@@ -40,6 +43,44 @@ ReadBlobUnsafe(const std::string& filename)
     file.close();
     return bytes;
 };
+
+struct ImageData
+{
+    uint32_t                   Width, Height;
+    std::vector<unsigned char> Pixels;
+};
+
+inline std::vector<ImageData>
+loadImage(const char* path, uint32_t* width, uint32_t* height, uint32_t* mipMaps, uint32_t* size)
+{
+    gli::texture Texture = gli::load(path);
+    if (Texture.empty())
+        throw std::runtime_error("Could not load image");
+
+    gli::gl               GL(gli::gl::PROFILE_GL33);
+    gli::gl::format const Format = GL.translate(Texture.format(), Texture.swizzles());
+    assert(Format.Internal == gli::gl::INTERNAL_RGBA_DXT1);
+
+    gli::extent2d extent = Texture.extent(0);
+    *width               = extent.r;
+    *height              = extent.g;
+    *mipMaps             = Texture.levels();
+    *size                = Texture.size();
+
+    std::vector<ImageData> mips;
+    for (uint32_t i = 0; i < *mipMaps; i++)
+        {
+            gli::extent2d ext     = Texture.extent(i);
+            ImageData     mip     = { ext.r, ext.g };
+            const auto    mipSize = Texture.size(i);
+            mip.Pixels.resize(mipSize);
+            memcpy(mip.Pixels.data(), Texture.data(0, 0, i), mipSize);
+
+            mips.emplace_back(std::move(mip));
+        }
+
+    return mips;
+}
 
 class TriangleApp : public App
 {
@@ -107,6 +148,48 @@ class TriangleApp : public App
         param[0].pName               = "cameraUbo";
         param[0].Buffers             = &_cameraUbo;
         _ctx->UpdateDescriptorSet(_descriptorSet, 0, 1, param);
+
+        {
+            uint32_t               w, h, m, s;
+            std::vector<ImageData> mips = loadImage("texture.dds", &w, &h, &m, &s);
+
+            _texture        = _ctx->CreateImage(Fox::EFormat::RGBA_DXT1, w, h, m);
+            uint32_t tmpBuf = _ctx->CreateBuffer(s, Fox::EResourceType::TRANSFER, Fox::EMemoryUsage::RESOURCE_MEMORY_USAGE_CPU_ONLY);
+
+            unsigned char* data = (unsigned char*)_ctx->BeginMapBuffer(tmpBuf);
+            for (auto& mip : mips)
+                {
+                    memcpy(data, mip.Pixels.data(), mip.Pixels.size());
+                    data += mip.Pixels.size();
+                }
+            _ctx->EndMapBuffer(tmpBuf);
+
+            auto& cmd = _frameData[0].Cmd;
+
+            _ctx->BeginCommandBuffer(cmd);
+            Fox::TextureBarrier transferBarrier;
+            transferBarrier.ImageId      = _texture;
+            transferBarrier.CurrentState = Fox::EResourceState::UNDEFINED;
+            transferBarrier.NewState     = Fox::EResourceState::COPY_DEST;
+
+            _ctx->ResourceBarrier(cmd, 0, nullptr, 1, &transferBarrier, 0, nullptr);
+
+            uint32_t offset{};
+            for (auto mipIndex = 0; mipIndex < mips.size(); mipIndex++)
+                {
+                    auto& mip = mips[mipIndex];
+                    _ctx->CopyImage(cmd, _texture, mip.Width, mip.Height, mipIndex, tmpBuf, offset);
+                    offset += mip.Pixels.size();
+                }
+
+            _ctx->EndCommandBuffer(cmd);
+
+            _ctx->QueueSubmit({}, {}, { cmd }, NULL);
+            _ctx->WaitDeviceIdle();
+            _ctx->DestroyBuffer(tmpBuf);
+
+            _ctx->ResetCommandPool(_frameData[0].CmdPool);
+        }
     };
     ~TriangleApp()
     {
@@ -158,6 +241,7 @@ class TriangleApp : public App
     uint32_t _rootSignature{};
     uint32_t _descriptorSet{};
     uint32_t _cameraUbo{};
+    uint32_t _texture{};
 };
 
 int

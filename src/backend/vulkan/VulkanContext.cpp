@@ -595,6 +595,11 @@ VulkanContext::CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usag
                 usageFlags = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
                 buffer     = &_vertexBuffers.at(index);
                 break;
+            case EResourceType::TRANSFER:
+                index      = AllocResource<DBufferVulkan, MAX_RESOURCES>(_transferBuffers);
+                usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+                buffer     = &_transferBuffers.at(index);
+                break;
             default:
                 check(0); // Invalid type
                 break;
@@ -642,6 +647,9 @@ VulkanContext::BeginMapBuffer(BufferId buffer)
             case EResourceType::VERTEX_INDEX_BUFFER:
                 bufferPtr = &_vertexBuffers.at(index);
                 break;
+            case EResourceType::TRANSFER:
+                bufferPtr = &_transferBuffers.at(index);
+                break;
             default:
                 check(0); // Invalid type
                 break;
@@ -665,6 +673,9 @@ VulkanContext::EndMapBuffer(BufferId buffer)
                 break;
             case EResourceType::VERTEX_INDEX_BUFFER:
                 bufferPtr = &_vertexBuffers.at(index);
+                break;
+            case EResourceType::TRANSFER:
+                bufferPtr = &_transferBuffers.at(index);
                 break;
             default:
                 check(0); // Invalid type
@@ -691,6 +702,9 @@ VulkanContext::DestroyBuffer(BufferId buffer)
             case EResourceType::VERTEX_INDEX_BUFFER:
                 bufferPtr = &_vertexBuffers.at(index);
                 break;
+            case EResourceType::TRANSFER:
+                bufferPtr = &_transferBuffers.at(index);
+                break;
             default:
                 check(0); // Invalid type
                 break;
@@ -709,11 +723,18 @@ VulkanContext::CreateImage(EFormat format, uint32_t width, uint32_t height, uint
 
     const auto vkFormat = VkUtils::convertFormat(format);
 
-    const VkImageUsageFlags fomatAttachment = VkUtils::isColorFormat(vkFormat) ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    image.Image = Device.CreateImageDeviceLocal(width, height, mipMapCount, vkFormat, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | fomatAttachment | VK_IMAGE_USAGE_SAMPLED_BIT);
+    const VkImageUsageFlags fomatAttachment = 0; // VkUtils::isColorFormat(vkFormat) ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    image.Image                             = Device.CreateImageDeviceLocal(width,
+    height,
+    mipMapCount,
+    vkFormat,
+    VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | fomatAttachment | VK_IMAGE_USAGE_SAMPLED_BIT,
+    VK_IMAGE_TILING_OPTIMAL,
+    VK_IMAGE_LAYOUT_UNDEFINED);
 
-    VkImageAspectFlags imageAspect = VkUtils::isColorFormat(vkFormat) ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
-    const VkResult     result      = Device.CreateImageView(vkFormat, image.Image.Image, imageAspect, 0, mipMapCount, &image.View);
+    image.ImageAspect = VkUtils::isColorFormat(vkFormat) ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
+
+    const VkResult result = Device.CreateImageView(vkFormat, image.Image.Image, image.ImageAspect, 0, mipMapCount, &image.View);
     if (VKFAILED(result))
         {
             throw std::runtime_error(VkUtils::VkErrorString(result));
@@ -1394,6 +1415,34 @@ VulkanContext::BindDescriptorSet(uint32_t commandBufferId, uint32_t setIndex, ui
 }
 
 void
+VulkanContext::CopyImage(uint32_t commandId, uint32_t imageId, uint32_t width, uint32_t height, uint32_t mipMapIndex, uint32_t stagingBufferId, uint32_t stagingBufferOffset)
+{
+    auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandId);
+    check(commandBufferRef.IsRecording); // Must be in recording state
+    check(!commandBufferRef.ActiveRenderPass); // Must be in a render pass
+
+    auto& imageRef = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, imageId);
+    auto& buffRef  = GetResource<DBufferVulkan, EResourceType::TRANSFER, MAX_RESOURCES>(_transferBuffers, stagingBufferId);
+
+    VkBufferImageCopy region{};
+    {
+        region.bufferOffset      = stagingBufferOffset;
+        region.bufferRowLength   = 0;
+        region.bufferImageHeight = 0;
+
+        region.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.mipLevel       = mipMapIndex;
+        region.imageSubresource.baseArrayLayer = 0;
+        region.imageSubresource.layerCount     = 1;
+
+        region.imageOffset = { 0, 0, 0 };
+        region.imageExtent = { width, height, 1 };
+    }
+
+    vkCmdCopyBufferToImage(commandBufferRef.Cmd, buffRef.Buffer.Buffer, imageRef.Image.Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, (uint32_t)1, &region);
+}
+
+void
 VulkanContext::QueueSubmit(const std::vector<uint32_t>& waitSemaphore, const std::vector<uint32_t>& finishSemaphore, const std::vector<uint32_t>& cmdIds, uint32_t fenceId)
 {
     std::vector<VkCommandBuffer> commandBuffers;
@@ -1420,7 +1469,11 @@ VulkanContext::QueueSubmit(const std::vector<uint32_t>& waitSemaphore, const std
             finishSemaphores.push_back(semaphoreRef.Semaphore);
         }
 
-    auto& fenceRef = GetResource<DFenceVulkan, EResourceType::FENCE, MAX_RESOURCES>(_fences, fenceId);
+    DFenceVulkan* fenceRef{};
+    if (fenceId != NULL)
+        {
+            fenceRef = &GetResource<DFenceVulkan, EResourceType::FENCE, MAX_RESOURCES>(_fences, fenceId);
+        }
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1432,7 +1485,7 @@ VulkanContext::QueueSubmit(const std::vector<uint32_t>& waitSemaphore, const std
     submitInfo.signalSemaphoreCount = (uint32_t)finishSemaphores.size();
     submitInfo.pSignalSemaphores    = finishSemaphores.data();
 
-    const VkResult result = vkQueueSubmit(Device.MainQueue, 1, &submitInfo, fenceRef.Fence);
+    const VkResult result = vkQueueSubmit(Device.MainQueue, 1, &submitInfo, fenceRef != nullptr ? fenceRef->Fence : VK_NULL_HANDLE);
     if (VKFAILED(result))
         {
             throw std::runtime_error(VkUtils::VkErrorString(result));
@@ -1676,10 +1729,70 @@ RenderTargetBarrier*                    p_rt_barriers)
 {
 
     std::vector<VkImageMemoryBarrier> imageBarriers;
-    imageBarriers.resize(rt_barrier_count);
+    imageBarriers.resize(rt_barrier_count + texture_barrier_count);
+    uint32_t imageBarrierCount{};
 
     VkAccessFlags srcAccessFlags = 0;
     VkAccessFlags dstAccessFlags = 0;
+
+    for (uint32_t i = 0; i < texture_barrier_count; ++i)
+        {
+            TextureBarrier*       pTrans        = &p_texture_barriers[i];
+            const DImageVulkan&   imageRef      = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, pTrans->ImageId);
+            VkImageMemoryBarrier* pImageBarrier = NULL;
+
+            if (EResourceState::UNORDERED_ACCESS == pTrans->CurrentState && EResourceState::UNORDERED_ACCESS == pTrans->NewState)
+                {
+                    pImageBarrier        = &imageBarriers[imageBarrierCount++]; //-V522
+                    pImageBarrier->sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER; //-V522
+                    pImageBarrier->pNext = NULL;
+
+                    pImageBarrier->srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                    pImageBarrier->dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+                    pImageBarrier->oldLayout     = VK_IMAGE_LAYOUT_GENERAL;
+                    pImageBarrier->newLayout     = VK_IMAGE_LAYOUT_GENERAL;
+                }
+            else
+                {
+                    pImageBarrier        = &imageBarriers[imageBarrierCount++];
+                    pImageBarrier->sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                    pImageBarrier->pNext = NULL;
+
+                    pImageBarrier->srcAccessMask = VkUtils::resourceStateToAccessFlag(pTrans->CurrentState);
+                    pImageBarrier->dstAccessMask = VkUtils::resourceStateToAccessFlag(pTrans->NewState);
+                    pImageBarrier->oldLayout     = VkUtils::resourceStateToImageLayout(pTrans->CurrentState);
+                    pImageBarrier->newLayout     = VkUtils::resourceStateToImageLayout(pTrans->NewState);
+                }
+
+            if (pImageBarrier)
+                {
+                    pImageBarrier->image                           = imageRef.Image.Image;
+                    pImageBarrier->subresourceRange.aspectMask     = (VkImageAspectFlags)imageRef.ImageAspect;
+                    pImageBarrier->subresourceRange.baseMipLevel   = pTrans->mSubresourceBarrier ? pTrans->mMipLevel : 0;
+                    pImageBarrier->subresourceRange.levelCount     = pTrans->mSubresourceBarrier ? 1 : VK_REMAINING_MIP_LEVELS;
+                    pImageBarrier->subresourceRange.baseArrayLayer = pTrans->mSubresourceBarrier ? pTrans->mArrayLayer : 0;
+                    pImageBarrier->subresourceRange.layerCount     = pTrans->mSubresourceBarrier ? 1 : VK_REMAINING_ARRAY_LAYERS;
+
+                    //if (pTrans->mAcquire && pTrans->mCurrentState != RESOURCE_STATE_UNDEFINED)
+                    //    {
+                    //        pImageBarrier->srcQueueFamilyIndex = pCmd->pRenderer->mVulkan.mQueueFamilyIndices[pTrans->mQueueType];
+                    //        pImageBarrier->dstQueueFamilyIndex = pCmd->pQueue->mVulkan.mVkQueueFamilyIndex;
+                    //    }
+                    //else if (pTrans->mRelease && pTrans->mCurrentState != RESOURCE_STATE_UNDEFINED)
+                    //    {
+                    //        pImageBarrier->srcQueueFamilyIndex = pCmd->pQueue->mVulkan.mVkQueueFamilyIndex;
+                    //        pImageBarrier->dstQueueFamilyIndex = pCmd->pRenderer->mVulkan.mQueueFamilyIndices[pTrans->mQueueType];
+                    //    }
+                    //else
+                        {
+                            pImageBarrier->srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                            pImageBarrier->dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                        }
+
+                    srcAccessFlags |= pImageBarrier->srcAccessMask;
+                    dstAccessFlags |= pImageBarrier->dstAccessMask;
+                }
+        }
 
     for (uint32_t i = 0; i < rt_barrier_count; ++i)
         {
@@ -1687,7 +1800,7 @@ RenderTargetBarrier*                    p_rt_barriers)
 
             auto& renderTargetRef = GetResource<DRenderTargetVulkan, EResourceType::RENDER_TARGET, MAX_RESOURCES>(_renderTargets, pTrans->RenderTarget);
 
-            VkImageMemoryBarrier* pImageBarrier = &imageBarriers[i];
+            VkImageMemoryBarrier* pImageBarrier = &imageBarriers[imageBarrierCount++];
 
             if (EResourceState::UNORDERED_ACCESS == pTrans->mCurrentState && EResourceState::UNORDERED_ACCESS == pTrans->mNewState)
                 {

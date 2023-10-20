@@ -24,6 +24,7 @@ add_subdirectory("thirdparty/volk")
 add_subdirectory("thirdparty/VulkanMemoryAllocator")
 add_subdirectory("thirdparty/glfw")
 add_subdirectory("thirdparty/glm")
+add_subdirectory("thirdparty/gli")
 
 target_link_libraries(${PROJECT_NAME} PRIVATE volk VulkanMemoryAllocator)
 
