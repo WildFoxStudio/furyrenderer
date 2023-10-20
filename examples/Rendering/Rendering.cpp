@@ -101,8 +101,6 @@ class TriangleApp : public App
         shaderSource.SourceCode.PixelShader  = ReadBlobUnsafe("fragment.spv");
         shaderSource.ColorAttachments        = 1;
 
-        shaderSource.SetsLayout.SetsLayout[0].insert({ 0, Fox::ShaderDescriptorBindings{ "Camera", Fox::EBindingType::UNIFORM_BUFFER_OBJECT, sizeof(glm::mat4), 1, Fox::EShaderStage::VERTEX } });
-
         Fox::ShaderLayout shaderLayout;
         shaderLayout.SetsLayout[0].insert({ 0, Fox::ShaderDescriptorBindings{ "Camera", Fox::EBindingType::UNIFORM_BUFFER_OBJECT, sizeof(glm::mat4), 1, Fox::EShaderStage::VERTEX } });
 

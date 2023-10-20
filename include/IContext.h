@@ -484,7 +484,6 @@ struct ShaderByteCode
 struct ShaderSource
 {
     ShaderByteCode      SourceCode;
-    ShaderLayout        SetsLayout;
     VertexInputLayoutId VertexLayout{};
     uint32_t            VertexStride{};
     uint32_t            ColorAttachments{};

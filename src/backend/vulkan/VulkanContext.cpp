@@ -822,36 +822,25 @@ VulkanContext::_createShader(const ShaderSource& source, DShaderVulkan& shader)
     // Create the shaders
     {
 
-        { const VkResult result = VkUtils::createShaderModule(Device.Device, source.SourceCode.VertexShader, &shader.VertexShaderModule);
-    if (VKFAILED(result))
         {
-            throw std::runtime_error(VkUtils::VkErrorString(result));
+            const VkResult result = VkUtils::createShaderModule(Device.Device, source.SourceCode.VertexShader, &shader.VertexShaderModule);
+            if (VKFAILED(result))
+                {
+                    throw std::runtime_error(VkUtils::VkErrorString(result));
+                }
+            shader.ShaderStageCreateInfo.push_back(VkUtils::createShaderStageInfo(VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, shader.VertexShaderModule));
         }
-    shader.ShaderStageCreateInfo.push_back(VkUtils::createShaderStageInfo(VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT, shader.VertexShaderModule));
-}
 
-{
-
-    const VkResult result = VkUtils::createShaderModule(Device.Device, source.SourceCode.PixelShader, &shader.PixelShaderModule);
-    if (VKFAILED(result))
         {
-            throw std::runtime_error(VkUtils::VkErrorString(result));
-        }
-    shader.ShaderStageCreateInfo.push_back(VkUtils::createShaderStageInfo(VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, shader.PixelShaderModule));
-}
-}
 
-// Create a descriptor set layouts
-{
-    std::vector<VkDescriptorSetLayout>        descriptorSetLayout;
-    std::map<uint32_t, VkDescriptorSetLayout> setIndexToSetLayout;
-    for (const auto& setPair : source.SetsLayout.SetsLayout)
-        {
-            const auto descriptorSetBindings = VkUtils::convertDescriptorBindings(setPair.second);
-            descriptorSetLayout.push_back(Device.CreateDescriptorSetLayout(descriptorSetBindings));
-            setIndexToSetLayout[setPair.first] = descriptorSetLayout.back();
+            const VkResult result = VkUtils::createShaderModule(Device.Device, source.SourceCode.PixelShader, &shader.PixelShaderModule);
+            if (VKFAILED(result))
+                {
+                    throw std::runtime_error(VkUtils::VkErrorString(result));
+                }
+            shader.ShaderStageCreateInfo.push_back(VkUtils::createShaderStageInfo(VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT, shader.PixelShaderModule));
         }
-}
+    }
 }
 
 void
