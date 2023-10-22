@@ -180,6 +180,13 @@ class TriangleApp : public App
                     offset += mip.Pixels.size();
                 }
 
+            Fox::TextureBarrier readBarrier;
+            readBarrier.ImageId      = _texture;
+            readBarrier.CurrentState = Fox::EResourceState::COPY_DEST;
+            readBarrier.NewState     = Fox::EResourceState::SHADER_RESOURCE;
+
+            _ctx->ResourceBarrier(cmd, 0, nullptr, 1, &readBarrier, 0, nullptr);
+
             _ctx->EndCommandBuffer(cmd);
 
             _ctx->QueueSubmit({}, {}, { cmd }, NULL);
