@@ -96,12 +96,12 @@ App::Run()
             // Wait for fence
             if (!_ctx->IsFenceSignaled(data.Fence))
                 {
-                    _ctx->WaitForFence(data.Fence, 0xffffff);
+                    _ctx->WaitForFence(data.Fence, 0xFFFFFFFFFFFFF);
                 }
 
             _ctx->ResetCommandPool(data.CmdPool);
 
-            const bool success = _ctx->SwapchainAcquireNextImageIndex(_swapchain, 0xFFFFFFF, data.ImageAvailableSemaphore, &_swapchainImageIndex);
+            const bool success = _ctx->SwapchainAcquireNextImageIndex(_swapchain, 0xFFFFFFFFFFFFF, data.ImageAvailableSemaphore, &_swapchainImageIndex);
             if (!success)
                 {
                     _ctx->WaitDeviceIdle();

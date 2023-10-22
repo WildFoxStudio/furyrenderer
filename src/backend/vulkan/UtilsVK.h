@@ -509,8 +509,11 @@ convertDescriptorBindings(const std::map<uint32_t /*binding*/, ::Fox::ShaderDesc
                     case ::Fox::EBindingType::STORAGE_BUFFER_OBJECT:
                         b.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
                         break;
+                    case ::Fox::EBindingType::TEXTURE:
+                        b.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+                        break;
                     case ::Fox::EBindingType::SAMPLER:
-                        b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                        b.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
                         break;
                 }
 

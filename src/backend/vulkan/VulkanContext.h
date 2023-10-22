@@ -136,6 +136,11 @@ struct DDescriptorSet : public DResource
     const DRootSignature*                        RootSignature{};
 };
 
+struct DSamplerVulkan : public DResource
+{
+    VkSampler Sampler{};
+};
+
 class VulkanContext final : public IContext
 {
     inline static constexpr uint32_t NUM_OF_FRAMES_IN_FLIGHT{ 2 };
@@ -159,6 +164,7 @@ class VulkanContext final : public IContext
     VertexInputLayoutId CreateVertexLayout(const std::vector<VertexLayoutInfo>& info) override;
     ShaderId            CreateShader(const ShaderSource& source) override;
     void                DestroyShader(const ShaderId shader) override;
+    uint32_t            CreateSampler(uint32_t minLod, uint32_t maxLod) override;
 
     uint32_t CreatePipeline(const ShaderId shader, uint32_t rootSignatureId, const DFramebufferAttachments& attachments, const PipelineFormat& format) override;
     void     DestroyPipeline(uint32_t pipelineId) override;
@@ -238,6 +244,7 @@ class VulkanContext final : public IContext
     std::array<DPipelineVulkan, MAX_RESOURCES>          _pipelines;
     std::array<DCommandPoolVulkan, MAX_RESOURCES>       _commandPools_DEPRECATED;
     std::array<DFenceVulkan, MAX_RESOURCES>             _fences;
+    std::array<DSamplerVulkan, MAX_RESOURCES>           _samplers;
     std::array<DSemaphoreVulkan, MAX_RESOURCES>         _semaphores;
     std::array<DCommandPoolVulkan, MAX_RESOURCES>       _commandPools;
     std::array<DCommandBufferVulkan, MAX_RESOURCES>     _commandBuffers;

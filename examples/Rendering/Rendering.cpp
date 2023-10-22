@@ -103,9 +103,12 @@ class TriangleApp : public App
 
         Fox::ShaderLayout shaderLayout;
         shaderLayout.SetsLayout[0].insert({ 0, Fox::ShaderDescriptorBindings{ "Camera", Fox::EBindingType::UNIFORM_BUFFER_OBJECT, sizeof(glm::mat4), 1, Fox::EShaderStage::VERTEX } });
+        shaderLayout.SetsLayout[1].insert({ 0, Fox::ShaderDescriptorBindings{ "Texture", Fox::EBindingType::TEXTURE, NULL, 1, Fox::EShaderStage::FRAGMENT } });
+        shaderLayout.SetsLayout[1].insert({ 1, Fox::ShaderDescriptorBindings{ "Sampler", Fox::EBindingType::SAMPLER, NULL, 1, Fox::EShaderStage::FRAGMENT } });
 
         _rootSignature = _ctx->CreateRootSignature(shaderLayout);
         _descriptorSet = _ctx->CreateDescriptorSets(_rootSignature, Fox::EDescriptorFrequency::NEVER, 1);
+        _textureSet    = _ctx->CreateDescriptorSets(_rootSignature, Fox::EDescriptorFrequency::PER_FRAME, 1);
 
         _shader = _ctx->CreateShader(shaderSource);
         // Create pipeline
@@ -142,14 +145,11 @@ class TriangleApp : public App
             _ctx->EndMapBuffer(_cameraUbo);
         }
 
-        Fox::DescriptorData param[2] = {};
-        param[0].pName               = "cameraUbo";
-        param[0].Buffers             = &_cameraUbo;
-        _ctx->UpdateDescriptorSet(_descriptorSet, 0, 1, param);
-
         {
             uint32_t               w, h, m, s;
             std::vector<ImageData> mips = loadImage("texture.dds", &w, &h, &m, &s);
+
+            _sampler = _ctx->CreateSampler(0, mips.size());
 
             _texture        = _ctx->CreateImage(Fox::EFormat::RGBA_DXT1, w, h, m);
             uint32_t tmpBuf = _ctx->CreateBuffer(s, Fox::EResourceType::TRANSFER, Fox::EMemoryUsage::RESOURCE_MEMORY_USAGE_CPU_ONLY);
@@ -187,6 +187,18 @@ class TriangleApp : public App
             _ctx->DestroyBuffer(tmpBuf);
 
             _ctx->ResetCommandPool(_frameData[0].CmdPool);
+
+            Fox::DescriptorData param[2] = {};
+            param[0].pName               = "cameraUbo";
+            param[0].Buffers             = &_cameraUbo;
+            _ctx->UpdateDescriptorSet(_descriptorSet, 0, 1, param);
+
+            param[0].pName    = "texture";
+            param[0].Textures = &_texture;
+            param[1].pName    = "sampler";
+            param[1].Samplers = &_sampler;
+            param[1].Index    = 1;
+            _ctx->UpdateDescriptorSet(_textureSet, 0, 2, param);
         }
     };
     ~TriangleApp()
@@ -197,6 +209,7 @@ class TriangleApp : public App
         _ctx->DestroyBuffer(_triangle);
         _ctx->DestroyRootSignature(_rootSignature);
         _ctx->DestroyDescriptorSet(_descriptorSet);
+        _ctx->DestroyDescriptorSet(_textureSet);
         _ctx->DestroyBuffer(_cameraUbo);
     };
 
@@ -219,6 +232,7 @@ class TriangleApp : public App
         _ctx->BindVertexBuffer(cmd, _triangle);
 
         _ctx->BindDescriptorSet(cmd, 0, _descriptorSet);
+        _ctx->BindDescriptorSet(cmd, 0, _textureSet);
         _ctx->Draw(cmd, 0, 3);
 
         Fox::RenderTargetBarrier presentBarrier;
@@ -239,7 +253,9 @@ class TriangleApp : public App
     uint32_t _rootSignature{};
     uint32_t _descriptorSet{};
     uint32_t _cameraUbo{};
+    uint32_t _textureSet{};
     uint32_t _texture{};
+    uint32_t _sampler{};
 };
 
 int

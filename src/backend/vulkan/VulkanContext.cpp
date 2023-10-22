@@ -861,6 +861,17 @@ VulkanContext::DestroyShader(const ShaderId shader)
 }
 
 uint32_t
+VulkanContext::CreateSampler(uint32_t minLod, uint32_t maxLod)
+{
+    const auto      index      = AllocResource<DSamplerVulkan, MAX_RESOURCES>(_samplers);
+    DSamplerVulkan& samplerRef = _samplers.at(index);
+
+    samplerRef.Sampler = Device.CreateSampler(VkFilter::VK_FILTER_NEAREST, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT, minLod, maxLod, VK_SAMPLER_MIPMAP_MODE_LINEAR, true, 16);
+
+    return *ResourceId(EResourceType::SAMPLER, samplerRef.Id, index);
+}
+
+uint32_t
 VulkanContext::CreatePipeline(const ShaderId shader, uint32_t rootSignatureId, const DFramebufferAttachments& attachments, const PipelineFormat& format)
 {
     const auto       index = AllocResource<DPipelineVulkan, MAX_RESOURCES>(_pipelines);
@@ -1003,7 +1014,7 @@ VulkanContext::UpdateDescriptorSet(uint32_t descriptorSetId, uint32_t setIndex, 
     uint32_t                                 bufferInfoCount{};
     for (uint32_t i = 0; i < paramCount; i++)
         {
-            DescriptorData* param           = params + i;
+            DescriptorData* param           = &params[i];
             const uint32_t  descriptorCount = std::max(1u, param->Count);
 
             VkWriteDescriptorSet* writeSet = &write[writeSetCount++];
@@ -1015,31 +1026,53 @@ VulkanContext::UpdateDescriptorSet(uint32_t descriptorSetId, uint32_t setIndex, 
             switch (bindingDesc.StorageType)
                 {
                     case EBindingType::STORAGE_BUFFER_OBJECT:
-                        writeSet->descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-                        check(0); // UNSUPPORTED YET
+                        {
+                            writeSet->descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                            check(0); // UNSUPPORTED YET
+                        }
                         break;
                     case EBindingType::UNIFORM_BUFFER_OBJECT:
-                        writeSet->descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                        {
+                            writeSet->descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 
-                        writeSet->pBufferInfo = &bufferInfo[bufferInfoCount];
+                            writeSet->pBufferInfo = &bufferInfo[bufferInfoCount];
 
-                        for (uint32_t i = 0; i < descriptorCount; i++)
-                            {
-                                VkDescriptorBufferInfo& buf    = bufferInfo[bufferInfoCount++];
-                                const DBufferVulkan&    bufRef = GetResource<DBufferVulkan, EResourceType::UNIFORM_BUFFER, MAX_RESOURCES>(_uniformBuffers, param->Buffers[i]);
-                                buf.buffer                     = bufRef.Buffer.Buffer;
-                                buf.offset                     = 0;
-                                buf.range                      = VK_WHOLE_SIZE;
-                            }
+                            for (uint32_t j = 0; j < descriptorCount; j++)
+                                {
+                                    VkDescriptorBufferInfo& buf    = bufferInfo[bufferInfoCount++];
+                                    const DBufferVulkan&    bufRef = GetResource<DBufferVulkan, EResourceType::UNIFORM_BUFFER, MAX_RESOURCES>(_uniformBuffers, param->Buffers[j]);
+                                    buf.buffer                     = bufRef.Buffer.Buffer;
+                                    buf.offset                     = 0;
+                                    buf.range                      = VK_WHOLE_SIZE;
+                                }
+                        }
                         break;
                     case EBindingType::TEXTURE:
-                        writeSet->descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-                        check(0); // UNSUPPORTED YET
-                        // writeSet->pImageInfo = &imageInfo[imageInfoCount];
+                        {
+                            writeSet->descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+                            writeSet->pImageInfo     = &imageInfo[imageInfoCount];
+
+                            check(descriptorCount == 1);
+
+                            VkDescriptorImageInfo& img      = imageInfo[imageInfoCount++];
+                            const DImageVulkan&    imageRef = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, param->Textures[0]);
+                            img.imageView                   = imageRef.View;
+                            img.imageLayout                 = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                            img.sampler                     = NULL;
+                        }
                         break;
                     case EBindingType::SAMPLER:
-                        check(0); // UNSUPPORTED YET
-                        writeSet->descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+                        {
+                            writeSet->descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+                            writeSet->pImageInfo     = &imageInfo[imageInfoCount];
+                            check(descriptorCount == 1);
+
+                            VkDescriptorImageInfo& img       = imageInfo[imageInfoCount++];
+                            const DSamplerVulkan&  samplerRef = GetResource<DSamplerVulkan, EResourceType::SAMPLER, MAX_RESOURCES>(_samplers, param->Samplers[0]);
+                            img.imageView                    = 0;
+                            img.imageLayout                  = VK_IMAGE_LAYOUT_UNDEFINED;
+                            img.sampler                      = samplerRef.Sampler;
+                        }
                         break;
                 }
 
