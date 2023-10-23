@@ -165,11 +165,10 @@ class TriangleApp : public App
             auto& cmd = _frameData[0].Cmd;
 
             _ctx->BeginCommandBuffer(cmd);
-            Fox::TextureBarrier transferBarrier;
+            Fox::TextureBarrier transferBarrier{};
             transferBarrier.ImageId      = _texture;
             transferBarrier.CurrentState = Fox::EResourceState::UNDEFINED;
             transferBarrier.NewState     = Fox::EResourceState::COPY_DEST;
-
             _ctx->ResourceBarrier(cmd, 0, nullptr, 1, &transferBarrier, 0, nullptr);
 
             uint32_t offset{};
@@ -180,11 +179,10 @@ class TriangleApp : public App
                     offset += mip.Pixels.size();
                 }
 
-            Fox::TextureBarrier readBarrier;
+            Fox::TextureBarrier readBarrier{};
             readBarrier.ImageId      = _texture;
             readBarrier.CurrentState = Fox::EResourceState::COPY_DEST;
             readBarrier.NewState     = Fox::EResourceState::SHADER_RESOURCE;
-
             _ctx->ResourceBarrier(cmd, 0, nullptr, 1, &readBarrier, 0, nullptr);
 
             _ctx->EndCommandBuffer(cmd);
