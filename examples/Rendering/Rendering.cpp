@@ -2,7 +2,10 @@
 
 #include "../App.h"
 
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
 #include <gli/gli.hpp>
@@ -82,6 +85,34 @@ loadImage(const char* path, uint32_t* width, uint32_t* height, uint32_t* mipMaps
     return mips;
 }
 
+glm::mat4
+computeViewMatrix(glm::vec3 rotation, glm::vec3 translation, glm::vec3& frontVector, glm::vec3& upVector)
+{
+    glm::quat qPitch = glm::angleAxis(glm::radians(rotation.x), glm::vec3(1, 0, 0));
+    glm::quat qYaw   = glm::angleAxis(glm::radians(rotation.y), glm::vec3(0, 1, 0));
+    glm::quat qRoll  = glm::angleAxis(glm::radians(rotation.z), glm::vec3(0, 0, 1));
+
+    const glm::quat orientation    = glm::normalize(qPitch * qRoll * qYaw);
+    const glm::mat4 rotationMatrix = glm::mat4_cast(orientation);
+
+    // Update front and up vector
+    frontVector = glm::normalize(glm::vec3(rotationMatrix[0][2], rotationMatrix[1][2], rotationMatrix[2][2]));
+    upVector    = glm::normalize(glm::vec3(rotationMatrix[0][1], rotationMatrix[1][1], rotationMatrix[2][1]));
+
+    const glm::mat4 viewMatrix = glm::translate(rotationMatrix, translation);
+
+    return viewMatrix;
+}
+
+glm::mat4
+computeProjectionMatrix(float width, float height, float fovRadians, float znear, float zfar)
+{
+    const float ratio = width / height;
+    auto        mat   = glm::perspective(fovRadians, ratio, znear, zfar);
+    //mat[1][1] *= -1; // y-coordinate is flipped for Vulkan
+    return mat;
+}
+
 class TriangleApp : public App
 {
   public:
@@ -107,32 +138,33 @@ class TriangleApp : public App
         shaderLayout.SetsLayout[1].insert({ 1, Fox::ShaderDescriptorBindings{ "Sampler", Fox::EBindingType::SAMPLER, NULL, 1, Fox::EShaderStage::FRAGMENT } });
 
         _rootSignature = _ctx->CreateRootSignature(shaderLayout);
-        _descriptorSet = _ctx->CreateDescriptorSets(_rootSignature, Fox::EDescriptorFrequency::NEVER, 1);
+        _descriptorSet = _ctx->CreateDescriptorSets(_rootSignature, Fox::EDescriptorFrequency::NEVER, 2);
         _textureSet    = _ctx->CreateDescriptorSets(_rootSignature, Fox::EDescriptorFrequency::PER_FRAME, 1);
 
         _shader = _ctx->CreateShader(shaderSource);
 
-        //Create depth render target
+        // Create depth render target
         _depthRt = _ctx->CreateRenderTarget(Fox::EFormat::DEPTH16_UNORM, Fox::ESampleBit::COUNT_1_BIT, true, WIDTH, HEIGHT, 1, 1, Fox::EResourceState::UNDEFINED);
 
         // Create pipeline
-        Fox::PipelineFormat          pipelineFormat;
-        pipelineFormat.DepthTest = true;
+        Fox::PipelineFormat pipelineFormat;
+        pipelineFormat.DepthTest  = true;
         pipelineFormat.DepthWrite = true;
 
         Fox::DFramebufferAttachments attachments;
         attachments.RenderTargets[0] = _swapchainRenderTargets[_swapchainImageIndex];
-        attachments.DepthStencil = _depthRt;
+        attachments.DepthStencil     = _depthRt;
 
         _pipeline = _ctx->CreatePipeline(_shader, _rootSignature, attachments, pipelineFormat);
 
         // clang-format off
+        constexpr float s = 100.f;
         constexpr std::array<float, 21> ndcTriangle{            
-            -1, -1, 0.5,//pos
+            -1*s, -1*s, 0.5*s,//pos
             0, 1, 0, 1,// color
-            1, -1, 0.5,//pos
+            1*s, -1*s, 0.5*s,//pos
             0, 0, 1, 1,// color
-            0, 1, 0.5,//pos
+            0, 1*s, 0.5*s,//pos
             0, 1, 1, 1// color
         };
         // clang-format on
@@ -145,13 +177,13 @@ class TriangleApp : public App
             _ctx->EndMapBuffer(_triangle);
         }
 
-        _cameraUbo = _ctx->CreateBuffer(sizeof(glm::mat4), Fox::EResourceType::UNIFORM_BUFFER, Fox::EMemoryUsage::RESOURCE_MEMORY_USAGE_CPU_ONLY);
-        {
-            void*     data = _ctx->BeginMapBuffer(_cameraUbo);
-            glm::mat4 matrix(1.0f);
-            memcpy(data, glm::value_ptr(matrix), sizeof(glm::mat4));
-            _ctx->EndMapBuffer(_cameraUbo);
-        }
+        _cameraLocation = glm::vec3(0.f);
+        glm::vec3 up;
+        _viewMatrix       = computeViewMatrix(_cameraRotation, _cameraLocation, _frontVector, up);
+        _projectionMatrix = computeProjectionMatrix(WIDTH, HEIGHT, 70.f, 0.f, 1.f);
+
+        _cameraUbo[0] = _ctx->CreateBuffer(sizeof(glm::mat4), Fox::EResourceType::UNIFORM_BUFFER, Fox::EMemoryUsage::RESOURCE_MEMORY_USAGE_CPU_ONLY);
+        _cameraUbo[1] = _ctx->CreateBuffer(sizeof(glm::mat4), Fox::EResourceType::UNIFORM_BUFFER, Fox::EMemoryUsage::RESOURCE_MEMORY_USAGE_CPU_ONLY);
 
         {
             uint32_t               w, h, m, s;
@@ -203,8 +235,10 @@ class TriangleApp : public App
 
             Fox::DescriptorData param[2] = {};
             param[0].pName               = "cameraUbo";
-            param[0].Buffers             = &_cameraUbo;
+            param[0].Buffers             = &_cameraUbo[0];
             _ctx->UpdateDescriptorSet(_descriptorSet, 0, 1, param);
+            param[0].Buffers = &_cameraUbo[1];
+            _ctx->UpdateDescriptorSet(_descriptorSet, 1, 1, param);
 
             param[0].pName    = "texture";
             param[0].Textures = &_texture;
@@ -224,11 +258,62 @@ class TriangleApp : public App
         _ctx->DestroyRootSignature(_rootSignature);
         _ctx->DestroyDescriptorSet(_descriptorSet);
         _ctx->DestroyDescriptorSet(_textureSet);
-        _ctx->DestroyBuffer(_cameraUbo);
+        _ctx->DestroyBuffer(_cameraUbo[0]);
+        _ctx->DestroyBuffer(_cameraUbo[1]);
     };
 
     void Draw(uint32_t cmd, uint32_t w, uint32_t h)
     {
+        // Camera handling
+        {
+            float camSpeed = 0.1f;
+            if (glfwGetKey(_window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+                {
+                    glfwSetWindowShouldClose(_window, 1);
+                }
+
+            if (glfwGetKey(_window, GLFW_KEY_W) == GLFW_PRESS)
+                {
+                    _cameraLocation += _frontVector * camSpeed;
+                }
+            if (glfwGetKey(_window, GLFW_KEY_S) == GLFW_PRESS)
+                {
+                    _cameraLocation -= _frontVector * camSpeed;
+                }
+            if (glfwGetKey(_window, GLFW_KEY_D) == GLFW_PRESS)
+                {
+                    _cameraLocation += glm::cross(_frontVector, glm::vec3(0, 1, 0)) * camSpeed;
+                }
+            if (glfwGetKey(_window, GLFW_KEY_A) == GLFW_PRESS)
+                {
+                    _cameraLocation -= glm::cross(_frontVector, glm::vec3(0, 1, 0)) * camSpeed;
+                }
+
+            double mx, my;
+            glfwGetCursorPos(_window, &mx, &my);
+            glm::ivec2 centerViewport(w / 2, h / 2);
+            glm::vec2  delta(centerViewport.x - mx, centerViewport.y - my);
+
+            if (glm::abs(delta.x) > 0.f || glm::abs(delta.y) > 0.f)
+                {
+                    constexpr float cameraSensibility = 26.f;
+                    _cameraRotation.x = glm::mod(_cameraRotation.x - delta.y / cameraSensibility, 360.0f);
+                    _cameraRotation.y = glm::mod(_cameraRotation.y - delta.x / cameraSensibility, 360.0f);
+                    glfwSetCursorPos(_window, w / 2, h / 2);
+                }
+
+            glm::vec3 up;
+            _viewMatrix       = computeViewMatrix(_cameraRotation, _cameraLocation, _frontVector, up);
+            _projectionMatrix = computeProjectionMatrix(w, h, 70.f, 0.f, 1.f);
+
+            {
+                void*     data   = _ctx->BeginMapBuffer(_cameraUbo[_frameIndex]);
+                glm::mat4 matrix = _projectionMatrix * _viewMatrix;
+                memcpy(data, glm::value_ptr(matrix), sizeof(glm::mat4));
+                _ctx->EndMapBuffer(_cameraUbo[_frameIndex]);
+            }
+        }
+
         _ctx->BeginCommandBuffer(cmd);
 
         Fox::DFramebufferAttachments attachments;
@@ -249,7 +334,7 @@ class TriangleApp : public App
         _ctx->SetScissor(cmd, 0, 0, w, h);
         _ctx->BindVertexBuffer(cmd, _triangle);
 
-        _ctx->BindDescriptorSet(cmd, 0, _descriptorSet);
+        _ctx->BindDescriptorSet(cmd, _frameIndex, _descriptorSet);
         _ctx->BindDescriptorSet(cmd, 0, _textureSet);
         _ctx->Draw(cmd, 0, 3);
 
@@ -264,17 +349,22 @@ class TriangleApp : public App
     };
 
   protected:
-    uint32_t _depthRt{};
-    uint32_t _shader{};
-    uint32_t _pipeline{};
-    uint32_t _triangle{};
-    uint32_t _vertexLayout{};
-    uint32_t _rootSignature{};
-    uint32_t _descriptorSet{};
-    uint32_t _cameraUbo{};
-    uint32_t _textureSet{};
-    uint32_t _texture{};
-    uint32_t _sampler{};
+    uint32_t  _depthRt{};
+    uint32_t  _shader{};
+    uint32_t  _pipeline{};
+    uint32_t  _triangle{};
+    uint32_t  _vertexLayout{};
+    uint32_t  _rootSignature{};
+    uint32_t  _descriptorSet{};
+    glm::vec3 _cameraLocation{};
+    glm::vec3 _frontVector{};
+    glm::vec3 _cameraRotation{};
+    glm::mat4 _viewMatrix;
+    glm::mat4 _projectionMatrix;
+    uint32_t  _cameraUbo[MAX_FRAMES]{};
+    uint32_t  _textureSet{};
+    uint32_t  _texture{};
+    uint32_t  _sampler{};
 };
 
 int

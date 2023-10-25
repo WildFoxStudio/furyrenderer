@@ -12,7 +12,7 @@ layout(set = 0, binding = 0) uniform Camera
 }Cam;
 
 void main() {
-    gl_Position = vec4(position.xyz, 1.0);
+    gl_Position = Cam.ProjectionView * vec4(position.xyz, 1.0);
     fragColor = color;
 
     texCoord = position.xy;

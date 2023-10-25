@@ -14,9 +14,8 @@
 
 class App
 {
-    static constexpr uint32_t MAX_FRAMES{ 2 };
-
   public:
+    static constexpr uint32_t MAX_FRAMES{ 2 };
     App();
     virtual ~App();
 
@@ -26,7 +25,7 @@ class App
 
   protected:
     static constexpr uint32_t WIDTH = 640, HEIGHT = 480;
-    GLFWwindow* _window{};
+    GLFWwindow*               _window{};
     /*The rendering context*/
     Fox::IContext*    _ctx{};
     Fox::WindowData   _windowData;
