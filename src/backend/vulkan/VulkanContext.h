@@ -203,6 +203,8 @@ class VulkanContext final : public IContext
     void     DestroyGpuSemaphore(uint32_t semaphoreId) override;
 
     uint32_t CreateRenderTarget(EFormat format, ESampleBit samples, bool isDepth, uint32_t width, uint32_t height, uint32_t arrayLength, uint32_t mipMapCount, EResourceState initialState) override;
+    void     DestroyRenderTarget(uint32_t renderTargetId) override;
+
     void     ResourceBarrier(uint32_t commandBufferId,
         uint32_t                      buffer_barrier_count,
         BufferBarrier*                p_buffer_barriers,

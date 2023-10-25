@@ -1733,6 +1733,18 @@ VulkanContext::CreateRenderTarget(EFormat format, ESampleBit samples, bool isDep
 }
 
 void
+VulkanContext::DestroyRenderTarget(uint32_t renderTargetId)
+{
+    auto& renderTargetRef = GetResource<DRenderTargetVulkan, EResourceType::RENDER_TARGET, MAX_RESOURCES>(_renderTargets, renderTargetId);
+
+    Device.DestroyImageView(renderTargetRef.View);
+    Device.DestroyImage(renderTargetRef.Image);
+    
+    renderTargetRef.Id = FREE;
+    renderTargetRef.View = nullptr;
+}
+
+void
 VulkanContext::ResourceBarrier(uint32_t commandBufferId,
 uint32_t                                buffer_barrier_count,
 BufferBarrier*                          p_buffer_barriers,

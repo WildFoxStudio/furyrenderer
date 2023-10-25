@@ -115,6 +115,8 @@ App::Run()
                         {
                             _swapchainRenderTargets[i] = _ctx->GetSwapchainRenderTargets(_swapchain)[i];
                         }
+                    RecreateSwapchain(w, h);
+
                     _ctx->SwapchainAcquireNextImageIndex(_swapchain, 0xFFFFFFF, data.ImageAvailableSemaphore, &_swapchainImageIndex);
                 }
 

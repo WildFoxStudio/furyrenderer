@@ -109,7 +109,7 @@ computeProjectionMatrix(float width, float height, float fovRadians, float znear
 {
     const float ratio = width / height;
     auto        mat   = glm::perspective(fovRadians, ratio, znear, zfar);
-    //mat[1][1] *= -1; // y-coordinate is flipped for Vulkan
+    // mat[1][1] *= -1; // y-coordinate is flipped for Vulkan
     return mat;
 }
 
@@ -252,7 +252,7 @@ class TriangleApp : public App
     {
         _ctx->WaitDeviceIdle();
         _ctx->DestroyShader(_shader);
-        //_ctx->DestroyRenderTarget(_depthRt);
+        _ctx->DestroyRenderTarget(_depthRt);
         _ctx->DestroyPipeline(_pipeline);
         _ctx->DestroyBuffer(_triangle);
         _ctx->DestroyRootSignature(_rootSignature);
@@ -260,6 +260,12 @@ class TriangleApp : public App
         _ctx->DestroyDescriptorSet(_textureSet);
         _ctx->DestroyBuffer(_cameraUbo[0]);
         _ctx->DestroyBuffer(_cameraUbo[1]);
+    };
+
+    void RecreateSwapchain(uint32_t w, uint32_t h) override
+    {
+        _ctx->DestroyRenderTarget(_depthRt);
+        _depthRt = _ctx->CreateRenderTarget(Fox::EFormat::DEPTH16_UNORM, Fox::ESampleBit::COUNT_1_BIT, true, w, h, 1, 1, Fox::EResourceState::UNDEFINED);
     };
 
     void Draw(uint32_t cmd, uint32_t w, uint32_t h)
@@ -288,20 +294,32 @@ class TriangleApp : public App
                 {
                     _cameraLocation -= glm::cross(_frontVector, glm::vec3(0, 1, 0)) * camSpeed;
                 }
-
-            double mx, my;
-            glfwGetCursorPos(_window, &mx, &my);
-            glm::ivec2 centerViewport(w / 2, h / 2);
-            glm::vec2  delta(centerViewport.x - mx, centerViewport.y - my);
-
-            if (glm::abs(delta.x) > 0.f || glm::abs(delta.y) > 0.f)
+            if (glfwGetMouseButton(_window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
                 {
-                    constexpr float cameraSensibility = 26.f;
-                    _cameraRotation.x = glm::mod(_cameraRotation.x - delta.y / cameraSensibility, 360.0f);
-                    _cameraRotation.y = glm::mod(_cameraRotation.y - delta.x / cameraSensibility, 360.0f);
-                    glfwSetCursorPos(_window, w / 2, h / 2);
+                    _mouseMove = true;
+                }
+            if (glfwGetMouseButton(_window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE)
+                {
+                    _mouseMove = false;
                 }
 
+
+
+            if (_mouseMove)
+                {
+                    double mx, my;
+                    glfwGetCursorPos(_window, &mx, &my);
+                    glm::ivec2 centerViewport(w / 2, h / 2);
+                    glm::vec2  delta(centerViewport.x - mx, centerViewport.y - my);
+
+                    if (glm::abs(delta.x) > 0.f || glm::abs(delta.y) > 0.f)
+                        {
+                            constexpr float cameraSensibility = 26.f;
+                            _cameraRotation.x                 = glm::mod(_cameraRotation.x - delta.y / cameraSensibility, 360.0f);
+                            _cameraRotation.y                 = glm::mod(_cameraRotation.y - delta.x / cameraSensibility, 360.0f);
+                            glfwSetCursorPos(_window, w / 2, h / 2);
+                        }
+                }
             glm::vec3 up;
             _viewMatrix       = computeViewMatrix(_cameraRotation, _cameraLocation, _frontVector, up);
             _projectionMatrix = computeProjectionMatrix(w, h, 70.f, 0.f, 1.f);
@@ -356,6 +374,7 @@ class TriangleApp : public App
     uint32_t  _vertexLayout{};
     uint32_t  _rootSignature{};
     uint32_t  _descriptorSet{};
+    bool      _mouseMove{};
     glm::vec3 _cameraLocation{};
     glm::vec3 _frontVector{};
     glm::vec3 _cameraRotation{};

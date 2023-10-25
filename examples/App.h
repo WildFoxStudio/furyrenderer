@@ -21,6 +21,7 @@ class App
 
     void Run();
 
+    virtual void RecreateSwapchain(uint32_t w, uint32_t h){};
     virtual void Draw(uint32_t cmd, uint32_t w, uint32_t h) = 0;
 
   protected:

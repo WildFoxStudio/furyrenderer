@@ -719,6 +719,7 @@ class IContext
     virtual void     CopyImage(uint32_t commandId, uint32_t imageId, uint32_t width, uint32_t height, uint32_t mipMapIndex, uint32_t stagingBufferId, uint32_t stagingBufferOffset) = 0;
 
     virtual uint32_t CreateRenderTarget(EFormat format, ESampleBit samples, bool isDepth, uint32_t width, uint32_t height, uint32_t arrayLength, uint32_t mipMapCount, EResourceState initialState) = 0;
+    virtual void     DestroyRenderTarget(uint32_t renderTargetId)                                                                                                                                   = 0;
     virtual void     ResourceBarrier(uint32_t commandBufferId,
         uint32_t                              buffer_barrier_count,
         BufferBarrier*                        p_buffer_barriers,
