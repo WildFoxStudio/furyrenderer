@@ -111,10 +111,18 @@ class TriangleApp : public App
         _textureSet    = _ctx->CreateDescriptorSets(_rootSignature, Fox::EDescriptorFrequency::PER_FRAME, 1);
 
         _shader = _ctx->CreateShader(shaderSource);
+
+        //Create depth render target
+        _depthRt = _ctx->CreateRenderTarget(Fox::EFormat::DEPTH16_UNORM, Fox::ESampleBit::COUNT_1_BIT, true, WIDTH, HEIGHT, 1, 1, Fox::EResourceState::UNDEFINED);
+
         // Create pipeline
         Fox::PipelineFormat          pipelineFormat;
+        pipelineFormat.DepthTest = true;
+        pipelineFormat.DepthWrite = true;
+
         Fox::DFramebufferAttachments attachments;
         attachments.RenderTargets[0] = _swapchainRenderTargets[_swapchainImageIndex];
+        attachments.DepthStencil = _depthRt;
 
         _pipeline = _ctx->CreatePipeline(_shader, _rootSignature, attachments, pipelineFormat);
 
@@ -210,6 +218,7 @@ class TriangleApp : public App
     {
         _ctx->WaitDeviceIdle();
         _ctx->DestroyShader(_shader);
+        //_ctx->DestroyRenderTarget(_depthRt);
         _ctx->DestroyPipeline(_pipeline);
         _ctx->DestroyBuffer(_triangle);
         _ctx->DestroyRootSignature(_rootSignature);
@@ -224,11 +233,15 @@ class TriangleApp : public App
 
         Fox::DFramebufferAttachments attachments;
         attachments.RenderTargets[0] = _swapchainRenderTargets[_swapchainImageIndex];
+        attachments.DepthStencil     = _depthRt;
 
         Fox::DLoadOpPass loadOp;
         loadOp.LoadColor[0]         = Fox::ERenderPassLoad::Clear;
         loadOp.ClearColor->color    = { 1, 1, 1, 1 };
         loadOp.StoreActionsColor[0] = Fox::ERenderPassStore::Store;
+        loadOp.ClearDepthStencil    = { 0, 255 };
+        loadOp.LoadDepth            = Fox::ERenderPassLoad::Clear;
+        loadOp.StoreDepth           = Fox::ERenderPassStore::Store;
         _ctx->BindRenderTargets(cmd, attachments, loadOp);
 
         _ctx->BindPipeline(cmd, _pipeline);
@@ -251,6 +264,7 @@ class TriangleApp : public App
     };
 
   protected:
+    uint32_t _depthRt{};
     uint32_t _shader{};
     uint32_t _pipeline{};
     uint32_t _triangle{};

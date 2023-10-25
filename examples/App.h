@@ -25,6 +25,7 @@ class App
     virtual void Draw(uint32_t cmd, uint32_t w, uint32_t h) = 0;
 
   protected:
+    static constexpr uint32_t WIDTH = 640, HEIGHT = 480;
     GLFWwindow* _window{};
     /*The rendering context*/
     Fox::IContext*    _ctx{};

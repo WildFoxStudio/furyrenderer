@@ -22,7 +22,7 @@ App::App()
                 throw std::runtime_error("Failed to glfwInit");
             }
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // as Vulkan, there is no need to create a context
-        _window = glfwCreateWindow(640, 480, "App", NULL, NULL);
+        _window = glfwCreateWindow(WIDTH, HEIGHT, "App", NULL, NULL);
         if (!_window)
             {
                 throw std::runtime_error("Failed to glfwCreateWindow");

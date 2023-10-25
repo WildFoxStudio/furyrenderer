@@ -131,6 +131,20 @@ VulkanContext::_createGenericRenderPassAttachments(const DFramebufferAttachments
 
             rp.Attachments.emplace_back(std::move(o));
         }
+
+    if (att.DepthStencil != 0)
+        {
+            const auto& depthStencilRef = GetResource<DRenderTargetVulkan, EResourceType::RENDER_TARGET, MAX_RESOURCES>(_renderTargets, att.DepthStencil);
+
+            DRenderPassAttachment depthStencilAttachment(VkUtils::convertVkFormat(depthStencilRef.Image.Format),
+            ESampleBit::COUNT_1_BIT,
+            ERenderPassLoad::Clear,
+            ERenderPassStore::Store,
+            ERenderPassLayout::AsAttachment,
+            ERenderPassLayout::AsAttachment,
+            EAttachmentReference::DEPTH_STENCIL_ATTACHMENT);
+            rp.Attachments.emplace_back(std::move(depthStencilAttachment));
+        }
     return rp;
 }
 
@@ -1067,11 +1081,11 @@ VulkanContext::UpdateDescriptorSet(uint32_t descriptorSetId, uint32_t setIndex, 
                             writeSet->pImageInfo     = &imageInfo[imageInfoCount];
                             check(descriptorCount == 1);
 
-                            VkDescriptorImageInfo& img       = imageInfo[imageInfoCount++];
+                            VkDescriptorImageInfo& img        = imageInfo[imageInfoCount++];
                             const DSamplerVulkan&  samplerRef = GetResource<DSamplerVulkan, EResourceType::SAMPLER, MAX_RESOURCES>(_samplers, param->Samplers[0]);
-                            img.imageView                    = 0;
-                            img.imageLayout                  = VK_IMAGE_LAYOUT_UNDEFINED;
-                            img.sampler                      = samplerRef.Sampler;
+                            img.imageView                     = 0;
+                            img.imageLayout                   = VK_IMAGE_LAYOUT_UNDEFINED;
+                            img.sampler                       = samplerRef.Sampler;
                         }
                         break;
                 }
@@ -1094,7 +1108,8 @@ VulkanContext::_createFramebuffer(const DFramebufferAttachments& attachments)
     const auto vkRenderPass  = _createRenderPass(rpAttachments);
 
     // Extrapolate all the renderTargetRef views
-    const auto attachmentCount = DFramebufferAttachments::MAX_ATTACHMENTS - std::count(attachments.RenderTargets.begin(), attachments.RenderTargets.end(), NULL);
+    const auto depthAttachmentCount = (uint32_t)(attachments.DepthStencil != 0);
+    const auto attachmentCount      = DFramebufferAttachments::MAX_ATTACHMENTS - std::count(attachments.RenderTargets.begin(), attachments.RenderTargets.end(), NULL) + depthAttachmentCount;
     check(attachmentCount > 0); // Must have at least one attachment
 
     std::vector<VkImageView> imageViewsAttachments;
@@ -1107,11 +1122,21 @@ VulkanContext::_createFramebuffer(const DFramebufferAttachments& attachments)
         framebufferRef.Height       = renderTargetRef.Image.Height;
     }
 
-    for (size_t i = 0; i < attachmentCount; i++)
+    for (size_t i = 0; i < attachmentCount - depthAttachmentCount; i++)
         {
             check(attachments.RenderTargets[i] != NULL);
             const auto& renderTargetRef = GetResource<DRenderTargetVulkan, EResourceType::RENDER_TARGET, MAX_RESOURCES>(_renderTargets, attachments.RenderTargets[i]);
             imageViewsAttachments[i]    = renderTargetRef.View;
+
+            check(renderTargetRef.Image.Width == framebufferRef.Width); // All images must have the same width
+            check(renderTargetRef.Image.Height == framebufferRef.Height); // All images must have the same height
+            check(renderTargetRef.Image.MipLevels == 1); // Must have only 1 layer
+        }
+
+    if (depthAttachmentCount)
+        {
+            const auto& renderTargetRef  = GetResource<DRenderTargetVulkan, EResourceType::RENDER_TARGET, MAX_RESOURCES>(_renderTargets, attachments.DepthStencil);
+            imageViewsAttachments.back() = renderTargetRef.View;
 
             check(renderTargetRef.Image.Width == framebufferRef.Width); // All images must have the same width
             check(renderTargetRef.Image.Height == framebufferRef.Height); // All images must have the same height
@@ -1265,21 +1290,44 @@ VulkanContext::BindRenderTargets(uint32_t commandBufferId, const DFramebufferAtt
     // Process color colorAttachments
     for (size_t i = 0; i < renderPassAttachments.Attachments.size(); i++)
         {
-            renderPassAttachments.Attachments.at(i).LoadOP  = loadOP.LoadColor[i];
-            renderPassAttachments.Attachments.at(i).StoreOP = loadOP.StoreActionsColor[i];
 
-            renderPassAttachments.Attachments.at(i).InitialLayout = ERenderPassLayout::AsAttachment;
-            renderPassAttachments.Attachments.at(i).FinalLayout   = ERenderPassLayout::AsAttachment;
-
-            if (loadOP.LoadColor[i] == ERenderPassLoad::Clear)
+            auto& slot = renderPassAttachments.Attachments.at(i);
+            if (VkUtils::isColorFormat(VkUtils::convertFormat(slot.Format)))
                 {
-                    renderPassAttachments.Attachments.at(i).InitialLayout = ERenderPassLayout::Undefined;
+                    // Color
+                    renderPassAttachments.Attachments.at(i).LoadOP  = loadOP.LoadColor[i];
+                    renderPassAttachments.Attachments.at(i).StoreOP = loadOP.StoreActionsColor[i];
 
-                    clearValues[clearValueIndex].color.float32[0] = loadOP.ClearColor[i].color.float32[0];
-                    clearValues[clearValueIndex].color.float32[1] = loadOP.ClearColor[i].color.float32[1];
-                    clearValues[clearValueIndex].color.float32[2] = loadOP.ClearColor[i].color.float32[2];
-                    clearValues[clearValueIndex].color.float32[3] = loadOP.ClearColor[i].color.float32[3];
-                    clearValueIndex++;
+                    renderPassAttachments.Attachments.at(i).InitialLayout = ERenderPassLayout::AsAttachment;
+                    renderPassAttachments.Attachments.at(i).FinalLayout   = ERenderPassLayout::AsAttachment;
+
+                    if (loadOP.LoadColor[i] == ERenderPassLoad::Clear)
+                        {
+                            renderPassAttachments.Attachments.at(i).InitialLayout = ERenderPassLayout::Undefined;
+
+                            clearValues[clearValueIndex].color.float32[0] = loadOP.ClearColor[i].color.float32[0];
+                            clearValues[clearValueIndex].color.float32[1] = loadOP.ClearColor[i].color.float32[1];
+                            clearValues[clearValueIndex].color.float32[2] = loadOP.ClearColor[i].color.float32[2];
+                            clearValues[clearValueIndex].color.float32[3] = loadOP.ClearColor[i].color.float32[3];
+                            clearValueIndex++;
+                        }
+                }
+            else
+                {
+                    // depth stencil
+                    renderPassAttachments.Attachments.at(i).LoadOP  = loadOP.LoadDepth;
+                    renderPassAttachments.Attachments.at(i).StoreOP = loadOP.StoreDepth;
+
+                    renderPassAttachments.Attachments.at(i).InitialLayout = ERenderPassLayout::AsAttachment;
+                    renderPassAttachments.Attachments.at(i).FinalLayout   = ERenderPassLayout::AsAttachment;
+
+                    if (loadOP.LoadDepth == ERenderPassLoad::Clear)
+                        {
+                            renderPassAttachments.Attachments.at(i).InitialLayout = ERenderPassLayout::Undefined;
+                            clearValues[clearValueIndex].depthStencil.depth       = loadOP.ClearDepthStencil.depthStencil.depth;
+                            clearValues[clearValueIndex].depthStencil.stencil     = loadOP.ClearDepthStencil.depthStencil.stencil;
+                            clearValueIndex++;
+                        }
                 }
         }
 
