@@ -13,6 +13,3 @@
 [submodule "thirdparty/gli"]
 	path = thirdparty/gli
 	url = https://github.com/g-truc/gli.git
-[submodule "thirdparty/cgltf"]
-	path = thirdparty/cgltf
-	url = https://github.com/jkuhlmann/cgltf.git

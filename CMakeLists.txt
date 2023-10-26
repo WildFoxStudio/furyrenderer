@@ -102,7 +102,6 @@ option(BUILD_EXAMPLES "Build examples" ON)
 
 if(BUILD_EXAMPLES)
     set(LIB_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/include")
-    file(REAL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/cgltf" CGLTF_INCLUDE_DIR)
     add_subdirectory("examples/HelloTriangle")
     add_subdirectory("examples/Rendering")
     add_subdirectory("examples/SpinningTriangle")
