@@ -10,6 +10,8 @@
 
 #include <gli/gli.hpp>
 
+#include <cgltf.h>
+
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -302,8 +304,6 @@ class TriangleApp : public App
                 {
                     _mouseMove = false;
                 }
-
-
 
             if (_mouseMove)
                 {
