@@ -186,52 +186,7 @@ class TriangleApp : public App
         _cameraUbo[1] = _ctx->CreateBuffer(sizeof(glm::mat4), Fox::EResourceType::UNIFORM_BUFFER, Fox::EMemoryUsage::RESOURCE_MEMORY_USAGE_CPU_ONLY);
 
         {
-            uint32_t               w, h, m, s;
-            std::vector<ImageData> mips = loadImage("texture.dds", &w, &h, &m, &s);
-
-            _sampler = _ctx->CreateSampler(0, mips.size());
-
-            _texture        = _ctx->CreateImage(Fox::EFormat::RGBA_DXT1, w, h, m);
-            uint32_t tmpBuf = _ctx->CreateBuffer(s, Fox::EResourceType::TRANSFER, Fox::EMemoryUsage::RESOURCE_MEMORY_USAGE_CPU_ONLY);
-
-            unsigned char* data = (unsigned char*)_ctx->BeginMapBuffer(tmpBuf);
-            for (auto& mip : mips)
-                {
-                    memcpy(data, mip.Pixels.data(), mip.Pixels.size());
-                    data += mip.Pixels.size();
-                }
-            _ctx->EndMapBuffer(tmpBuf);
-
-            auto& cmd = _frameData[0].Cmd;
-
-            _ctx->BeginCommandBuffer(cmd);
-            Fox::TextureBarrier transferBarrier{};
-            transferBarrier.ImageId      = _texture;
-            transferBarrier.CurrentState = Fox::EResourceState::UNDEFINED;
-            transferBarrier.NewState     = Fox::EResourceState::COPY_DEST;
-            _ctx->ResourceBarrier(cmd, 0, nullptr, 1, &transferBarrier, 0, nullptr);
-
-            uint32_t offset{};
-            for (auto mipIndex = 0; mipIndex < mips.size(); mipIndex++)
-                {
-                    auto& mip = mips[mipIndex];
-                    _ctx->CopyImage(cmd, _texture, mip.Width, mip.Height, mipIndex, tmpBuf, offset);
-                    offset += mip.Pixels.size();
-                }
-
-            Fox::TextureBarrier readBarrier{};
-            readBarrier.ImageId      = _texture;
-            readBarrier.CurrentState = Fox::EResourceState::COPY_DEST;
-            readBarrier.NewState     = Fox::EResourceState::SHADER_RESOURCE;
-            _ctx->ResourceBarrier(cmd, 0, nullptr, 1, &readBarrier, 0, nullptr);
-
-            _ctx->EndCommandBuffer(cmd);
-
-            _ctx->QueueSubmit({}, {}, { cmd }, NULL);
-            _ctx->WaitDeviceIdle();
-            _ctx->DestroyBuffer(tmpBuf);
-
-            _ctx->ResetCommandPool(_frameData[0].CmdPool);
+            _loadTexture("texture.dds", _texture, _sampler);
 
             Fox::DescriptorData param[2] = {};
             param[0].pName               = "cameraUbo";
@@ -302,8 +257,6 @@ class TriangleApp : public App
                 {
                     _mouseMove = false;
                 }
-
-
 
             if (_mouseMove)
                 {
@@ -384,6 +337,58 @@ class TriangleApp : public App
     uint32_t  _textureSet{};
     uint32_t  _texture{};
     uint32_t  _sampler{};
+
+    bool _loadTexture(const std::string& filepath, uint32_t& texture, uint32_t& sampler)
+    {
+        uint32_t               w, h, m, s;
+        std::vector<ImageData> mips = loadImage(filepath.c_str(), &w, &h, &m, &s);
+
+        sampler = _ctx->CreateSampler(0, mips.size());
+
+        texture         = _ctx->CreateImage(Fox::EFormat::RGBA_DXT1, w, h, m);
+        uint32_t tmpBuf = _ctx->CreateBuffer(s, Fox::EResourceType::TRANSFER, Fox::EMemoryUsage::RESOURCE_MEMORY_USAGE_CPU_ONLY);
+
+        unsigned char* data = (unsigned char*)_ctx->BeginMapBuffer(tmpBuf);
+        for (auto& mip : mips)
+            {
+                memcpy(data, mip.Pixels.data(), mip.Pixels.size());
+                data += mip.Pixels.size();
+            }
+        _ctx->EndMapBuffer(tmpBuf);
+
+        auto& cmd = _frameData[0].Cmd;
+
+        _ctx->BeginCommandBuffer(cmd);
+        Fox::TextureBarrier transferBarrier{};
+        transferBarrier.ImageId      = texture;
+        transferBarrier.CurrentState = Fox::EResourceState::UNDEFINED;
+        transferBarrier.NewState     = Fox::EResourceState::COPY_DEST;
+        _ctx->ResourceBarrier(cmd, 0, nullptr, 1, &transferBarrier, 0, nullptr);
+
+        uint32_t offset{};
+        for (auto mipIndex = 0; mipIndex < mips.size(); mipIndex++)
+            {
+                auto& mip = mips[mipIndex];
+                _ctx->CopyImage(cmd, texture, mip.Width, mip.Height, mipIndex, tmpBuf, offset);
+                offset += mip.Pixels.size();
+            }
+
+        Fox::TextureBarrier readBarrier{};
+        readBarrier.ImageId      = texture;
+        readBarrier.CurrentState = Fox::EResourceState::COPY_DEST;
+        readBarrier.NewState     = Fox::EResourceState::SHADER_RESOURCE;
+        _ctx->ResourceBarrier(cmd, 0, nullptr, 1, &readBarrier, 0, nullptr);
+
+        _ctx->EndCommandBuffer(cmd);
+
+        _ctx->QueueSubmit({}, {}, { cmd }, NULL);
+        _ctx->WaitDeviceIdle();
+        _ctx->DestroyBuffer(tmpBuf);
+
+        _ctx->ResetCommandPool(_frameData[0].CmdPool);
+
+        return true;
+    }
 };
 
 int
