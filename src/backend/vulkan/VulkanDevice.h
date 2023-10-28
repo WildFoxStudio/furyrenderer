@@ -12,36 +12,36 @@
 
 #include "VulkanInstance.h"
 
-
 #include <vector>
 
 namespace Fox
 {
 
-	class RIVulkanDevice
-	{
-	public:
-		virtual ~RIVulkanDevice();
-          VkResult Create(const RIVulkanInstance& instance,
-			VkPhysicalDevice                    hardwareDevice,
-			std::vector<const char*>            extensions,
-			VkPhysicalDeviceFeatures& deviceFeatures,
-			std::vector<const char*>            validationLayers);
-		void Deinit();
+class RIVulkanDevice
+{
+  public:
+    virtual ~RIVulkanDevice();
+    VkResult Create(const RIVulkanInstance& instance,
+    const void*                             pNext,
+    VkPhysicalDevice                        hardwareDevice,
+    std::vector<const char*>                extensions,
+    VkPhysicalDeviceFeatures*               optDeviceFeatures,
+    std::vector<const char*>                validationLayers);
+    void     Deinit();
 
-		inline int32_t GetQueueFamilyIndex() const { return _queueFamilyIndex; };
+    inline int32_t GetQueueFamilyIndex() const { return _queueFamilyIndex; };
 
-		inline int32_t GetMaxImageAllocations() const { return 4096; }
+    inline int32_t GetMaxImageAllocations() const { return 4096; }
 
-		VkPhysicalDevice                 PhysicalDevice{}; /* GPU chosen as the default device */
-		VkDevice                         Device{}; /* Logical device */
-		VmaAllocator                     VmaAllocator;
-		VkPhysicalDeviceProperties       DeviceProperties{}; /*Properties of the physical device*/
-		VkPhysicalDeviceMemoryProperties DeviceMemory{}; /*Properties about the physical device memory*/
-		VkQueue                          MainQueue{}; /* Graphics and Transfer queue*/
-	private:
-		uint32_t _queueFamilyIndex;
-		uint32_t _queryGraphicsAndTransferQueueIndex() const;
-	};
+    VkPhysicalDevice                 PhysicalDevice{}; /* GPU chosen as the default device */
+    VkDevice                         Device{}; /* Logical device */
+    VmaAllocator                     VmaAllocator;
+    VkPhysicalDeviceProperties       DeviceProperties{}; /*Properties of the physical device*/
+    VkPhysicalDeviceMemoryProperties DeviceMemory{}; /*Properties about the physical device memory*/
+    VkQueue                          MainQueue{}; /* Graphics and Transfer queue*/
+  private:
+    uint32_t _queueFamilyIndex;
+    uint32_t _queryGraphicsAndTransferQueueIndex() const;
+};
 
 }

@@ -267,17 +267,36 @@ VulkanContext::_initializeDevice()
     // Query physical device
     VkPhysicalDevice physicalDevice = _queryBestPhysicalDevice();
 
+    VkPhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures{};
+    descriptorIndexingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+    descriptorIndexingFeatures.pNext = nullptr;
+
+    VkPhysicalDeviceFeatures2 pDeviceFeatures{};
+    pDeviceFeatures.sType                                           = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    pDeviceFeatures.pNext                                           = &descriptorIndexingFeatures;
+    pDeviceFeatures.features.samplerAnisotropy                      = VK_TRUE;
+    pDeviceFeatures.features.shaderSampledImageArrayDynamicIndexing = VK_TRUE;
+    pDeviceFeatures.features.fillModeNonSolid                       = VK_TRUE;
+
+    // Fetch all features from physical device
+    vkGetPhysicalDeviceFeatures2(physicalDevice, &pDeviceFeatures);
+
+    // Non-uniform indexing and update after bind
+    // binding flags for textures, uniforms, and buffers
+    // are required for our extension
+    critical(descriptorIndexingFeatures.shaderSampledImageArrayNonUniformIndexing);
+    critical(descriptorIndexingFeatures.descriptorBindingSampledImageUpdateAfterBind);
+    critical(descriptorIndexingFeatures.shaderUniformBufferArrayNonUniformIndexing);
+    critical(descriptorIndexingFeatures.descriptorBindingUniformBufferUpdateAfterBind);
+    critical(descriptorIndexingFeatures.shaderStorageBufferArrayNonUniformIndexing);
+    critical(descriptorIndexingFeatures.descriptorBindingStorageBufferUpdateAfterBind);
+
     // Check validation layers and extensions support for the device
     auto validDeviceValidationLayers = _getDeviceSupportedValidationLayers(physicalDevice, _validationLayers);
     auto validDeviceExtensions       = _getDeviceSupportedExtensions(physicalDevice, _deviceExtensionNames);
 
     // Create device
-    VkPhysicalDeviceFeatures deviceFeatures{};
-    deviceFeatures.samplerAnisotropy                      = VK_TRUE;
-    deviceFeatures.shaderSampledImageArrayDynamicIndexing = VK_TRUE;
-    deviceFeatures.fillModeNonSolid                       = VK_TRUE;
-
-    const auto result = Device.Create(Instance, physicalDevice, validDeviceExtensions, deviceFeatures, validDeviceValidationLayers);
+    const auto result = Device.Create(Instance, (void*)&pDeviceFeatures, physicalDevice, validDeviceExtensions, nullptr, validDeviceValidationLayers);
     if (VKFAILED(result))
         {
             throw std::runtime_error("Could not create a vulkan device" + std::string(VkUtils::VkErrorString(result)));
@@ -1066,26 +1085,29 @@ VulkanContext::UpdateDescriptorSet(uint32_t descriptorSetId, uint32_t setIndex, 
                             writeSet->descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
                             writeSet->pImageInfo     = &imageInfo[imageInfoCount];
 
-                            check(descriptorCount == 1);
-
-                            VkDescriptorImageInfo& img      = imageInfo[imageInfoCount++];
-                            const DImageVulkan&    imageRef = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, param->Textures[0]);
-                            img.imageView                   = imageRef.View;
-                            img.imageLayout                 = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                            img.sampler                     = NULL;
+                            for (uint32_t i = 0; i < descriptorCount; i++)
+                                {
+                                    VkDescriptorImageInfo& img      = imageInfo[imageInfoCount++];
+                                    const DImageVulkan&    imageRef = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, param->Textures[i]);
+                                    img.imageView                   = imageRef.View;
+                                    img.imageLayout                 = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                                    img.sampler                     = NULL;
+                                }
                         }
                         break;
                     case EBindingType::SAMPLER:
                         {
                             writeSet->descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
                             writeSet->pImageInfo     = &imageInfo[imageInfoCount];
-                            check(descriptorCount == 1);
 
-                            VkDescriptorImageInfo& img        = imageInfo[imageInfoCount++];
-                            const DSamplerVulkan&  samplerRef = GetResource<DSamplerVulkan, EResourceType::SAMPLER, MAX_RESOURCES>(_samplers, param->Samplers[0]);
-                            img.imageView                     = 0;
-                            img.imageLayout                   = VK_IMAGE_LAYOUT_UNDEFINED;
-                            img.sampler                       = samplerRef.Sampler;
+                            for (uint32_t i = 0; i < descriptorCount; i++)
+                                {
+                                    VkDescriptorImageInfo& img        = imageInfo[imageInfoCount++];
+                                    const DSamplerVulkan&  samplerRef = GetResource<DSamplerVulkan, EResourceType::SAMPLER, MAX_RESOURCES>(_samplers, param->Samplers[i]);
+                                    img.imageView                     = 0;
+                                    img.imageLayout                   = VK_IMAGE_LAYOUT_UNDEFINED;
+                                    img.sampler                       = samplerRef.Sampler;
+                                }
                         }
                         break;
                 }
@@ -1739,8 +1761,8 @@ VulkanContext::DestroyRenderTarget(uint32_t renderTargetId)
 
     Device.DestroyImageView(renderTargetRef.View);
     Device.DestroyImage(renderTargetRef.Image);
-    
-    renderTargetRef.Id = FREE;
+
+    renderTargetRef.Id   = FREE;
     renderTargetRef.View = nullptr;
 }
 

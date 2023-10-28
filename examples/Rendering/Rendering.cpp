@@ -204,8 +204,8 @@ class TriangleApp : public App
 
         Fox::ShaderLayout shaderLayout;
         shaderLayout.SetsLayout[0].insert({ 0, Fox::ShaderDescriptorBindings{ "Camera", Fox::EBindingType::UNIFORM_BUFFER_OBJECT, sizeof(glm::mat4), 1, Fox::EShaderStage::VERTEX } });
-        shaderLayout.SetsLayout[1].insert({ 0, Fox::ShaderDescriptorBindings{ "Texture", Fox::EBindingType::TEXTURE, NULL, 1, Fox::EShaderStage::FRAGMENT } });
-        shaderLayout.SetsLayout[1].insert({ 1, Fox::ShaderDescriptorBindings{ "Sampler", Fox::EBindingType::SAMPLER, NULL, 1, Fox::EShaderStage::FRAGMENT } });
+        shaderLayout.SetsLayout[1].insert({ 0, Fox::ShaderDescriptorBindings{ "Texture", Fox::EBindingType::TEXTURE, NULL, 1000, Fox::EShaderStage::FRAGMENT } });
+        shaderLayout.SetsLayout[1].insert({ 1, Fox::ShaderDescriptorBindings{ "Sampler", Fox::EBindingType::SAMPLER, NULL, 1000, Fox::EShaderStage::FRAGMENT } });
 
         _rootSignature = _ctx->CreateRootSignature(shaderLayout);
         _descriptorSet = _ctx->CreateDescriptorSets(_rootSignature, Fox::EDescriptorFrequency::NEVER, 2);
@@ -294,7 +294,7 @@ class TriangleApp : public App
                     printf("Failed to parse glTF\n");
                 }
 
-            uint32_t cnt{1};
+            uint32_t cnt{ 1 };
             for (auto& image : model.images)
                 {
                     std::string outName;
@@ -323,11 +323,25 @@ class TriangleApp : public App
             param[0].Buffers = &_cameraUbo[1];
             _ctx->UpdateDescriptorSet(_descriptorSet, 1, 1, param);
 
+            std::vector<uint32_t> texArray;
+            std::vector<uint32_t> sampArray;
+
+            texArray.push_back(_texture);
+            sampArray.push_back(_sampler);
+
+            for (const auto& texSamp : _textures)
+                {
+                    texArray.push_back(texSamp.second.first);
+                    sampArray.push_back(texSamp.second.second);
+                }
+
             param[0].pName    = "texture";
-            param[0].Textures = &_texture;
+            param[0].Textures = texArray.data();
+            param[0].Count    = texArray.size();
             param[1].pName    = "sampler";
-            param[1].Samplers = &_sampler;
+            param[1].Samplers = sampArray.data();
             param[1].Index    = 1;
+            param[1].Count    = sampArray.size();
             _ctx->UpdateDescriptorSet(_textureSet, 0, 2, param);
         }
     };
