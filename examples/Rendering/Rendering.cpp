@@ -10,6 +10,16 @@
 
 #include <gli/gli.hpp>
 
+#define TINYGLTF_IMPLEMENTATION
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
+#include <tiny_gltf.h>
+using namespace tinygltf;
+
+// #include <stb_image.h>
+#include <stb_image_resize2.h>
+
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -54,15 +64,32 @@ struct ImageData
 };
 
 inline std::vector<ImageData>
-loadImage(const char* path, uint32_t* width, uint32_t* height, uint32_t* mipMaps, uint32_t* size)
+loadImage(const char* path, uint32_t* width, uint32_t* height, uint32_t* mipMaps, uint32_t* size, Fox::EFormat& format)
 {
     gli::texture Texture = gli::load(path);
     if (Texture.empty())
         throw std::runtime_error("Could not load image");
 
-    gli::gl               GL(gli::gl::PROFILE_GL33);
-    gli::gl::format const Format = GL.translate(Texture.format(), Texture.swizzles());
-    assert(Format.Internal == gli::gl::INTERNAL_RGBA_DXT1);
+    gli::gl         GL(gli::gl::PROFILE_GL33);
+    gli::gl::format Format = GL.translate(Texture.format(), Texture.swizzles());
+    // assert(Format.Internal == gli::gl::INTERNAL_RGBA_DXT1);
+
+    switch (Format.Internal)
+        {
+            case gli::gl::INTERNAL_RGBA_DXT1:
+                format = Fox::EFormat::RGBA_DXT1;
+                break;
+
+            case gli::gl::INTERNAL_RGBA_DXT3:
+                format = Fox::EFormat::RGBA_DXT3;
+                break;
+            case gli::gl::INTERNAL_RGBA_DXT5:
+                format = Fox::EFormat::RGBA_DXT5;
+                break;
+
+            default:
+                assert("Invalid format file");
+        }
 
     gli::extent2d extent = Texture.extent(0);
     *width               = extent.r;
@@ -83,6 +110,49 @@ loadImage(const char* path, uint32_t* width, uint32_t* height, uint32_t* mipMaps
         }
 
     return mips;
+}
+
+inline std::vector<ImageData>
+loadImageGenerateMipMaps(const char* path, uint32_t* width, uint32_t* height, uint32_t* mipMaps, uint32_t* size, Fox::EFormat& format)
+{
+
+    int            x, y, comps;
+    unsigned char* image = stbi_load(path, &x, &y, &comps, 4);
+    if (!image)
+        throw std::runtime_error("Failed to load image");
+
+    format  = Fox::EFormat::R8G8B8A8_UNORM;
+    *width  = x;
+    *height = y;
+    *size   = (x * y) * 4;
+
+    std::vector<ImageData> levels;
+    {
+        ImageData data{ x, y };
+        data.Pixels.resize((x * y) * 4);
+        memcpy(data.Pixels.data(), image, (x * y) * 4);
+        levels.emplace_back(std::move(data));
+    }
+
+    stbi_image_free(image);
+
+    // Gen mips
+
+    while (x > 1 && y > 1)
+        {
+            x = x / 2;
+            y = y / 2;
+            *size += (x * y) * 4;
+
+            ImageData data{ x, y };
+            data.Pixels.resize((x * y) * 4);
+
+            stbir_resize_uint8_linear(levels.back().Pixels.data(), levels.back().Width, levels.back().Height, 0, data.Pixels.data(), x, y, 0, STBIR_RGBA);
+
+            levels.emplace_back(std::move(data));
+        }
+    *mipMaps = levels.size();
+    return levels;
 }
 
 glm::mat4
@@ -186,7 +256,65 @@ class TriangleApp : public App
         _cameraUbo[1] = _ctx->CreateBuffer(sizeof(glm::mat4), Fox::EResourceType::UNIFORM_BUFFER, Fox::EMemoryUsage::RESOURCE_MEMORY_USAGE_CPU_ONLY);
 
         {
-            _loadTexture("texture.dds", _texture, _sampler);
+
+            Model       model;
+            TinyGLTF    loader;
+            std::string err;
+            std::string warn;
+
+            bool ret = loader.LoadASCIIFromFile(&model, &err, &warn, "Sponza/glTF/Sponza.gltf");
+
+            if (!warn.empty())
+                {
+                    printf("Warn: %s\n", warn.c_str());
+                }
+
+            if (!err.empty())
+                {
+                    printf("Err: %s\n", err.c_str());
+                }
+
+            if (!ret)
+                {
+                    printf("Failed to parse glTF\n");
+                }
+            ret = loader.LoadBinaryFromFile(&model, &err, &warn, "Sponza/glTF/Sponza.gltf"); // for binary glTF(.glb)
+            if (!warn.empty())
+                {
+                    printf("Warn: %s\n", warn.c_str());
+                }
+
+            if (!err.empty())
+                {
+                    printf("Err: %s\n", err.c_str());
+                }
+
+            if (!ret)
+                {
+                    printf("Failed to parse glTF\n");
+                }
+
+            uint32_t cnt{1};
+            for (auto& image : model.images)
+                {
+                    std::string outName;
+                    URIDecode(image.uri, &outName, nullptr);
+                    // outName = outName.substr(0, outName.find_first_of('.', 0)) + ".dds";
+
+                    if (_textures.find(outName) != _textures.end())
+                        {
+                            continue;
+                        }
+
+                    uint32_t tex, samp;
+
+                    std::cout << "Loading texture:" << outName << " " << cnt++ << "/" << model.images.size() << std::endl;
+                    _loadTexture("Sponza/glTF/" + outName, tex, samp);
+                    _textures[outName] = std::make_pair(tex, samp);
+                }
+        }
+        {
+            _loadTexture("texture.jpg", _texture, _sampler);
 
             Fox::DescriptorData param[2] = {};
             param[0].pName               = "cameraUbo";
@@ -320,32 +448,35 @@ class TriangleApp : public App
     };
 
   protected:
-    uint32_t  _depthRt{};
-    uint32_t  _shader{};
-    uint32_t  _pipeline{};
-    uint32_t  _triangle{};
-    uint32_t  _vertexLayout{};
-    uint32_t  _rootSignature{};
-    uint32_t  _descriptorSet{};
-    bool      _mouseMove{};
-    glm::vec3 _cameraLocation{};
-    glm::vec3 _frontVector{};
-    glm::vec3 _cameraRotation{};
-    glm::mat4 _viewMatrix;
-    glm::mat4 _projectionMatrix;
-    uint32_t  _cameraUbo[MAX_FRAMES]{};
-    uint32_t  _textureSet{};
-    uint32_t  _texture{};
-    uint32_t  _sampler{};
+    uint32_t                                                       _depthRt{};
+    uint32_t                                                       _shader{};
+    uint32_t                                                       _pipeline{};
+    uint32_t                                                       _triangle{};
+    uint32_t                                                       _vertexLayout{};
+    uint32_t                                                       _rootSignature{};
+    uint32_t                                                       _descriptorSet{};
+    bool                                                           _mouseMove{};
+    glm::vec3                                                      _cameraLocation{};
+    glm::vec3                                                      _frontVector{};
+    glm::vec3                                                      _cameraRotation{};
+    glm::mat4                                                      _viewMatrix;
+    glm::mat4                                                      _projectionMatrix;
+    uint32_t                                                       _cameraUbo[MAX_FRAMES]{};
+    uint32_t                                                       _textureSet{};
+    uint32_t                                                       _texture{};
+    uint32_t                                                       _sampler{};
+    std::unordered_map<std::string, std::pair<uint32_t, uint32_t>> _textures;
 
     bool _loadTexture(const std::string& filepath, uint32_t& texture, uint32_t& sampler)
     {
         uint32_t               w, h, m, s;
-        std::vector<ImageData> mips = loadImage(filepath.c_str(), &w, &h, &m, &s);
+        Fox::EFormat           fmt;
+        std::vector<ImageData> mips = loadImageGenerateMipMaps(filepath.c_str(), &w, &h, &m, &s, fmt);
+        // std::vector<ImageData> mips = loadImage(filepath.c_str(), &w, &h, &m, &s, fmt);
 
         sampler = _ctx->CreateSampler(0, mips.size());
 
-        texture         = _ctx->CreateImage(Fox::EFormat::RGBA_DXT1, w, h, m);
+        texture         = _ctx->CreateImage(fmt, w, h, m);
         uint32_t tmpBuf = _ctx->CreateBuffer(s, Fox::EResourceType::TRANSFER, Fox::EMemoryUsage::RESOURCE_MEMORY_USAGE_CPU_ONLY);
 
         unsigned char* data = (unsigned char*)_ctx->BeginMapBuffer(tmpBuf);

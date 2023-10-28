@@ -8,7 +8,7 @@ add_executable(${PROJECT_NAME}
 )
 
 
-target_link_libraries(${PROJECT_NAME} PRIVATE FoxFury glfw glm gli)
+target_link_libraries(${PROJECT_NAME} PRIVATE FoxFury glfw glm gli tinygltf)
 
 set_target_properties(${PROJECT_NAME} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "bin"
@@ -17,4 +17,4 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 #Set the debug working directory
 set_target_properties(${PROJECT_NAME} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 
-include_directories(${LIB_INCLUDE_DIR})
+include_directories(${LIB_INCLUDE_DIR} ${STB_INCLUDE_DIR})

@@ -118,6 +118,8 @@ enum class EFormat
     DEPTH24_UNORM_STENCIL8_UINT,
     DEPTH32_FLOAT_STENCIL8_UINT,
     RGBA_DXT1,
+    RGBA_DXT3,
+    RGBA_DXT5,
 };
 
 enum class EVertexInputClassification

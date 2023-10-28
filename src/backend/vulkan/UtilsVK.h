@@ -141,6 +141,10 @@ convertVkFormat(const VkFormat format)
                 return Fox::EFormat::R32G32B32A32_FLOAT;
             case VK_FORMAT_BC1_RGBA_UNORM_BLOCK:
                 return Fox::EFormat::RGBA_DXT1;
+            case VK_FORMAT_BC3_UNORM_BLOCK:
+                return Fox::EFormat::RGBA_DXT3;
+            case VK_FORMAT_BC5_UNORM_BLOCK:
+                return Fox::EFormat::RGBA_DXT5;
         }
 
     check(0);
@@ -182,6 +186,10 @@ convertFormat(const Fox::EFormat format)
                 return VK_FORMAT_R32G32B32A32_SFLOAT;
             case Fox::EFormat::RGBA_DXT1:
                 return VK_FORMAT_BC1_RGBA_UNORM_BLOCK;
+            case Fox::EFormat::RGBA_DXT3:
+                return VK_FORMAT_BC3_UNORM_BLOCK;
+            case Fox::EFormat::RGBA_DXT5:
+                return VK_FORMAT_BC5_UNORM_BLOCK;
         }
 
     check(0);

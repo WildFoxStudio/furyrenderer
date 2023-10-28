@@ -25,6 +25,9 @@ add_subdirectory("thirdparty/VulkanMemoryAllocator")
 add_subdirectory("thirdparty/glfw")
 add_subdirectory("thirdparty/glm")
 add_subdirectory("thirdparty/gli")
+set(TINYGLTF_HEADER_ONLY ON CACHE INTERNAL "" FORCE)
+set(TINYGLTF_INSTALL OFF CACHE INTERNAL "" FORCE)
+add_subdirectory("thirdparty/tinygltf")
 
 target_link_libraries(${PROJECT_NAME} PRIVATE volk VulkanMemoryAllocator)
 
@@ -102,6 +105,7 @@ option(BUILD_EXAMPLES "Build examples" ON)
 
 if(BUILD_EXAMPLES)
     set(LIB_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/include")
+    FILE(REAL_PATH "thirdparty/stb" STB_INCLUDE_DIR)
     add_subdirectory("examples/HelloTriangle")
     add_subdirectory("examples/Rendering")
     add_subdirectory("examples/SpinningTriangle")
