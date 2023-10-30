@@ -160,6 +160,31 @@ VulkanContext::VulkanContext(const DContextConfig* const config) : _warningOutpu
     // Initialize per frame pipeline layout map to descriptor pool manager
     _pipelineLayoutToDescriptorPool.resize(NUM_OF_FRAMES_IN_FLIGHT);
     _deletionQueue.reserve(MAX_RESOURCES);
+
+    _emptyUbo.Buffer = Device.CreateBufferHostVisible(4, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+
+    _emptyImageId         = CreateImage(EFormat::R8G8B8A8_UNORM, 1, 1, 1);
+    _emptyImage           = &GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, _emptyImageId);
+    _emptySampler.Sampler = Device.CreateSampler(VK_FILTER_NEAREST, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, 0, 1, VK_SAMPLER_MIPMAP_MODE_NEAREST, false, 0.f);
+
+    { // Transition to attachment optimal
+        const auto pool = CreateCommandPool();
+        const auto cmd  = CreateCommandBuffer(pool);
+        BeginCommandBuffer(cmd);
+        TextureBarrier barrier;
+        barrier.ImageId      = _emptyImageId;
+        barrier.CurrentState = EResourceState::UNDEFINED;
+        barrier.NewState     = EResourceState::SHADER_RESOURCE;
+        ResourceBarrier(cmd, 0, nullptr, 1, &barrier, 0, nullptr);
+        EndCommandBuffer(cmd);
+
+        const auto fence = CreateFence(false);
+        QueueSubmit({}, {}, { cmd }, fence);
+        WaitForFence(fence, 0xFFFF);
+        DestroyFence(fence);
+        DestroyCommandBuffer(cmd);
+        DestroyCommandPool(pool);
+    }
 }
 
 void
@@ -959,6 +984,106 @@ VulkanContext::CreateRootSignature(const ShaderLayout& layout)
 
     rootSignature.SetsBindings = layout.SetsLayout;
 
+    // Create empty pools with empty sets
+    {
+        for (uint32_t i = 0; i < (uint32_t)EDescriptorFrequency::MAX_COUNT; i++)
+            {
+                //@TODO shorten loop
+                if (rootSignature.DescriptorSetLayouts[i] == nullptr)
+                    break;
+
+                rootSignature.EmptyPool[i] = Device.CreateDescriptorPool(rootSignature.PoolSizes[i], 1);
+                VkDescriptorSetAllocateInfo allocInfo{};
+                allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+                allocInfo.descriptorPool     = rootSignature.EmptyPool[i];
+                allocInfo.descriptorSetCount = (uint32_t)1;
+                allocInfo.pSetLayouts        = &rootSignature.DescriptorSetLayouts[i];
+
+                const VkResult result = vkAllocateDescriptorSets(Device.Device, &allocInfo, &rootSignature.EmptySet[i]);
+                if (VKFAILED(result))
+                    {
+                        throw std::runtime_error(VkUtils::VkErrorString(result));
+                    }
+
+                // Update with empty resources
+                std::array<VkWriteDescriptorSet, 8196>   write;
+                std::array<VkDescriptorImageInfo, 8196>  imageInfo;
+                std::array<VkDescriptorBufferInfo, 8196> bufferInfo;
+                uint32_t                                 writeSetCount{};
+                uint32_t                                 imageInfoCount{};
+                uint32_t                                 bufferInfoCount{};
+
+                for (const auto index : rootSignature.SetsBindings[i])
+                    {
+                        check(index.second.Count < 8196);
+
+                        const uint32_t descriptorCount = std::max(1u, index.second.Count);
+
+                        VkWriteDescriptorSet* writeSet = &write[writeSetCount++];
+                        writeSet->sType                = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                        writeSet->pNext                = NULL;
+                        writeSet->descriptorCount      = descriptorCount;
+
+                        const ShaderDescriptorBindings& bindingDesc = index.second;
+                        switch (bindingDesc.StorageType)
+                            {
+                                case EBindingType::STORAGE_BUFFER_OBJECT:
+                                    {
+                                        writeSet->descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                                        check(0); // UNSUPPORTED YET
+                                    }
+                                    break;
+                                case EBindingType::UNIFORM_BUFFER_OBJECT:
+                                    {
+                                        writeSet->descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                                        writeSet->pBufferInfo    = &bufferInfo[bufferInfoCount];
+                                        for (uint32_t j = 0; j < descriptorCount; j++)
+                                            {
+                                                VkDescriptorBufferInfo& buf = bufferInfo[bufferInfoCount++];
+                                                buf.buffer                  = _emptyUbo.Buffer.Buffer;
+                                                buf.offset                  = 0;
+                                                buf.range                   = VK_WHOLE_SIZE;
+                                            }
+                                    }
+                                    break;
+                                case EBindingType::TEXTURE:
+                                    {
+                                        writeSet->descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+                                        writeSet->pImageInfo     = &imageInfo[imageInfoCount];
+
+                                        for (uint32_t i = 0; i < descriptorCount; i++)
+                                            {
+                                                VkDescriptorImageInfo& img = imageInfo[imageInfoCount++];
+                                                img.imageView              = _emptyImage->View;
+                                                img.imageLayout            = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                                                img.sampler                = NULL;
+                                            }
+                                    }
+                                    break;
+                                case EBindingType::SAMPLER:
+                                    {
+                                        writeSet->descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+                                        writeSet->pImageInfo     = &imageInfo[imageInfoCount];
+
+                                        for (uint32_t i = 0; i < descriptorCount; i++)
+                                            {
+                                                VkDescriptorImageInfo& img = imageInfo[imageInfoCount++];
+                                                img.imageView              = 0;
+                                                img.imageLayout            = VK_IMAGE_LAYOUT_UNDEFINED;
+                                                img.sampler                = _emptySampler.Sampler;
+                                            }
+                                    }
+                                    break;
+                            }
+
+                        writeSet->dstArrayElement = 0;
+                        writeSet->dstBinding      = index.first;
+                        writeSet->dstSet          = rootSignature.EmptySet[i];
+                    }
+                vkUpdateDescriptorSets(Device.Device, writeSetCount, write.data(), 0, nullptr);
+            }
+    }
+
     return *ResourceId(EResourceType::ROOT_SIGNATURE, rootSignature.Id, index);
 }
 
@@ -1011,13 +1136,94 @@ VulkanContext::CreateDescriptorSets(uint32_t rootSignatureId, EDescriptorFrequen
         allocInfo.descriptorSetCount = (uint32_t)count;
         allocInfo.pSetLayouts        = descriptorSetLayouts.data();
 
-        VkDescriptorSet descriptorSet{};
-        const VkResult  result = vkAllocateDescriptorSets(Device.Device, &allocInfo, descriptorSetRef.Sets.data());
+        const VkResult result = vkAllocateDescriptorSets(Device.Device, &allocInfo, descriptorSetRef.Sets.data());
         if (VKFAILED(result))
             {
                 throw std::runtime_error(VkUtils::VkErrorString(result));
             }
     }
+
+    // Update all sets with empty resources
+    const auto& setBinding = rootSignature.SetsBindings[(uint32_t)frequency];
+    for (const auto set : descriptorSetRef.Sets)
+        {
+
+            std::array<VkWriteDescriptorSet, 8196>   write;
+            std::array<VkDescriptorImageInfo, 8196>  imageInfo;
+            std::array<VkDescriptorBufferInfo, 8196> bufferInfo;
+            uint32_t                                 writeSetCount{};
+            uint32_t                                 imageInfoCount{};
+            uint32_t                                 bufferInfoCount{};
+
+            for (const auto index : setBinding)
+                {
+                    check(index.second.Count < 8196);
+
+                    const uint32_t descriptorCount = std::max(1u, index.second.Count);
+
+                    VkWriteDescriptorSet* writeSet = &write[writeSetCount++];
+                    writeSet->sType                = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                    writeSet->pNext                = NULL;
+                    writeSet->descriptorCount      = descriptorCount;
+
+                    const ShaderDescriptorBindings& bindingDesc = index.second;
+                    switch (bindingDesc.StorageType)
+                        {
+                            case EBindingType::STORAGE_BUFFER_OBJECT:
+                                {
+                                    writeSet->descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                                    check(0); // UNSUPPORTED YET
+                                }
+                                break;
+                            case EBindingType::UNIFORM_BUFFER_OBJECT:
+                                {
+                                    writeSet->descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                                    writeSet->pBufferInfo    = &bufferInfo[bufferInfoCount];
+                                    for (uint32_t j = 0; j < descriptorCount; j++)
+                                        {
+                                            VkDescriptorBufferInfo& buf = bufferInfo[bufferInfoCount++];
+                                            buf.buffer                  = _emptyUbo.Buffer.Buffer;
+                                            buf.offset                  = 0;
+                                            buf.range                   = VK_WHOLE_SIZE;
+                                        }
+                                }
+                                break;
+                            case EBindingType::TEXTURE:
+                                {
+                                    writeSet->descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+                                    writeSet->pImageInfo     = &imageInfo[imageInfoCount];
+
+                                    for (uint32_t i = 0; i < descriptorCount; i++)
+                                        {
+                                            VkDescriptorImageInfo& img = imageInfo[imageInfoCount++];
+                                            img.imageView              = _emptyImage->View;
+                                            img.imageLayout            = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                                            img.sampler                = NULL;
+                                        }
+                                }
+                                break;
+                            case EBindingType::SAMPLER:
+                                {
+                                    writeSet->descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+                                    writeSet->pImageInfo     = &imageInfo[imageInfoCount];
+
+                                    for (uint32_t i = 0; i < descriptorCount; i++)
+                                        {
+                                            VkDescriptorImageInfo& img = imageInfo[imageInfoCount++];
+                                            img.imageView              = 0;
+                                            img.imageLayout            = VK_IMAGE_LAYOUT_UNDEFINED;
+                                            img.sampler                = _emptySampler.Sampler;
+                                        }
+                                }
+                                break;
+                        }
+
+                    writeSet->dstArrayElement = 0;
+                    writeSet->dstBinding      = index.first;
+                    writeSet->dstSet          = set;
+                }
+            vkUpdateDescriptorSets(Device.Device, writeSetCount, write.data(), 0, nullptr);
+        }
 
     return *ResourceId(EResourceType::DESCRIPTOR_SET, descriptorSetRef.Id, index);
 }

@@ -125,6 +125,8 @@ struct DRootSignature : public DResource
     // std::vector<VkDescriptorSet>      EmptyDescriptorSets[(uint32_t)EDescriptorFrequency::MAX_COUNT];
     std::vector<VkDescriptorPoolSize>                                PoolSizes[(uint32_t)EDescriptorFrequency::MAX_COUNT];
     std::map<uint32_t, std::map<uint32_t, ShaderDescriptorBindings>> SetsBindings;
+    VkDescriptorPool                                                 EmptyPool[(uint32_t)EDescriptorFrequency::MAX_COUNT]{};
+    VkDescriptorSet                                                  EmptySet[(uint32_t)EDescriptorFrequency::MAX_COUNT]{};
 };
 
 struct DDescriptorSet : public DResource
@@ -205,13 +207,13 @@ class VulkanContext final : public IContext
     uint32_t CreateRenderTarget(EFormat format, ESampleBit samples, bool isDepth, uint32_t width, uint32_t height, uint32_t arrayLength, uint32_t mipMapCount, EResourceState initialState) override;
     void     DestroyRenderTarget(uint32_t renderTargetId) override;
 
-    void     ResourceBarrier(uint32_t commandBufferId,
-        uint32_t                      buffer_barrier_count,
-        BufferBarrier*                p_buffer_barriers,
-        uint32_t                      texture_barrier_count,
-        TextureBarrier*               p_texture_barriers,
-        uint32_t                      rt_barrier_count,
-        RenderTargetBarrier*          p_rt_barriers) override;
+    void ResourceBarrier(uint32_t commandBufferId,
+    uint32_t                      buffer_barrier_count,
+    BufferBarrier*                p_buffer_barriers,
+    uint32_t                      texture_barrier_count,
+    TextureBarrier*               p_texture_barriers,
+    uint32_t                      rt_barrier_count,
+    RenderTargetBarrier*          p_rt_barriers) override;
 
     void FlushDeletedBuffers() override;
 
@@ -234,6 +236,10 @@ class VulkanContext final : public IContext
     void (*_warningOutput)(const char*);
     void (*_logOutput)(const char*);
 
+    DBufferVulkan                               _emptyUbo;
+    uint32_t                                    _emptyImageId{};
+    DImageVulkan*                               _emptyImage;
+    DSamplerVulkan                              _emptySampler;
     std::array<DSwapchainVulkan, MAX_RESOURCES> _swapchains;
     std::array<DBufferVulkan, MAX_RESOURCES>    _vertexBuffers;
     std::array<DBufferVulkan, MAX_RESOURCES>    _transferBuffers;
