@@ -120,6 +120,7 @@ enum class EFormat
     RGBA_DXT1,
     RGBA_DXT3,
     RGBA_DXT5,
+    SINT32,
 };
 
 enum class EVertexInputClassification

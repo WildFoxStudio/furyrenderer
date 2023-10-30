@@ -190,6 +190,7 @@ struct Vertex
     glm::vec3 Position;
     glm::vec3 Normal;
     glm::vec2 Uv;
+    int32_t   MaterialId{};
 };
 
 struct Submesh
@@ -209,6 +210,11 @@ struct MeshMaterial
 {
     std::string Name;
     std::string TextureName;
+};
+
+struct UboMaterial
+{
+    uint32_t AlbedoId{};
 };
 
 glm::mat4
@@ -249,8 +255,9 @@ class TriangleApp : public App
         Fox::VertexLayoutInfo color("Color0", Fox::EFormat::R32G32B32A32_FLOAT, 4 * sizeof(float), Fox::EVertexInputClassification::PER_VERTEX_DATA);
         Fox::VertexLayoutInfo normal("NORMAL", Fox::EFormat::R32G32B32_FLOAT, 3 * sizeof(float), Fox::EVertexInputClassification::PER_VERTEX_DATA);
         Fox::VertexLayoutInfo texcoord("TEXCOORD", Fox::EFormat::R32G32_FLOAT, 6 * sizeof(float), Fox::EVertexInputClassification::PER_VERTEX_DATA);
-        _vertexLayout             = _ctx->CreateVertexLayout({ position, normal, texcoord });
-        constexpr uint32_t stride = 8 * sizeof(float);
+        Fox::VertexLayoutInfo materialId("MATERIALID", Fox::EFormat::SINT32, 8 * sizeof(int32_t), Fox::EVertexInputClassification::PER_VERTEX_DATA);
+        _vertexLayout             = _ctx->CreateVertexLayout({ position, normal, texcoord, materialId });
+        constexpr uint32_t stride = 8 * sizeof(float) + sizeof(int32_t);
 
         // Create shader
         Fox::ShaderSource shaderSource;
@@ -264,6 +271,7 @@ class TriangleApp : public App
         shaderLayout.SetsLayout[0].insert({ 0, Fox::ShaderDescriptorBindings{ "Camera", Fox::EBindingType::UNIFORM_BUFFER_OBJECT, sizeof(glm::mat4), 1, Fox::EShaderStage::VERTEX } });
         shaderLayout.SetsLayout[1].insert({ 0, Fox::ShaderDescriptorBindings{ "Texture", Fox::EBindingType::TEXTURE, NULL, 1000, Fox::EShaderStage::FRAGMENT } });
         shaderLayout.SetsLayout[1].insert({ 1, Fox::ShaderDescriptorBindings{ "Sampler", Fox::EBindingType::SAMPLER, NULL, 1000, Fox::EShaderStage::FRAGMENT } });
+        shaderLayout.SetsLayout[1].insert({ 2, Fox::ShaderDescriptorBindings{ "Material", Fox::EBindingType::UNIFORM_BUFFER_OBJECT, sizeof(UboMaterial), 1000, Fox::EShaderStage::FRAGMENT } });
 
         _rootSignature = _ctx->CreateRootSignature(shaderLayout);
         _descriptorSet = _ctx->CreateDescriptorSets(_rootSignature, Fox::EDescriptorFrequency::NEVER, 2);
@@ -501,6 +509,15 @@ class TriangleApp : public App
                     //_textures[outName] = std::make_pair(tex, samp);
                 }
         }
+        UboMaterial emptyMat;
+        for (uint32_t i = 0; i < 1000; i++)
+            {
+                _materialUbos.push_back(_ctx->CreateBuffer(sizeof(UboMaterial), Fox::EResourceType::UNIFORM_BUFFER, Fox::EMemoryUsage::RESOURCE_MEMORY_USAGE_CPU_ONLY));
+                void* mem = _ctx->BeginMapBuffer(_materialUbos.back());
+                memcpy(mem, &emptyMat, sizeof(UboMaterial));
+                _ctx->EndMapBuffer(_materialUbos.back());
+            }
+
         // Build vertex and index buffer
         {
             _indirectVertex  = _ctx->CreateBuffer(sizeof(Vertex) * 1000000, Fox::EResourceType::VERTEX_INDEX_BUFFER, Fox::EMemoryUsage::RESOURCE_MEMORY_USAGE_CPU_ONLY);
@@ -541,7 +558,7 @@ class TriangleApp : public App
         {
             _loadTexture("texture.jpg", _texture, _sampler);
 
-            Fox::DescriptorData param[2] = {};
+            Fox::DescriptorData param[3] = {};
             param[0].pName               = "cameraUbo";
             param[0].Buffers             = &_cameraUbo[0];
             _ctx->UpdateDescriptorSet(_descriptorSet, 0, 1, param);
@@ -567,7 +584,10 @@ class TriangleApp : public App
             param[1].Samplers = sampArray.data();
             param[1].Index    = 1;
             param[1].Count    = sampArray.size();
-            _ctx->UpdateDescriptorSet(_textureSet, 0, 2, param);
+            param[2].Index    = 2;
+            param[2].Count    = _materialUbos.size();
+            param[2].Buffers  = _materialUbos.data();
+            _ctx->UpdateDescriptorSet(_textureSet, 0, 3, param);
         }
     };
     ~TriangleApp()
@@ -718,6 +738,7 @@ class TriangleApp : public App
     uint32_t                                                       _indirectVertex;
     uint32_t                                                       _indirectIndices;
     std::vector<Fox::DrawIndexedIndirectCommand>                   _drawCommands;
+    std::vector<uint32_t>                                          _materialUbos;
 
     bool _loadTexture(const std::string& filepath, uint32_t& texture, uint32_t& sampler)
     {

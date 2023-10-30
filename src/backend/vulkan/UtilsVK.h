@@ -145,6 +145,8 @@ convertVkFormat(const VkFormat format)
                 return Fox::EFormat::RGBA_DXT3;
             case VK_FORMAT_BC5_UNORM_BLOCK:
                 return Fox::EFormat::RGBA_DXT5;
+            case VK_FORMAT_R32_SINT:
+                return Fox::EFormat::SINT32;
         }
 
     check(0);
@@ -190,6 +192,8 @@ convertFormat(const Fox::EFormat format)
                 return VK_FORMAT_BC3_UNORM_BLOCK;
             case Fox::EFormat::RGBA_DXT5:
                 return VK_FORMAT_BC5_UNORM_BLOCK;
+            case Fox::EFormat::SINT32:
+                return VK_FORMAT_R32_SINT;
         }
 
     check(0);
