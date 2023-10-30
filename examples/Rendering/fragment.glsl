@@ -2,8 +2,7 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_ARB_shader_draw_parameters : enable
 
-layout(location = 0) in vec4 fragColor;
-layout(location = 1) in vec2 texCoord;
+layout(location = 0) in vec2 outTexCoord;
 layout(location = 0) out vec4 outColor;
 
 layout(set =1 , binding = 0) uniform texture2D my_tex[]; // texture unit
@@ -19,5 +18,5 @@ return uv;
 }
 
 void main() {
-    outColor = texture( sampler2D( my_tex[0], my_sampler[0] ), texCoord );
+    outColor = texture( sampler2D( my_tex[0], my_sampler[0] ), outTexCoord );
 }

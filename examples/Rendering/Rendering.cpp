@@ -25,6 +25,36 @@ using namespace tinygltf;
 #include <stdexcept>
 #include <string>
 
+#define GL_UNSIGNED_BYTE 0x1401
+#define GL_SHORT 0x1402
+#define GL_UNSIGNED_SHORT 0x1403
+#define GL_INT 0x1404
+#define GL_UNSIGNED_INT 0x1405
+#define GL_FLOAT 0x1406
+
+size_t
+GlTypeToSize(const uint32_t glType)
+{
+    switch (glType)
+        {
+            case GL_UNSIGNED_BYTE:
+                return 1;
+                break;
+            case GL_SHORT:
+            case GL_UNSIGNED_SHORT:
+                return 2;
+                break;
+            case GL_INT:
+            case GL_UNSIGNED_INT:
+            case GL_FLOAT:
+                return 4;
+                break;
+            default:
+                throw std::runtime_error("Invalid GL type");
+                break;
+        };
+};
+
 void
 Log(const char* msg)
 {
@@ -155,6 +185,32 @@ loadImageGenerateMipMaps(const char* path, uint32_t* width, uint32_t* height, ui
     return levels;
 }
 
+struct Vertex
+{
+    glm::vec3 Position;
+    glm::vec3 Normal;
+    glm::vec2 Uv;
+};
+
+struct Submesh
+{
+    std::vector<Vertex>   Vertices;
+    std::vector<uint32_t> Indices;
+    std::string           Material;
+};
+
+struct MeshData
+{
+    std::string          Name{};
+    std::vector<Submesh> Submeshes;
+};
+
+struct MeshMaterial
+{
+    std::string Name;
+    std::string TextureName;
+};
+
 glm::mat4
 computeViewMatrix(glm::vec3 rotation, glm::vec3 translation, glm::vec3& frontVector, glm::vec3& upVector)
 {
@@ -190,9 +246,11 @@ class TriangleApp : public App
     {
         // Create vertex layout
         Fox::VertexLayoutInfo position("SV_POSITION", Fox::EFormat::R32G32B32_FLOAT, 0, Fox::EVertexInputClassification::PER_VERTEX_DATA);
-        Fox::VertexLayoutInfo color("Color0", Fox::EFormat::R32G32B32A32_FLOAT, 3 * sizeof(float), Fox::EVertexInputClassification::PER_VERTEX_DATA);
-        _vertexLayout             = _ctx->CreateVertexLayout({ position, color });
-        constexpr uint32_t stride = 7 * sizeof(float);
+        Fox::VertexLayoutInfo color("Color0", Fox::EFormat::R32G32B32A32_FLOAT, 4 * sizeof(float), Fox::EVertexInputClassification::PER_VERTEX_DATA);
+        Fox::VertexLayoutInfo normal("NORMAL", Fox::EFormat::R32G32B32_FLOAT, 3 * sizeof(float), Fox::EVertexInputClassification::PER_VERTEX_DATA);
+        Fox::VertexLayoutInfo texcoord("TEXCOORD", Fox::EFormat::R32G32_FLOAT, 6 * sizeof(float), Fox::EVertexInputClassification::PER_VERTEX_DATA);
+        _vertexLayout             = _ctx->CreateVertexLayout({ position, normal, texcoord });
+        constexpr uint32_t stride = 8 * sizeof(float);
 
         // Create shader
         Fox::ShaderSource shaderSource;
@@ -218,8 +276,9 @@ class TriangleApp : public App
 
         // Create pipeline
         Fox::PipelineFormat pipelineFormat;
-        pipelineFormat.DepthTest  = true;
-        pipelineFormat.DepthWrite = true;
+        pipelineFormat.DepthTest     = true;
+        pipelineFormat.DepthWrite    = true;
+        pipelineFormat.DepthTestMode = Fox::EDepthTest::LESS;
 
         Fox::DFramebufferAttachments attachments;
         attachments.RenderTargets[0] = _swapchainRenderTargets[_swapchainImageIndex];
@@ -229,13 +288,16 @@ class TriangleApp : public App
 
         // clang-format off
         constexpr float s = 100.f;
-        constexpr std::array<float, 21> ndcTriangle{            
+        constexpr std::array<float, 24> ndcTriangle{            
             -1*s, -1*s, 0.5*s,//pos
-            0, 1, 0, 1,// color
+            0, 0, 1,// normal
+            0,0,//uv
             1*s, -1*s, 0.5*s,//pos
-            0, 0, 1, 1,// color
+            0, 0, 1,// normal
+            1,0,//uv
             0, 1*s, 0.5*s,//pos
-            0, 1, 1, 1// color
+            0, 0, 1,// normal
+            1,1,//uv
         };
         // clang-format on
         constexpr size_t bufSize = sizeof(float) * ndcTriangle.size();
@@ -294,6 +356,132 @@ class TriangleApp : public App
                     printf("Failed to parse glTF\n");
                 }
 
+            // Load meshes
+            for (const auto& scene : model.scenes)
+                for (const auto& node : scene.nodes)
+                    {
+                        const auto& mesh = model.meshes[node];
+
+                        MeshData meshData;
+                        meshData.Name = mesh.name;
+
+                        for (const auto& primitive : mesh.primitives)
+                            {
+
+                                Submesh submesh;
+                                submesh.Material = model.materials[primitive.material].name;
+
+                                // Index buffer
+                                {
+                                    const auto&  indexAccessor = model.accessors[primitive.indices];
+                                    const auto&  indexBufView  = model.bufferViews[indexAccessor.bufferView];
+                                    const size_t offset        = indexBufView.byteOffset + indexAccessor.byteOffset;
+                                    size_t       valueBytes    = GlTypeToSize(indexAccessor.componentType);
+                                    const size_t bufferViewEnd = offset + indexAccessor.count * valueBytes;
+                                    const size_t validStride   = indexBufView.byteStride ? indexBufView.byteStride : valueBytes;
+                                    submesh.Indices.reserve(indexAccessor.count);
+
+                                    for (size_t i = offset; i < bufferViewEnd; i += validStride)
+                                        {
+                                            const unsigned char* bufferSlice = &model.buffers[indexBufView.buffer].data.at(i);
+
+                                            unsigned char uByteData;
+                                            memcpy(&uByteData, (void*)bufferSlice, sizeof(uByteData));
+                                            unsigned short ushortData;
+                                            memcpy(&ushortData, (void*)bufferSlice, sizeof(ushortData));
+                                            uint32_t uintData;
+                                            memcpy(&uintData, (void*)bufferSlice, sizeof(uintData));
+
+                                            switch (indexAccessor.componentType)
+                                                {
+                                                    case GL_UNSIGNED_BYTE:
+                                                        submesh.Indices.push_back(((uint32_t)uByteData));
+                                                        break;
+                                                    case GL_SHORT:
+                                                    case GL_UNSIGNED_SHORT:
+
+                                                        submesh.Indices.push_back(((uint32_t)ushortData));
+                                                        break;
+                                                    case GL_INT:
+                                                    case GL_UNSIGNED_INT:
+                                                    case GL_FLOAT:
+                                                        submesh.Indices.push_back(((uint32_t)uintData));
+                                                        break;
+                                                    default:
+                                                        throw std::runtime_error("Invalid GL type");
+                                                        break;
+                                                }
+                                        }
+                                }
+
+                                std::vector<glm::vec3> positions;
+                                std::vector<glm::vec2> uvs;
+                                std::vector<glm::vec3> normals;
+                                for (const auto& attribute : primitive.attributes)
+                                    {
+                                        const auto& accessor = model.accessors[attribute.second];
+                                        const auto& bufView  = model.bufferViews[accessor.bufferView];
+                                        const auto& buffer   = model.buffers[bufView.buffer];
+                                        const auto  begin    = bufView.byteOffset + accessor.byteOffset;
+                                        const auto  end      = begin + bufView.byteLength;
+
+                                        if (attribute.first == "POSITION")
+                                            {
+                                                for (size_t i = begin; i < end; i += 3 * sizeof(float))
+                                                    {
+                                                        glm::vec3 pos;
+                                                        memcpy(&pos[0], &buffer.data.at(i), sizeof(float) * 3);
+                                                        positions.push_back(pos);
+                                                    }
+                                            }
+                                        else if (attribute.first == "TEXCOORD_0")
+                                            {
+                                                for (size_t i = begin; i < end; i += 2 * sizeof(float))
+                                                    {
+                                                        glm::vec2 uv;
+                                                        memcpy(&uv[0], &buffer.data.at(i), sizeof(float) * 2);
+                                                        uvs.push_back(uv);
+                                                    }
+                                            }
+                                        else if (attribute.first == "NORMAL")
+                                            {
+                                                for (size_t i = begin; i < end; i += 3 * sizeof(float))
+                                                    {
+                                                        glm::vec3 norm;
+                                                        memcpy(&norm[0], &buffer.data.at(i), sizeof(float) * 3);
+                                                        normals.push_back(norm);
+                                                    }
+                                            }
+                                    }
+                                assert(positions.size() == uvs.size());
+                                assert(normals.size() == uvs.size());
+
+                                for (size_t i = 0; i < positions.size(); i++)
+                                    {
+                                        Vertex v;
+                                        v.Position = positions[i];
+                                        v.Normal   = normals[i];
+                                        v.Uv       = uvs[i];
+
+                                        submesh.Vertices.push_back(v);
+                                    }
+
+                                meshData.Submeshes.push_back(submesh);
+                            }
+
+                        _meshes.push_back(meshData);
+                    }
+
+            for (const auto& mat : model.materials)
+                {
+                    MeshMaterial material;
+                    material.Name               = mat.name;
+                    const auto sourceImageIndex = model.textures.at(mat.pbrMetallicRoughness.baseColorTexture.index).source;
+                    material.TextureName        = model.images[sourceImageIndex].uri;
+
+                    _materials[mat.name] = material;
+                }
+
             uint32_t cnt{ 1 };
             for (auto& image : model.images)
                 {
@@ -309,10 +497,47 @@ class TriangleApp : public App
                     uint32_t tex, samp;
 
                     std::cout << "Loading texture:" << outName << " " << cnt++ << "/" << model.images.size() << std::endl;
-                    _loadTexture("Sponza/glTF/" + outName, tex, samp);
-                    _textures[outName] = std::make_pair(tex, samp);
+                    //_loadTexture("Sponza/glTF/" + outName, tex, samp);
+                    //_textures[outName] = std::make_pair(tex, samp);
                 }
         }
+        // Build vertex and index buffer
+        {
+            _indirectVertex  = _ctx->CreateBuffer(sizeof(Vertex) * 1000000, Fox::EResourceType::VERTEX_INDEX_BUFFER, Fox::EMemoryUsage::RESOURCE_MEMORY_USAGE_CPU_ONLY);
+            _indirectIndices = _ctx->CreateBuffer(sizeof(uint32_t) * 1000000, Fox::EResourceType::VERTEX_INDEX_BUFFER, Fox::EMemoryUsage::RESOURCE_MEMORY_USAGE_CPU_ONLY);
+
+            uint32_t vertexOffset{};
+            uint32_t indexOffset{};
+
+            void* vertexMem = _ctx->BeginMapBuffer(_indirectVertex);
+            void* indexMem  = _ctx->BeginMapBuffer(_indirectIndices);
+
+            for (const auto& mesh : _meshes)
+                {
+                    for (const auto& submesh : mesh.Submeshes)
+                        {
+
+                            Fox::DrawIndexedIndirectCommand draw;
+                            draw.firstIndex    = indexOffset / sizeof(uint32_t);
+                            draw.indexCount    = submesh.Indices.size();
+                            draw.instanceCount = 1;
+                            draw.vertexOffset  = vertexOffset / sizeof(Vertex);
+                            draw.firstInstance = 0;
+
+                            _drawCommands.push_back(draw);
+
+                            memcpy(((uint8_t*)vertexMem) + vertexOffset, submesh.Vertices.data(), sizeof(Vertex) * submesh.Vertices.size());
+                            vertexOffset += sizeof(Vertex) * submesh.Vertices.size();
+
+                            memcpy(((uint8_t*)indexMem) + indexOffset, submesh.Indices.data(), sizeof(uint32_t) * submesh.Indices.size());
+                            indexOffset += sizeof(uint32_t) * submesh.Indices.size();
+                        }
+                }
+
+            _ctx->EndMapBuffer(_indirectVertex);
+            _ctx->EndMapBuffer(_indirectIndices);
+        }
+
         {
             _loadTexture("texture.jpg", _texture, _sampler);
 
@@ -417,7 +642,7 @@ class TriangleApp : public App
                 }
             glm::vec3 up;
             _viewMatrix       = computeViewMatrix(_cameraRotation, _cameraLocation, _frontVector, up);
-            _projectionMatrix = computeProjectionMatrix(w, h, 70.f, 0.f, 1.f);
+            _projectionMatrix = computeProjectionMatrix(w, h, 70.f, 0.1f, 100000.f);
 
             {
                 void*     data   = _ctx->BeginMapBuffer(_cameraUbo[_frameIndex]);
@@ -437,19 +662,27 @@ class TriangleApp : public App
         loadOp.LoadColor[0]         = Fox::ERenderPassLoad::Clear;
         loadOp.ClearColor->color    = { 1, 1, 1, 1 };
         loadOp.StoreActionsColor[0] = Fox::ERenderPassStore::Store;
-        loadOp.ClearDepthStencil    = { 0, 255 };
+        loadOp.ClearDepthStencil    = { 1.f, 255 };
         loadOp.LoadDepth            = Fox::ERenderPassLoad::Clear;
         loadOp.StoreDepth           = Fox::ERenderPassStore::Store;
         _ctx->BindRenderTargets(cmd, attachments, loadOp);
 
         _ctx->BindPipeline(cmd, _pipeline);
-        _ctx->SetViewport(cmd, 0, 0, w, h, 0.f, 1.f);
+        _ctx->SetViewport(cmd, 0, 0, w, h, 0.1f, 1.f);
         _ctx->SetScissor(cmd, 0, 0, w, h);
         _ctx->BindVertexBuffer(cmd, _triangle);
 
         _ctx->BindDescriptorSet(cmd, _frameIndex, _descriptorSet);
         _ctx->BindDescriptorSet(cmd, 0, _textureSet);
+        // Draw triangle
         _ctx->Draw(cmd, 0, 3);
+
+        _ctx->BindVertexBuffer(cmd, _indirectVertex);
+        _ctx->BindIndexBuffer(cmd, _indirectIndices);
+        for (const auto& draw : _drawCommands)
+            {
+                _ctx->DrawIndexed(cmd, draw.indexCount, draw.firstIndex, draw.vertexOffset);
+            }
 
         Fox::RenderTargetBarrier presentBarrier;
         presentBarrier.RenderTarget  = _swapchainRenderTargets[_swapchainImageIndex];
@@ -480,6 +713,11 @@ class TriangleApp : public App
     uint32_t                                                       _texture{};
     uint32_t                                                       _sampler{};
     std::unordered_map<std::string, std::pair<uint32_t, uint32_t>> _textures;
+    std::unordered_map<std::string, MeshMaterial>                  _materials;
+    std::vector<MeshData>                                          _meshes;
+    uint32_t                                                       _indirectVertex;
+    uint32_t                                                       _indirectIndices;
+    std::vector<Fox::DrawIndexedIndirectCommand>                   _drawCommands;
 
     bool _loadTexture(const std::string& filepath, uint32_t& texture, uint32_t& sampler)
     {

@@ -190,7 +190,9 @@ class VulkanContext final : public IContext
     void SetScissor(uint32_t commandBufferId, uint32_t x, uint32_t y, uint32_t width, uint32_t height) override;
     void BindPipeline(uint32_t commandBufferId, uint32_t pipeline) override;
     void BindVertexBuffer(uint32_t commandBufferId, uint32_t bufferId) override;
+    void BindIndexBuffer(uint32_t commandBufferId, uint32_t bufferId) override;
     void Draw(uint32_t commandBufferId, uint32_t firstVertex, uint32_t count) override;
+    void DrawIndexed(uint32_t commandBufferId, uint32_t index_count, uint32_t first_index, uint32_t first_vertex) override;
     void BindDescriptorSet(uint32_t commandBufferId, uint32_t setIndex, uint32_t descriptorSetId) override;
     void CopyImage(uint32_t commandId, uint32_t imageId, uint32_t width, uint32_t height, uint32_t mipMapIndex, uint32_t stagingBufferId, uint32_t stagingBufferOffset) override;
 
