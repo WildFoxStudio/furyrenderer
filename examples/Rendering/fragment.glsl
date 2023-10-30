@@ -1,5 +1,6 @@
 #version 450
 #extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_ARB_shader_draw_parameters : enable
 
 layout(location = 0) in vec4 fragColor;
 layout(location = 1) in vec2 texCoord;

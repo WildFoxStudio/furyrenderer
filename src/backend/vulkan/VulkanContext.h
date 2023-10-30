@@ -290,6 +290,7 @@ class VulkanContext final : public IContext
         "VK_KHR_surface",
         "VK_KHR_win32_surface",
         "VK_KHR_external_semaphore_capabilities",
+        VK_KHR_SHADER_DRAW_PARAMETERS_EXTENSION_NAME,
         VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME };
 #elif FOX_PLATFORM == FOX_PLATFORM_LINUX
     const std::vector<const char*> _instanceExtensionNames = {
@@ -298,6 +299,7 @@ class VulkanContext final : public IContext
         "VK_KHR_wayland_surface",
         "VK_KHR_xlib_surface",
         "VK_KHR_external_semaphore_capabilities",
+        VK_KHR_SHADER_DRAW_PARAMETERS_EXTENSION_NAME,
         VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
     };
 #else
