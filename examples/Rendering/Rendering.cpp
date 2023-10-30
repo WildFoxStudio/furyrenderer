@@ -642,7 +642,7 @@ class TriangleApp : public App
                 }
             glm::vec3 up;
             _viewMatrix       = computeViewMatrix(_cameraRotation, _cameraLocation, _frontVector, up);
-            _projectionMatrix = computeProjectionMatrix(w, h, 70.f, 0.1f, 100000.f);
+            _projectionMatrix = computeProjectionMatrix(w, h, 70.f, 0.1f, 1000.f);
 
             {
                 void*     data   = _ctx->BeginMapBuffer(_cameraUbo[_frameIndex]);
