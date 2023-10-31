@@ -180,7 +180,7 @@ VulkanContext::VulkanContext(const DContextConfig* const config) : _warningOutpu
 
         const auto fence = CreateFence(false);
         QueueSubmit({}, {}, { cmd }, fence);
-        WaitForFence(fence, 0xFFFF);
+        WaitForFence(fence, 0xFFFFFFFF);
         DestroyFence(fence);
         DestroyCommandBuffer(cmd);
         DestroyCommandPool(pool);

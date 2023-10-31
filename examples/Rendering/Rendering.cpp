@@ -280,7 +280,7 @@ class TriangleApp : public App
         _shader = _ctx->CreateShader(shaderSource);
 
         // Create depth render target
-        _depthRt = _ctx->CreateRenderTarget(Fox::EFormat::DEPTH16_UNORM, Fox::ESampleBit::COUNT_1_BIT, true, WIDTH, HEIGHT, 1, 1, Fox::EResourceState::UNDEFINED);
+        _depthRt = _ctx->CreateRenderTarget(Fox::EFormat::DEPTH32_FLOAT, Fox::ESampleBit::COUNT_1_BIT, true, WIDTH, HEIGHT, 1, 1, Fox::EResourceState::UNDEFINED);
 
         // Create pipeline
         Fox::PipelineFormat pipelineFormat;
@@ -296,16 +296,19 @@ class TriangleApp : public App
 
         // clang-format off
         constexpr float s = 100.f;
-        constexpr std::array<float, 24> ndcTriangle{            
+        constexpr std::array<float, 27> ndcTriangle{            
             -1*s, -1*s, 0.5*s,//pos
             0, 0, 1,// normal
             0,0,//uv
+            0, // material Id
             1*s, -1*s, 0.5*s,//pos
             0, 0, 1,// normal
             1,0,//uv
+            0, // material Id
             0, 1*s, 0.5*s,//pos
             0, 0, 1,// normal
             1,1,//uv
+            0, // material Id
         };
         // clang-format on
         constexpr size_t bufSize = sizeof(float) * ndcTriangle.size();
@@ -505,8 +508,8 @@ class TriangleApp : public App
                     uint32_t tex, samp;
 
                     std::cout << "Loading texture:" << outName << " " << cnt++ << "/" << model.images.size() << std::endl;
-                    //_loadTexture("Sponza/glTF/" + outName, tex, samp);
-                    //_textures[outName] = std::make_pair(tex, samp);
+                    _loadTexture("Sponza/glTF/" + outName, tex, samp);
+                    _textures[outName] = std::make_pair(tex, samp);
                 }
         }
         UboMaterial emptyMat;
@@ -529,10 +532,33 @@ class TriangleApp : public App
             void* vertexMem = _ctx->BeginMapBuffer(_indirectVertex);
             void* indexMem  = _ctx->BeginMapBuffer(_indirectIndices);
 
+            uint32_t uboMaterialCount{};
             for (const auto& mesh : _meshes)
                 {
                     for (const auto& submesh : mesh.Submeshes)
                         {
+                            // Append texture and sampler
+                            const auto material           = _textures[_materials[submesh.Material].TextureName];
+                            const auto textureShaderIndex = texArray.size();
+                            texArray.push_back(material.first);
+                            sampArray.push_back(material.second);
+
+                            // Update ubo
+                            {
+                                UboMaterial uboData;
+                                uboData.AlbedoId = textureShaderIndex;
+                                uint32_t ubo     = _materialUbos[uboMaterialCount++];
+                                void*    mem     = _ctx->BeginMapBuffer(ubo);
+                                memcpy(mem, &uboData, sizeof(UboMaterial));
+                                _ctx->EndMapBuffer(ubo);
+                            }
+
+                            // Update material id inside vertices
+                            std::vector<Vertex> vertices = submesh.Vertices;
+                            for (auto& vertex : vertices)
+                                {
+                                    vertex.MaterialId = uboMaterialCount - 1;
+                                }
 
                             Fox::DrawIndexedIndirectCommand draw;
                             draw.firstIndex    = indexOffset / sizeof(uint32_t);
@@ -543,8 +569,8 @@ class TriangleApp : public App
 
                             _drawCommands.push_back(draw);
 
-                            memcpy(((uint8_t*)vertexMem) + vertexOffset, submesh.Vertices.data(), sizeof(Vertex) * submesh.Vertices.size());
-                            vertexOffset += sizeof(Vertex) * submesh.Vertices.size();
+                            memcpy(((uint8_t*)vertexMem) + vertexOffset, vertices.data(), sizeof(Vertex) * vertices.size());
+                            vertexOffset += sizeof(Vertex) * vertices.size();
 
                             memcpy(((uint8_t*)indexMem) + indexOffset, submesh.Indices.data(), sizeof(uint32_t) * submesh.Indices.size());
                             indexOffset += sizeof(uint32_t) * submesh.Indices.size();
@@ -565,17 +591,14 @@ class TriangleApp : public App
             param[0].Buffers = &_cameraUbo[1];
             _ctx->UpdateDescriptorSet(_descriptorSet, 1, 1, param);
 
-            std::vector<uint32_t> texArray;
-            std::vector<uint32_t> sampArray;
-
             texArray.push_back(_texture);
             sampArray.push_back(_sampler);
 
-            for (const auto& texSamp : _textures)
-                {
-                    texArray.push_back(texSamp.second.first);
-                    sampArray.push_back(texSamp.second.second);
-                }
+            // for (const auto& texSamp : _textures)
+            //     {
+            //         texArray.push_back(texSamp.second.first);
+            //         sampArray.push_back(texSamp.second.second);
+            //     }
 
             param[0].pName    = "texture";
             param[0].Textures = texArray.data();
@@ -607,7 +630,7 @@ class TriangleApp : public App
     void RecreateSwapchain(uint32_t w, uint32_t h) override
     {
         _ctx->DestroyRenderTarget(_depthRt);
-        _depthRt = _ctx->CreateRenderTarget(Fox::EFormat::DEPTH16_UNORM, Fox::ESampleBit::COUNT_1_BIT, true, w, h, 1, 1, Fox::EResourceState::UNDEFINED);
+        _depthRt = _ctx->CreateRenderTarget(Fox::EFormat::DEPTH32_FLOAT, Fox::ESampleBit::COUNT_1_BIT, true, w, h, 1, 1, Fox::EResourceState::UNDEFINED);
     };
 
     void Draw(uint32_t cmd, uint32_t w, uint32_t h)
@@ -662,7 +685,7 @@ class TriangleApp : public App
                 }
             glm::vec3 up;
             _viewMatrix       = computeViewMatrix(_cameraRotation, _cameraLocation, _frontVector, up);
-            _projectionMatrix = computeProjectionMatrix(w, h, 70.f, 0.1f, 1000.f);
+            _projectionMatrix = computeProjectionMatrix(w, h, 70.f, 0.1f, 100.f);
 
             {
                 void*     data   = _ctx->BeginMapBuffer(_cameraUbo[_frameIndex]);
@@ -739,6 +762,8 @@ class TriangleApp : public App
     uint32_t                                                       _indirectIndices;
     std::vector<Fox::DrawIndexedIndirectCommand>                   _drawCommands;
     std::vector<uint32_t>                                          _materialUbos;
+    std::vector<uint32_t>                                          texArray;
+    std::vector<uint32_t>                                          sampArray;
 
     bool _loadTexture(const std::string& filepath, uint32_t& texture, uint32_t& sampler)
     {
