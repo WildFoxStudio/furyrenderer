@@ -658,6 +658,11 @@ VulkanContext::CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usag
                 usageFlags = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
                 buffer     = &_transferBuffers.at(index);
                 break;
+            case EResourceType::INDIRECT_DRAW_COMMAND:
+                index      = AllocResource<DBufferVulkan, MAX_RESOURCES>(_indirectBuffers);
+                usageFlags = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+                buffer     = &_indirectBuffers.at(index);
+                break;
             default:
                 check(0); // Invalid type
                 break;
@@ -708,6 +713,9 @@ VulkanContext::BeginMapBuffer(BufferId buffer)
             case EResourceType::TRANSFER:
                 bufferPtr = &_transferBuffers.at(index);
                 break;
+            case EResourceType::INDIRECT_DRAW_COMMAND:
+                bufferPtr = &_indirectBuffers.at(index);
+                break;
             default:
                 check(0); // Invalid type
                 break;
@@ -734,6 +742,9 @@ VulkanContext::EndMapBuffer(BufferId buffer)
                 break;
             case EResourceType::TRANSFER:
                 bufferPtr = &_transferBuffers.at(index);
+                break;
+            case EResourceType::INDIRECT_DRAW_COMMAND:
+                bufferPtr = &_indirectBuffers.at(index);
                 break;
             default:
                 check(0); // Invalid type
@@ -1633,7 +1644,6 @@ VulkanContext::BindVertexBuffer(uint32_t commandBufferId, uint32_t bufferId)
     vkCmdBindVertexBuffers(commandBufferRef.Cmd, 0, 1, &vertexBufRef.Buffer.Buffer, &offset);
 }
 
-
 void
 VulkanContext::BindIndexBuffer(uint32_t commandBufferId, uint32_t bufferId)
 {
@@ -1646,7 +1656,6 @@ VulkanContext::BindIndexBuffer(uint32_t commandBufferId, uint32_t bufferId)
     VkDeviceSize offset{};
     vkCmdBindIndexBuffer(commandBufferRef.Cmd, indexBufRef.Buffer.Buffer, offset, VK_INDEX_TYPE_UINT32);
 }
-
 
 void
 VulkanContext::Draw(uint32_t commandBufferId, uint32_t firstVertex, uint32_t count)
@@ -1666,6 +1675,19 @@ VulkanContext::DrawIndexed(uint32_t commandBufferId, uint32_t index_count, uint3
     check(commandBufferRef.ActiveRenderPass); // Must be in a render pass
 
     vkCmdDrawIndexed(commandBufferRef.Cmd, index_count, 1, first_index, first_vertex, 0);
+}
+
+void
+VulkanContext::DrawIndexedIndirect(uint32_t commandBufferId, uint32_t buffer, uint32_t offset, uint32_t drawCount, uint32_t stride)
+{
+    auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
+    check(commandBufferRef.IsRecording); // Must be in recording state
+    check(commandBufferRef.ActiveRenderPass); // Must be in a render pass
+
+    auto& indirectBufferRef = GetResource<DBufferVulkan, EResourceType::INDIRECT_DRAW_COMMAND, MAX_RESOURCES>(_indirectBuffers, buffer);
+
+    VkDeviceSize deviceOffset{ offset };
+    vkCmdDrawIndexedIndirect(commandBufferRef.Cmd, indirectBufferRef.Buffer.Buffer, deviceOffset, drawCount, stride);
 }
 
 void

@@ -193,6 +193,7 @@ class VulkanContext final : public IContext
     void BindIndexBuffer(uint32_t commandBufferId, uint32_t bufferId) override;
     void Draw(uint32_t commandBufferId, uint32_t firstVertex, uint32_t count) override;
     void DrawIndexed(uint32_t commandBufferId, uint32_t index_count, uint32_t first_index, uint32_t first_vertex) override;
+    void DrawIndexedIndirect(uint32_t commandBufferId, uint32_t buffer, uint32_t offset, uint32_t drawCount, uint32_t stride) override;
     void BindDescriptorSet(uint32_t commandBufferId, uint32_t setIndex, uint32_t descriptorSetId) override;
     void CopyImage(uint32_t commandId, uint32_t imageId, uint32_t width, uint32_t height, uint32_t mipMapIndex, uint32_t stagingBufferId, uint32_t stagingBufferOffset) override;
 
@@ -246,6 +247,7 @@ class VulkanContext final : public IContext
     std::array<DBufferVulkan, MAX_RESOURCES>    _vertexBuffers;
     std::array<DBufferVulkan, MAX_RESOURCES>    _transferBuffers;
     std::array<DBufferVulkan, MAX_RESOURCES>    _uniformBuffers;
+    std::array<DBufferVulkan, MAX_RESOURCES>    _indirectBuffers;
     /*Whenever a render target gets deleted remove also framebuffers that have that image id as attachment*/
     std::array<DFramebufferVulkan, MAX_RESOURCES>       _framebuffers;
     std::array<DShaderVulkan, MAX_RESOURCES>            _shaders;

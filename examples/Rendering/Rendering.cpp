@@ -580,6 +580,15 @@ class TriangleApp : public App
             _ctx->EndMapBuffer(_indirectVertex);
             _ctx->EndMapBuffer(_indirectIndices);
         }
+        // Indirect buffer
+        {
+            _indirectBuffer = _ctx->CreateBuffer(sizeof(Fox::DrawIndexedIndirectCommand) * 1000, Fox::EResourceType::INDIRECT_DRAW_COMMAND, Fox::EMemoryUsage::RESOURCE_MEMORY_USAGE_CPU_ONLY);
+            void* mem       = _ctx->BeginMapBuffer(_indirectBuffer);
+
+            memcpy(mem, _drawCommands.data(), sizeof(Fox::DrawIndexedIndirectCommand) * _drawCommands.size());
+
+            _ctx->EndMapBuffer(_indirectBuffer);
+        }
 
         {
             _loadTexture("texture.jpg", _texture, _sampler);
@@ -722,10 +731,12 @@ class TriangleApp : public App
 
         _ctx->BindVertexBuffer(cmd, _indirectVertex);
         _ctx->BindIndexBuffer(cmd, _indirectIndices);
-        for (const auto& draw : _drawCommands)
-            {
-                _ctx->DrawIndexed(cmd, draw.indexCount, draw.firstIndex, draw.vertexOffset);
-            }
+
+        _ctx->DrawIndexedIndirect(cmd, _indirectBuffer, 0, _drawCommands.size(), sizeof(Fox::DrawIndexedIndirectCommand));
+        //for (const auto& draw : _drawCommands)
+        //    {
+        //        _ctx->DrawIndexed(cmd, draw.indexCount, draw.firstIndex, draw.vertexOffset);
+        //    }
 
         Fox::RenderTargetBarrier presentBarrier;
         presentBarrier.RenderTarget  = _swapchainRenderTargets[_swapchainImageIndex];
@@ -764,6 +775,7 @@ class TriangleApp : public App
     std::vector<uint32_t>                                          _materialUbos;
     std::vector<uint32_t>                                          texArray;
     std::vector<uint32_t>                                          sampArray;
+    uint32_t                                                       _indirectBuffer;
 
     bool _loadTexture(const std::string& filepath, uint32_t& texture, uint32_t& sampler)
     {

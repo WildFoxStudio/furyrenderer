@@ -24,23 +24,24 @@ namespace Fox
 // SHOULD BE PRIVATE
 enum EResourceType : uint8_t
 {
-    TRANSFER            = 0,
-    VERTEX_INPUT_LAYOUT = 1,
-    SHADER              = 2,
-    VERTEX_INDEX_BUFFER = 3,
-    UNIFORM_BUFFER      = 4,
-    SWAPCHAIN           = 5,
-    FRAMEBUFFER         = 6,
-    IMAGE               = 7,
-    GRAPHICS_PIPELINE   = 8,
-    COMMAND_POOL        = 9,
-    COMMAND_BUFFER      = 10,
-    FENCE               = 11,
-    SEMAPHORE           = 12,
-    RENDER_TARGET       = 13,
-    ROOT_SIGNATURE      = 14,
-    DESCRIPTOR_SET      = 15,
-    SAMPLER             = 16,
+    TRANSFER              = 0,
+    VERTEX_INPUT_LAYOUT   = 1,
+    SHADER                = 2,
+    VERTEX_INDEX_BUFFER   = 3,
+    UNIFORM_BUFFER        = 4,
+    SWAPCHAIN             = 5,
+    FRAMEBUFFER           = 6,
+    IMAGE                 = 7,
+    GRAPHICS_PIPELINE     = 8,
+    COMMAND_POOL          = 9,
+    COMMAND_BUFFER        = 10,
+    FENCE                 = 11,
+    SEMAPHORE             = 12,
+    RENDER_TARGET         = 13,
+    ROOT_SIGNATURE        = 14,
+    DESCRIPTOR_SET        = 15,
+    SAMPLER               = 16,
+    INDIRECT_DRAW_COMMAND = 17,
 };
 // SHOULD BE PRIVATE
 
@@ -81,6 +82,7 @@ typedef uint32_t VertexInputLayoutId;
 enum class EBufferType
 {
     VERTEX_INDEX_BUFFER,
+    INDIRECT_DRAW_COMMAND,
     UNIFORM_BUFFER_OBJECT,
     STORAGE_BUFFER_OBJECT,
 };
@@ -729,6 +731,7 @@ class IContext
     virtual void     BindIndexBuffer(uint32_t commandBufferId, uint32_t bufferId)                                                                                                   = 0;
     virtual void     Draw(uint32_t commandBufferId, uint32_t firstVertex, uint32_t count)                                                                                           = 0;
     virtual void     DrawIndexed(uint32_t commandBufferId, uint32_t index_count, uint32_t first_index, uint32_t first_vertex)                                                       = 0;
+    virtual void     DrawIndexedIndirect(uint32_t commandBufferId, uint32_t buffer, uint32_t offset, uint32_t drawCount, uint32_t stride)                                           = 0;
     virtual void     BindDescriptorSet(uint32_t commandBufferId, uint32_t setIndex, uint32_t descriptorSetId)                                                                       = 0;
     virtual void     CopyImage(uint32_t commandId, uint32_t imageId, uint32_t width, uint32_t height, uint32_t mipMapIndex, uint32_t stagingBufferId, uint32_t stagingBufferOffset) = 0;
 
