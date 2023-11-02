@@ -1,6 +1,11 @@
 # FoxFuryRenderer
 Vulkan Abstraction Layer
 
+
+![Sponza](sponza.jpg "Sponza")
+
+Sponza rendered with draw indexed indirect
+
 ## Overview
 This hobby project is a thin Vulkan abstraction layer written in C++. It simplifies Vulkan API usage by providing a higher-level, more user-friendly interface for developers while maintaining the performance and flexibility of Vulkan. This abstraction layer serves as a helpful tool for those who want to work with Vulkan without dealing with its complex low-level details.
 
