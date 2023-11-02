@@ -57,7 +57,7 @@ int main() {
 For detailed documentation, usage examples, and API reference, please refer to the examples provided in this repository.
 
 ## License
-This project is licensed under the MIT License. See the LICENSE file for details.
+This project is licensed under the GNU GENERAL PUBLIC LICENSE. See the LICENSE file for details.
 
 ## Contributing
 Contributions are welcome! If you would like to contribute to this project create a pull request!
