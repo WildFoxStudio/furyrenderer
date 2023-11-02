@@ -18,10 +18,10 @@ class RIVulkanDevice7 : public RIVulkanDevice6
 
   public:
     virtual ~RIVulkanDevice7();
-    VkFramebuffer CreateFramebuffer(const std::vector<VkImageView>& imageViews, uint32_t width, uint32_t height, VkRenderPass renderpass);
-    void          DestroyFramebuffer(VkFramebuffer framebuffer);
+    VkFramebuffer _createFramebuffer(const std::vector<VkImageView>& imageViews, uint32_t width, uint32_t height, VkRenderPass renderpass);
+    void          _destroyFramebuffer(VkFramebuffer framebuffer);
 
   private:
-    std::unordered_set<VkFramebuffer> _framebuffers;
+    std::unordered_set<VkFramebuffer> _framebuffers_DEPRECATED;
 };
 }

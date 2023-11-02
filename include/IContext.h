@@ -2,10 +2,13 @@
 
 #pragma once
 
+#include <array>
 #include <map>
 #include <optional>
 #include <string>
 #include <vector>
+
+#define NOMINMAX
 
 #if defined(_WIN32) || defined(WIN32) || defined(_WIN64) || defined(WIN64)
 #define WIN32_LEAN_AND_MEAN
@@ -21,13 +24,24 @@ namespace Fox
 // SHOULD BE PRIVATE
 enum EResourceType : uint8_t
 {
-    VERTEX_INPUT_LAYOUT = 1,
-    SHADER              = 2,
-    VERTEX_INDEX_BUFFER = 3,
-    UNIFORM_BUFFER      = 4,
-    SWAPCHAIN           = 5,
-    FRAMEBUFFER         = 6,
-    IMAGE               = 7,
+    TRANSFER              = 0,
+    VERTEX_INPUT_LAYOUT   = 1,
+    SHADER                = 2,
+    VERTEX_INDEX_BUFFER   = 3,
+    UNIFORM_BUFFER        = 4,
+    SWAPCHAIN             = 5,
+    FRAMEBUFFER           = 6,
+    IMAGE                 = 7,
+    GRAPHICS_PIPELINE     = 8,
+    COMMAND_POOL          = 9,
+    COMMAND_BUFFER        = 10,
+    FENCE                 = 11,
+    SEMAPHORE             = 12,
+    RENDER_TARGET         = 13,
+    ROOT_SIGNATURE        = 14,
+    DESCRIPTOR_SET        = 15,
+    SAMPLER               = 16,
+    INDIRECT_DRAW_COMMAND = 17,
 };
 // SHOULD BE PRIVATE
 
@@ -68,8 +82,19 @@ typedef uint32_t VertexInputLayoutId;
 enum class EBufferType
 {
     VERTEX_INDEX_BUFFER,
+    INDIRECT_DRAW_COMMAND,
     UNIFORM_BUFFER_OBJECT,
     STORAGE_BUFFER_OBJECT,
+};
+
+enum class EMemoryUsage
+{
+    /// Memory will be used on device only, no need to be mapped on host.
+    RESOURCE_MEMORY_USAGE_GPU_ONLY = 1,
+    /// Memory will be mapped on host. Could be used for transfer to device.
+    RESOURCE_MEMORY_USAGE_CPU_ONLY = 2,
+    /// Memory will be used for frequent (dynamic) updates from host and reads on device.
+    RESOURCE_MEMORY_USAGE_CPU_TO_GPU = 3,
 };
 
 struct DPipeline_T
@@ -94,6 +119,10 @@ enum class EFormat
     DEPTH16_UNORM_STENCIL8_UINT,
     DEPTH24_UNORM_STENCIL8_UINT,
     DEPTH32_FLOAT_STENCIL8_UINT,
+    RGBA_DXT1,
+    RGBA_DXT3,
+    RGBA_DXT5,
+    SINT32,
 };
 
 enum class EVertexInputClassification
@@ -359,7 +388,9 @@ enum class EBindingType
 {
     UNIFORM_BUFFER_OBJECT,
     STORAGE_BUFFER_OBJECT,
-    SAMPLER
+    TEXTURE,
+    SAMPLER,
+    COMBINED_IMAGE_SAMPLER,
 };
 
 enum class EShaderStage
@@ -459,181 +490,274 @@ struct ShaderByteCode
 struct ShaderSource
 {
     ShaderByteCode      SourceCode;
-    ShaderLayout        SetsLayout;
     VertexInputLayoutId VertexLayout{};
     uint32_t            VertexStride{};
     uint32_t            ColorAttachments{};
     bool                DepthStencilAttachment{};
 };
 
-struct SetBinding
+struct DFramebufferAttachments
 {
-    /* Only a buffer or image is a valid at once*/
-    EBindingType          Type{};
-    std::vector<BufferId> Buffers;
-    std::vector<ImageId>  Images;
+    //@TODO USE RAW ARRAY
+    static constexpr uint32_t             MAX_ATTACHMENTS = 10;
+    std::array<uint32_t, MAX_ATTACHMENTS> RenderTargets{};
+    uint32_t                              DepthStencil{};
 };
 
-struct DrawCommand
+struct DFramebufferAttachmentsHashFn
 {
-    // Ctor
-    ShaderId       Shader;
-    PipelineFormat PipelineFormat;
-    // Bind... functions
-    std::map<uint32_t /*set*/, std::map<uint32_t /*binding*/, SetBinding>> DescriptorSetBindings;
-    // Draw... functions
-    BufferId VertexBuffer{};
-    BufferId IndexBuffer{}; // optional
-    uint32_t BeginVertex{};
-    uint32_t VerticesCount{};
-
-    DrawCommand(ShaderId shader) : Shader(shader) {}
-
-    inline void BindBufferUniformBuffer(uint32_t set, uint32_t bindingIndex, BufferId buffer)
+    size_t operator()(const DFramebufferAttachments& attachments)
     {
-        SetBinding binding{ EBindingType::UNIFORM_BUFFER_OBJECT, { buffer } };
-        DescriptorSetBindings[set][bindingIndex] = (std::move(binding));
-    }
-
-    inline void BindImageArray(uint32_t set, uint32_t bindingIndex, const std::vector<ImageId>& imagesArray)
-    {
-        SetBinding binding{ EBindingType::SAMPLER, {}, imagesArray };
-        DescriptorSetBindings[set][bindingIndex] = (std::move(binding));
-    }
-
-    inline void Draw(BufferId vertexBuffer, uint32_t start, uint32_t count)
-    {
-        VertexBuffer  = vertexBuffer;
-        BeginVertex   = start;
-        VerticesCount = count;
-    }
-};
-
-struct CopyMipMapLevel
-{
-    uint32_t                   MipLevel{};
-    uint32_t                   Width, Height;
-    uint32_t                   Offset{}; // The offset in the destination VkImage buffer
-    std::vector<unsigned char> Data;
-};
-
-struct CopyImageCommand
-{
-    ImageId                      Destination{};
-    std::vector<CopyMipMapLevel> MipMapCopy;
-};
-
-struct CopyVertexCommand
-{
-    BufferId                   Destination{};
-    uint32_t                   DestOffset{};
-    std::vector<unsigned char> Data;
-};
-
-struct CopyUniformBufferCommand
-{
-    BufferId                   Destination{};
-    uint32_t                   DestOffset{};
-    std::vector<unsigned char> Data;
-};
-
-struct CopyDataCommand
-{
-    std::optional<CopyVertexCommand>        VertexCommand;
-    std::optional<CopyImageCommand>         ImageCommand;
-    std::optional<CopyUniformBufferCommand> UniformCommand;
-
-    inline void CopyVertex(BufferId destination, uint32_t destinationOffset, void* data, uint32_t bytes)
-    {
-        // check(!VertexCommand.has_value());
-        //  check(!ImageCommand.has_value());
-        // check(!UniformCommand.has_value());
-
-        std::vector<unsigned char> blob(bytes, 0);
-        memcpy(blob.data(), data, bytes);
-        VertexCommand = CopyVertexCommand{ destination, destinationOffset, std::move(blob) };
+        size_t hash{};
+        for (size_t i = 0; i < DFramebufferAttachments::MAX_ATTACHMENTS; i++)
+            {
+                hash += std::hash<uint32_t>{}(attachments.RenderTargets[i]);
+            }
+        return hash;
     };
-
-    inline void CopyUniformBuffer(BufferId ubo, void* data, uint32_t bytes)
-    {
-        // check(!VertexCommand.has_value());
-        //  check(!ImageCommand.has_value());
-        // check(!UniformCommand.has_value());
-
-        std::vector<unsigned char> blob(bytes, 0);
-        memcpy(blob.data(), data, bytes);
-        UniformCommand = CopyUniformBufferCommand{ ubo, 0, std::move(blob) };
-    }
-
-    inline void CopyImageMipMap(ImageId destination, uint32_t offset, void* data, uint32_t width, uint32_t height, uint32_t mipMapIndex, uint32_t bytes)
-    {
-        // check(!VertexCommand.has_value());
-        // check(!ImageCommand.has_value());
-        // check(!UniformCommand.has_value());
-
-        std::vector<unsigned char> blob(bytes, 0);
-        memcpy(blob.data(), data, bytes);
-
-        std::vector<CopyMipMapLevel> level;
-        CopyMipMapLevel              l;
-        l.Data     = std::move(blob);
-        l.MipLevel = mipMapIndex;
-        l.Width    = width;
-        l.Height   = height;
-        l.Offset   = offset;
-
-        level.push_back(std::move(l));
-        ImageCommand = CopyImageCommand{ destination, level };
-    }
 };
 
-struct RenderPassData
+struct DFramebufferAttachmentEqualFn
 {
-    FramebufferId            Framebuffer{};
-    DViewport                Viewport;
-    DRenderPassAttachments   RenderPass;
-    std::vector<DClearValue> ClearValues; // Equal to the RenderPass attachments with clear op
-    std::vector<DrawCommand> DrawCommands;
-
-    RenderPassData(FramebufferId fbo, DViewport viewport, DRenderPassAttachments renderPass) : Framebuffer(fbo), Viewport(viewport), RenderPass(renderPass) {}
-    inline void ClearColor(float r, float g, float b, float a = 1.f)
+    bool operator()(const DFramebufferAttachments& lhs, const DFramebufferAttachments& rhs)
     {
-        DClearColorValue col{ r, g, b, a };
-        ClearValues.push_back({ col });
-    }
-    inline void ClearDepthStencil(float depth, uint32_t stencil)
-    {
-        DClearValue clearValue;
-        clearValue.depthStencil = { depth, stencil };
-        ClearValues.push_back(clearValue);
-    }
 
-    inline void AddDrawCommand(DrawCommand&& command) { DrawCommands.emplace_back(std::move(command)); }
+        for (size_t i = 0; i < DFramebufferAttachments::MAX_ATTACHMENTS; i++)
+            {
+                if (lhs.RenderTargets[i] != rhs.RenderTargets[i])
+                    {
+                        return false;
+                    }
+            }
+        return true;
+    };
 };
+
+struct DLoadOpPass
+{
+    ERenderPassLoad  LoadColor[DFramebufferAttachments::MAX_ATTACHMENTS];
+    ERenderPassLoad  LoadDepth;
+    ERenderPassLoad  LoadStencil;
+    DClearValue      ClearColor[DFramebufferAttachments::MAX_ATTACHMENTS];
+    DClearValue      ClearDepthStencil;
+    ERenderPassStore StoreActionsColor[DFramebufferAttachments::MAX_ATTACHMENTS];
+    ERenderPassStore StoreDepth;
+    ERenderPassStore StoreStencil;
+};
+
+enum class EResourceState
+{
+    UNDEFINED                         = 0,
+    VERTEX_AND_CONSTANT_BUFFER        = 0x1,
+    INDEX_BUFFER                      = 0x2,
+    RENDER_TARGET                     = 0x4,
+    UNORDERED_ACCESS                  = 0x8,
+    DEPTH_WRITE                       = 0x10,
+    DEPTH_READ                        = 0x20,
+    NON_PIXEL_SHADER_RESOURCE         = 0x40,
+    PIXEL_SHADER_RESOURCE             = 0x80,
+    SHADER_RESOURCE                   = 0x40 | 0x80,
+    STREAM_OUT                        = 0x100,
+    INDIRECT_ARGUMENT                 = 0x200,
+    COPY_DEST                         = 0x400,
+    COPY_SOURCE                       = 0x800,
+    GENERAL_READ                      = (((((0x1 | 0x2) | 0x40) | 0x80) | 0x200) | 0x800),
+    PRESENT                           = 0x1000,
+    COMMON                            = 0x2000,
+    RAYTRACING_ACCELERATION_STRUCTURE = 0x4000,
+    SHADING_RATE_SOURCE               = 0x8000,
+};
+
+enum class EQueueType
+{
+    GRAPHICS = 0,
+    TRANSFER,
+    COMPUTE,
+    MAX_QUEUE_TYPE
+};
+
+enum class EPipelineType
+{
+    GRAPHICS = 0,
+    COMPUTE,
+    RAYTRACING
+};
+
+enum class EDescriptorFrequency : uint32_t
+{
+    NEVER = 0,
+    PER_FRAME,
+    PER_BATCH,
+    PER_DRAW,
+    MAX_COUNT
+};
+
+enum class EDescriptorType : int
+{
+    STATIC = 0,
+    DYNAMIC,
+    STORAGE,
+    SAMPLER_COMBINED
+};
+
+enum class ERIShaderStage
+{
+    VERTEX,
+    FRAGMENT,
+    ALL
+};
+
+struct DescriptorSetDesc
+{
+    std::string     Name; // Optional
+    uint32_t        Binding; // Binding index in shader
+    EDescriptorType Type;
+    uint32_t        Count = 1; // Used for array structures
+    size_t          Size; // Size in bytes of the block
+    ERIShaderStage  Stage;
+};
+
+typedef struct BufferBarrier
+{
+    uint32_t       BufferId;
+    EResourceState CurrentState;
+    EResourceState NewState;
+    uint8_t        BeginOnly : 1;
+    uint8_t        EndOnly : 1;
+    uint8_t        Acquire : 1;
+    uint8_t        Release : 1;
+    uint8_t        QueueType : 5;
+} BufferBarrier;
+
+typedef struct TextureBarrier
+{
+    uint32_t       ImageId;
+    EResourceState CurrentState;
+    EResourceState NewState;
+    uint8_t        BeginOnly : 1;
+    uint8_t        EndOnly : 1;
+    uint8_t        Acquire : 1;
+    uint8_t        Release : 1;
+    uint8_t        QueueType : 5;
+    /// Specifiy whether following barrier targets particular subresource
+    uint8_t mSubresourceBarrier : 1;
+    /// Following values are ignored if mSubresourceBarrier is false
+    uint8_t  mMipLevel : 7;
+    uint16_t mArrayLayer;
+} TextureBarrier;
+
+typedef struct RenderTargetBarrier
+{
+    uint32_t       RenderTarget;
+    EResourceState mCurrentState;
+    EResourceState mNewState;
+    uint8_t        mBeginOnly : 1;
+    uint8_t        mEndOnly : 1;
+    uint8_t        mAcquire : 1;
+    uint8_t        mRelease : 1;
+    uint8_t        mQueueType : 5;
+    /// Specifiy whether following barrier targets particular subresource
+    uint8_t mSubresourceBarrier : 1;
+    /// Following values are ignored if mSubresourceBarrier is false
+    uint8_t  mMipLevel : 7;
+    uint16_t mArrayLayer;
+} RenderTargetBarrier;
+
+typedef struct DescriptorData
+{
+    const char* pName;
+    uint32_t    Count;
+    uint32_t    ArrayOffset;
+    uint32_t    Index;
+
+    union
+    {
+        uint32_t* Textures;
+        uint32_t* Samplers;
+        uint32_t* Buffers;
+    };
+} DescriptorData;
+
+typedef struct DrawIndexedIndirectCommand
+{
+    uint32_t indexCount;
+    uint32_t instanceCount;
+    uint32_t firstIndex;
+    int32_t  vertexOffset;
+    uint32_t firstInstance;
+} DrawIndexedIndirectCommand;
 
 class IContext
 {
   public:
     virtual ~IContext(){};
-    virtual SwapchainId CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat) = 0;
-    virtual void        DestroySwapchain(SwapchainId swapchainId)                                                    = 0;
+    virtual void                  WaitDeviceIdle()                                                                                                                    = 0;
+    virtual SwapchainId           CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat)                                        = 0;
+    virtual std::vector<uint32_t> GetSwapchainRenderTargets(SwapchainId swapchainId)                                                                                  = 0;
+    virtual bool                  SwapchainAcquireNextImageIndex(SwapchainId swapchainId, uint64_t timeoutNanoseconds, uint32_t sempahoreid, uint32_t* outImageIndex) = 0;
+    virtual void                  DestroySwapchain(SwapchainId swapchainId)                                                                                           = 0;
 
-    virtual FramebufferId CreateSwapchainFramebuffer(SwapchainId swapchainId) = 0;
-    virtual void          DestroyFramebuffer(FramebufferId framebufferId)     = 0;
+    virtual BufferId            CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usage)                                                                       = 0;
+    virtual void*               BeginMapBuffer(BufferId buffer)                                                                                                           = 0;
+    virtual void                EndMapBuffer(BufferId buffer)                                                                                                             = 0;
+    virtual void                DestroyBuffer(BufferId buffer)                                                                                                            = 0;
+    virtual ImageId             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount)                                                        = 0;
+    virtual EFormat             GetImageFormat(ImageId) const                                                                                                             = 0;
+    virtual void                DestroyImage(ImageId imageId)                                                                                                             = 0;
+    virtual VertexInputLayoutId CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)                                                                             = 0;
+    virtual ShaderId            CreateShader(const ShaderSource& source)                                                                                                  = 0;
+    virtual void                DestroyShader(const ShaderId shader)                                                                                                      = 0;
+    virtual uint32_t            CreatePipeline(const ShaderId shader, uint32_t rootSignatureId, const DFramebufferAttachments& attachments, const PipelineFormat& format) = 0;
+    virtual void                DestroyPipeline(uint32_t pipelineId)                                                                                                      = 0;
+    virtual uint32_t            CreateRootSignature(const ShaderLayout& layout)                                                                                           = 0;
+    virtual void                DestroyRootSignature(uint32_t rootSignatureId)                                                                                            = 0;
+    virtual uint32_t            CreateDescriptorSets(uint32_t rootSignatureId, EDescriptorFrequency frequency, uint32_t count)                                            = 0;
+    virtual void                DestroyDescriptorSet(uint32_t descriptorSetId)                                                                                            = 0;
+    virtual void                UpdateDescriptorSet(uint32_t descriptorSetId, uint32_t setIndex, uint32_t paramCount, DescriptorData* params)                             = 0;
+    virtual uint32_t            CreateSampler(uint32_t minLod, uint32_t maxLod)                                                                                           = 0;
 
-    virtual BufferId            CreateVertexBuffer(uint32_t size)                                                  = 0;
-    virtual BufferId            CreateUniformBuffer(uint32_t size)                                                 = 0;
-    virtual void                DestroyBuffer(BufferId buffer)                                                     = 0;
-    virtual ImageId             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount) = 0;
-    virtual void                DestroyImage(ImageId imageId)                                                      = 0;
-    virtual VertexInputLayoutId CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)                      = 0;
-    virtual ShaderId            CreateShader(const ShaderSource& source)                                           = 0;
-    virtual void                DestroyShader(const ShaderId shader)                                               = 0;
+    virtual uint32_t CreateCommandPool()                                                                                                                                            = 0;
+    virtual void     DestroyCommandPool(uint32_t commandPoolId)                                                                                                                     = 0;
+    virtual void     ResetCommandPool(uint32_t commandPoolId)                                                                                                                       = 0;
+    virtual uint32_t CreateCommandBuffer(uint32_t commandPoolId)                                                                                                                    = 0;
+    virtual void     DestroyCommandBuffer(uint32_t commandBufferId)                                                                                                                 = 0;
+    virtual void     BeginCommandBuffer(uint32_t commandBufferId)                                                                                                                   = 0;
+    virtual void     EndCommandBuffer(uint32_t commandBufferId)                                                                                                                     = 0;
+    virtual void     BindRenderTargets(uint32_t commandBufferId, const DFramebufferAttachments& attachments, const DLoadOpPass& loadOP)                                             = 0;
+    virtual void     SetViewport(uint32_t commandBufferId, uint32_t x, uint32_t y, uint32_t width, uint32_t height, float znear, float zfar)                                        = 0;
+    virtual void     SetScissor(uint32_t commandBufferId, uint32_t x, uint32_t y, uint32_t width, uint32_t height)                                                                  = 0;
+    virtual void     BindPipeline(uint32_t commandBufferId, uint32_t pipeline)                                                                                                      = 0;
+    virtual void     BindVertexBuffer(uint32_t commandBufferId, uint32_t bufferId)                                                                                                  = 0;
+    virtual void     BindIndexBuffer(uint32_t commandBufferId, uint32_t bufferId)                                                                                                   = 0;
+    virtual void     Draw(uint32_t commandBufferId, uint32_t firstVertex, uint32_t count)                                                                                           = 0;
+    virtual void     DrawIndexed(uint32_t commandBufferId, uint32_t index_count, uint32_t first_index, uint32_t first_vertex)                                                       = 0;
+    virtual void     DrawIndexedIndirect(uint32_t commandBufferId, uint32_t buffer, uint32_t offset, uint32_t drawCount, uint32_t stride)                                           = 0;
+    virtual void     BindDescriptorSet(uint32_t commandBufferId, uint32_t setIndex, uint32_t descriptorSetId)                                                                       = 0;
+    virtual void     CopyImage(uint32_t commandId, uint32_t imageId, uint32_t width, uint32_t height, uint32_t mipMapIndex, uint32_t stagingBufferId, uint32_t stagingBufferOffset) = 0;
 
-    virtual void SubmitPass(RenderPassData&& data)  = 0;
-    virtual void SubmitCopy(CopyDataCommand&& data) = 0;
-    virtual void AdvanceFrame()                     = 0;
-    virtual void FlushDeletedBuffers()              = 0;
+    virtual uint32_t CreateRenderTarget(EFormat format, ESampleBit samples, bool isDepth, uint32_t width, uint32_t height, uint32_t arrayLength, uint32_t mipMapCount, EResourceState initialState) = 0;
+    virtual void     DestroyRenderTarget(uint32_t renderTargetId)                                                                                                                                   = 0;
+    virtual void     ResourceBarrier(uint32_t commandBufferId,
+        uint32_t                              buffer_barrier_count,
+        BufferBarrier*                        p_buffer_barriers,
+        uint32_t                              texture_barrier_count,
+        TextureBarrier*                       p_texture_barriers,
+        uint32_t                              rt_barrier_count,
+        RenderTargetBarrier*                  p_rt_barriers)                                                                                                                                                         = 0;
+
+    virtual uint32_t CreateFence(bool signaled)                                  = 0;
+    virtual void     DestroyFence(uint32_t fenceId)                              = 0;
+    virtual bool     IsFenceSignaled(uint32_t fenceId)                           = 0;
+    virtual void     WaitForFence(uint32_t fenceId, uint64_t timeoutNanoseconds) = 0;
+    virtual void     ResetFence(uint32_t fenceId)                                = 0;
+
+    virtual void QueueSubmit(const std::vector<uint32_t>& waitSemaphore, const std::vector<uint32_t>& finishSemaphore, const std::vector<uint32_t>& cmdIds, uint32_t fenceId) = 0;
+    virtual void QueuePresent(uint32_t swapchainId, uint32_t imageIndex, const std::vector<uint32_t>& waitSemaphore)                                                          = 0;
+
+    virtual uint32_t CreateGpuSemaphore()                      = 0;
+    virtual void     DestroyGpuSemaphore(uint32_t semaphoreId) = 0;
+
+    virtual void FlushDeletedBuffers() = 0;
 
     virtual unsigned char* GetAdapterDescription() const          = 0;
     virtual size_t         GetAdapterDedicatedVideoMemory() const = 0;

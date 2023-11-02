@@ -1,21 +1,9 @@
 // Copyright RedFox Studio 2022
 
-#include <iostream>
+#include "../App.h"
 
-#include "IContext.h"
-#include "backend/vulkan/VulkanContextFactory.h"
-
-#include <iostream>
-
-#define GLFW_INCLUDE_NONE // makes the GLFW header not include any OpenGL or
-// OpenGL ES API header.This is useful in combination with an extension loading library.
-#include <GLFW/glfw3.h>
-
-#define GLFW_EXPOSE_NATIVE_WIN32
-#include <GLFW/glfw3native.h>
-
-#include <array>
 #include <fstream>
+#include <iostream>
 #include <string>
 
 void
@@ -50,53 +38,32 @@ ReadBlobUnsafe(const std::string& filename)
     return bytes;
 };
 
-int
-main()
+class TriangleApp : public App
 {
-
-    Fox::DContextConfig config;
-    config.logOutputFunction = &Log;
-    config.warningFunction   = &Log;
-
-    Fox::IContext* context = Fox::CreateVulkanContext(&config);
-
+  public:
+    TriangleApp()
     {
-        if (!glfwInit())
-            {
-                throw std::runtime_error("Failed to glfwInit");
-            }
-        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // as Vulkan, there is no need to create a context
-        GLFWwindow* window = glfwCreateWindow(640, 480, "My Title", NULL, NULL);
-        if (!window)
-            {
-                throw std::runtime_error("Failed to glfwCreateWindow");
-            }
-        Fox::WindowData windowData;
-        windowData._hwnd     = glfwGetWin32Window(window);
-        windowData._instance = GetModuleHandle(NULL);
-
-        Fox::DSwapchain swapchain;
-        auto            presentMode = Fox::EPresentMode::IMMEDIATE_KHR;
-        auto            format      = Fox::EFormat::B8G8R8A8_UNORM;
-        if (!context->CreateSwapchain(&windowData, presentMode, format, &swapchain))
-            {
-                throw std::runtime_error("Failed to CreateSwapchain");
-            }
-
         // Create vertex layout
-        Fox::VertexLayoutInfo   position("SV_POSITION", Fox::EFormat::R32G32B32_FLOAT, 0, Fox::EVertexInputClassification::PER_VERTEX_DATA);
-        Fox::VertexLayoutInfo   color("Color0", Fox::EFormat::R32G32B32A32_FLOAT, 3 * sizeof(float), Fox::EVertexInputClassification::PER_VERTEX_DATA);
-        Fox::DVertexInputLayout vertexLayout = context->CreateVertexLayout({ position, color });
-        constexpr uint32_t      stride       = 7 * sizeof(float);
+        Fox::VertexLayoutInfo position("SV_POSITION", Fox::EFormat::R32G32B32_FLOAT, 0, Fox::EVertexInputClassification::PER_VERTEX_DATA);
+        Fox::VertexLayoutInfo color("Color0", Fox::EFormat::R32G32B32A32_FLOAT, 3 * sizeof(float), Fox::EVertexInputClassification::PER_VERTEX_DATA);
+        _vertexLayout             = _ctx->CreateVertexLayout({ position, color });
+        constexpr uint32_t stride = 7 * sizeof(float);
 
+        // Create shader
         Fox::ShaderSource shaderSource;
-        shaderSource.VertexLayout            = vertexLayout;
+        shaderSource.VertexLayout            = _vertexLayout;
         shaderSource.VertexStride            = stride;
         shaderSource.SourceCode.VertexShader = ReadBlobUnsafe("vertex.spv");
         shaderSource.SourceCode.PixelShader  = ReadBlobUnsafe("fragment.spv");
-        shaderSource.ColorAttachments.push_back(format);
+        shaderSource.ColorAttachments        = 1;
 
-        Fox::DShader shader = context->CreateShader(shaderSource);
+        _shader = _ctx->CreateShader(shaderSource);
+        // Create pipeline
+        Fox::PipelineFormat          pipelineFormat;
+        Fox::DFramebufferAttachments attachments;
+        attachments.RenderTargets[0] = _swapchainRenderTargets[_swapchainImageIndex];
+
+        _pipeline = _ctx->CreatePipeline(_shader, attachments, pipelineFormat);
 
         // clang-format off
         constexpr std::array<float, 21> ndcTriangle{            
@@ -108,57 +75,64 @@ main()
             0, 1, 1, 1// color
         };
         // clang-format on
-        constexpr size_t bufSize  = sizeof(float) * ndcTriangle.size();
-        Fox::DBuffer     triangle = context->CreateVertexBuffer(bufSize);
+        constexpr size_t bufSize = sizeof(float) * ndcTriangle.size();
+        _triangle                = _ctx->CreateBuffer(bufSize, Fox::VERTEX_INDEX_BUFFER, Fox::EMemoryUsage::RESOURCE_MEMORY_USAGE_CPU_ONLY);
+        {
+            // Copy vertices
+            void* triangleData = _ctx->BeginMapBuffer(_triangle);
+            memcpy(triangleData, (void*)ndcTriangle.data(), bufSize);
+            _ctx->EndMapBuffer(_triangle);
+        }
+    };
+    ~TriangleApp()
+    {
+        _ctx->WaitDeviceIdle();
+        _ctx->DestroyShader(_shader);
+        _ctx->DestroyPipeline(_pipeline);
+        _ctx->DestroyBuffer(_triangle);
+    };
 
-        Fox::CopyDataCommand copy;
-        copy.CopyVertex(triangle, 0, (void*)ndcTriangle.data(), bufSize);
-        context->SubmitCopy(std::move(copy));
+    void Draw(uint32_t cmd, uint32_t w, uint32_t h)
+    {
+        _ctx->BeginCommandBuffer(cmd);
 
-        Fox::DFramebuffer swapchainFbo = context->CreateSwapchainFramebuffer(swapchain);
+        Fox::DFramebufferAttachments attachments;
+        attachments.RenderTargets[0] = _swapchainRenderTargets[_swapchainImageIndex];
 
-        Fox::DRenderPassAttachment  colorAttachment(format,
-        Fox::ESampleBit::COUNT_1_BIT,
-        Fox::ERenderPassLoad::Clear,
-        Fox::ERenderPassStore::Store,
-        Fox::ERenderPassLayout::Undefined,
-        Fox::ERenderPassLayout::Present,
-        Fox::EAttachmentReference::COLOR_ATTACHMENT);
-        Fox::DRenderPassAttachments renderPass;
-        renderPass.Attachments.push_back(colorAttachment);
+        Fox::DLoadOpPass loadOp;
+        loadOp.LoadColor[0]         = Fox::ERenderPassLoad::Clear;
+        loadOp.ClearColor->color    = { 1, 1, 1, 1 };
+        loadOp.StoreActionsColor[0] = Fox::ERenderPassStore::Store;
+        _ctx->BindRenderTargets(cmd, attachments, loadOp);
 
-        while (!glfwWindowShouldClose(window))
-            {
-                // Keep running
-                glfwPollEvents();
+        _ctx->BindPipeline(cmd, _pipeline);
+        _ctx->SetViewport(cmd, 0, 0, w, h, 0.f, 1.f);
+        _ctx->SetScissor(cmd, 0, 0, w, h);
+        _ctx->BindVertexBuffer(cmd, _triangle);
+        _ctx->Draw(cmd, 0, 3);
 
-                int w, h;
-                glfwGetWindowSize(window, &w, &h);
-                Fox::DViewport viewport{ 0, 0, w, h, 0.f, 1.f };
+        Fox::RenderTargetBarrier presentBarrier;
+        presentBarrier.RenderTarget  = _swapchainRenderTargets[_swapchainImageIndex];
+        presentBarrier.mArrayLayer   = 1;
+        presentBarrier.mCurrentState = Fox::EResourceState::RENDER_TARGET;
+        presentBarrier.mNewState     = Fox::EResourceState::PRESENT;
+        _ctx->ResourceBarrier(cmd, 0, nullptr, 0, nullptr, 1, &presentBarrier);
 
-                Fox::RenderPassData draw(swapchainFbo, viewport, renderPass);
-                draw.ClearColor(1, 0, 0, 1);
+        _ctx->EndCommandBuffer(cmd);
+    };
 
-                Fox::DrawCommand drawTriangle(shader);
-                drawTriangle.Draw(triangle, 0, 3);
+  protected:
+    uint32_t _shader{};
+    uint32_t _pipeline{};
+    uint32_t _triangle{};
+    uint32_t _vertexLayout{};
+};
 
-                draw.AddDrawCommand(std::move(drawTriangle));
-
-                context->SubmitPass(std::move(draw));
-
-                context->AdvanceFrame();
-            }
-
-        context->DestroyShader(shader);
-        context->DestroyVertexBuffer(triangle);
-        context->DestroySwapchain(swapchain);
-
-        glfwDestroyWindow(window);
-
-        glfwTerminate();
-    }
-
-    delete context;
+int
+main()
+{
+    TriangleApp app;
+    app.Run();
 
     return 0;
 }

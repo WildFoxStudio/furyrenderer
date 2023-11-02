@@ -282,7 +282,7 @@ main()
         context->SubmitCopy(std::move(copy));
 
         Fox::DImage       depthBuffer  = context->CreateImage(Fox::EFormat::DEPTH32_FLOAT, 640, 480, 1);
-        Fox::DFramebuffer swapchainFbo = context->CreateSwapchainFramebuffer(swapchain, depthBuffer);
+        Fox::DFramebuffer swapchainFbo = context->CreateSwapchainFramebuffer_DEPRECATED(swapchain, depthBuffer);
 
         Fox::DRenderPassAttachment  colorAttachment(format,
         Fox::ESampleBit::COUNT_1_BIT,
@@ -367,7 +367,7 @@ main()
         context->DestroyVertexBuffer(quad);
         context->DestroyUniformBuffer(transformUniformBuffer);
         context->DestroyUniformBuffer(cameraUniformBuffer);
-        context->DestroyFramebuffer(swapchainFbo);
+        context->_destroyFramebuffer(swapchainFbo);
         context->DestroySwapchain(swapchain);
 
         glfwDestroyWindow(window);
