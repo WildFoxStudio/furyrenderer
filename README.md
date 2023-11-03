@@ -7,7 +7,7 @@ This project is still in early development, expect API changes, bugs and missing
 
 ![Sponza](sponza.jpg "Sponza")
 
-Sponza rendered with draw indexed indirect
+Sponza rendered with draw indexed indirect using bindless array of textures 
 
 ## Overview
 This hobby project is a static library for a thin Vulkan abstraction layer written in C++ (may become C in the future). It simplifies Vulkan API usage by providing a higher-level, more user-friendly (similar to OpenGL) interface for developers while maintaining the performance and flexibility of Vulkan. This abstraction layer serves as a helpful tool for those who want to work with Vulkan without dealing with its complex low-level details.
