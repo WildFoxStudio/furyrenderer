@@ -105,6 +105,7 @@ typedef DPipeline_T* DPipeline;
 
 enum class EFormat
 {
+    INVALID = 0,
     R8_UNORM,
     R8G8B8_UNORM,
     R32_FLOAT,
@@ -504,6 +505,13 @@ struct DFramebufferAttachments
     uint32_t                              DepthStencil{};
 };
 
+struct DPipelineAttachments
+{
+    //@TODO USE RAW ARRAY
+    std::array<EFormat, DFramebufferAttachments::MAX_ATTACHMENTS> RenderTargets{};
+    EFormat                                                       DepthStencil{};
+};
+
 struct DFramebufferAttachmentsHashFn
 {
     size_t operator()(const DFramebufferAttachments& attachments)
@@ -691,30 +699,30 @@ class IContext
 {
   public:
     virtual ~IContext(){};
-    virtual void                  WaitDeviceIdle()                                                                                                                    = 0;
-    virtual SwapchainId           CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat)                                        = 0;
-    virtual std::vector<uint32_t> GetSwapchainRenderTargets(SwapchainId swapchainId)                                                                                  = 0;
-    virtual bool                  SwapchainAcquireNextImageIndex(SwapchainId swapchainId, uint64_t timeoutNanoseconds, uint32_t sempahoreid, uint32_t* outImageIndex) = 0;
-    virtual void                  DestroySwapchain(SwapchainId swapchainId)                                                                                           = 0;
+    virtual void                  WaitDeviceIdle()                                                                                                                 = 0;
+    virtual uint32_t              CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat)                                     = 0;
+    virtual std::vector<uint32_t> GetSwapchainRenderTargets(uint32_t swapchainId)                                                                                  = 0;
+    virtual bool                  SwapchainAcquireNextImageIndex(uint32_t swapchainId, uint64_t timeoutNanoseconds, uint32_t sempahoreid, uint32_t* outImageIndex) = 0;
+    virtual void                  DestroySwapchain(uint32_t swapchainId)                                                                                           = 0;
 
-    virtual BufferId            CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usage)                                                                       = 0;
-    virtual void*               BeginMapBuffer(BufferId buffer)                                                                                                           = 0;
-    virtual void                EndMapBuffer(BufferId buffer)                                                                                                             = 0;
-    virtual void                DestroyBuffer(BufferId buffer)                                                                                                            = 0;
-    virtual ImageId             CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount)                                                        = 0;
-    virtual EFormat             GetImageFormat(ImageId) const                                                                                                             = 0;
-    virtual void                DestroyImage(ImageId imageId)                                                                                                             = 0;
-    virtual VertexInputLayoutId CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)                                                                             = 0;
-    virtual ShaderId            CreateShader(const ShaderSource& source)                                                                                                  = 0;
-    virtual void                DestroyShader(const ShaderId shader)                                                                                                      = 0;
-    virtual uint32_t            CreatePipeline(const ShaderId shader, uint32_t rootSignatureId, const DFramebufferAttachments& attachments, const PipelineFormat& format) = 0;
-    virtual void                DestroyPipeline(uint32_t pipelineId)                                                                                                      = 0;
-    virtual uint32_t            CreateRootSignature(const ShaderLayout& layout)                                                                                           = 0;
-    virtual void                DestroyRootSignature(uint32_t rootSignatureId)                                                                                            = 0;
-    virtual uint32_t            CreateDescriptorSets(uint32_t rootSignatureId, EDescriptorFrequency frequency, uint32_t count)                                            = 0;
-    virtual void                DestroyDescriptorSet(uint32_t descriptorSetId)                                                                                            = 0;
-    virtual void                UpdateDescriptorSet(uint32_t descriptorSetId, uint32_t setIndex, uint32_t paramCount, DescriptorData* params)                             = 0;
-    virtual uint32_t            CreateSampler(uint32_t minLod, uint32_t maxLod)                                                                                           = 0;
+    virtual uint32_t CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usage)                                                                    = 0;
+    virtual void*    BeginMapBuffer(uint32_t buffer)                                                                                                        = 0;
+    virtual void     EndMapBuffer(uint32_t buffer)                                                                                                          = 0;
+    virtual void     DestroyBuffer(uint32_t buffer)                                                                                                         = 0;
+    virtual ImageId  CreateImage(EFormat format, uint32_t width, uint32_t height, uint32_t mipMapCount)                                                     = 0;
+    virtual EFormat  GetImageFormat(ImageId) const                                                                                                          = 0;
+    virtual void     DestroyImage(ImageId imageId)                                                                                                          = 0;
+    virtual uint32_t CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)                                                                          = 0;
+    virtual uint32_t CreateShader(const ShaderSource& source)                                                                                               = 0;
+    virtual void     DestroyShader(const uint32_t shader)                                                                                                   = 0;
+    virtual uint32_t CreatePipeline(const uint32_t shader, uint32_t rootSignatureId, const DPipelineAttachments& attachments, const PipelineFormat& format) = 0;
+    virtual void     DestroyPipeline(uint32_t pipelineId)                                                                                                   = 0;
+    virtual uint32_t CreateRootSignature(const ShaderLayout& layout)                                                                                        = 0;
+    virtual void     DestroyRootSignature(uint32_t rootSignatureId)                                                                                         = 0;
+    virtual uint32_t CreateDescriptorSets(uint32_t rootSignatureId, EDescriptorFrequency frequency, uint32_t count)                                         = 0;
+    virtual void     DestroyDescriptorSet(uint32_t descriptorSetId)                                                                                         = 0;
+    virtual void     UpdateDescriptorSet(uint32_t descriptorSetId, uint32_t setIndex, uint32_t paramCount, DescriptorData* params)                          = 0;
+    virtual uint32_t CreateSampler(uint32_t minLod, uint32_t maxLod)                                                                                        = 0;
 
     virtual uint32_t CreateCommandPool()                                                                                                                                            = 0;
     virtual void     DestroyCommandPool(uint32_t commandPoolId)                                                                                                                     = 0;

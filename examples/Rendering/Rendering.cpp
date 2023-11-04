@@ -288,9 +288,9 @@ class TriangleApp : public App
         pipelineFormat.DepthWrite    = true;
         pipelineFormat.DepthTestMode = Fox::EDepthTest::LESS;
 
-        Fox::DFramebufferAttachments attachments;
-        attachments.RenderTargets[0] = _swapchainRenderTargets[_swapchainImageIndex];
-        attachments.DepthStencil     = _depthRt;
+        Fox::DPipelineAttachments attachments;
+        attachments.RenderTargets[0] = format;
+        attachments.DepthStencil     = Fox::EFormat::DEPTH32_FLOAT;
 
         _pipeline = _ctx->CreatePipeline(_shader, _rootSignature, attachments, pipelineFormat);
 
@@ -733,10 +733,10 @@ class TriangleApp : public App
         _ctx->BindIndexBuffer(cmd, _indirectIndices);
 
         _ctx->DrawIndexedIndirect(cmd, _indirectBuffer, 0, _drawCommands.size(), sizeof(Fox::DrawIndexedIndirectCommand));
-        //for (const auto& draw : _drawCommands)
-        //    {
-        //        _ctx->DrawIndexed(cmd, draw.indexCount, draw.firstIndex, draw.vertexOffset);
-        //    }
+        // for (const auto& draw : _drawCommands)
+        //     {
+        //         _ctx->DrawIndexed(cmd, draw.indexCount, draw.firstIndex, draw.vertexOffset);
+        //     }
 
         Fox::RenderTargetBarrier presentBarrier;
         presentBarrier.RenderTarget  = _swapchainRenderTargets[_swapchainImageIndex];

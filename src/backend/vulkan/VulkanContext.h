@@ -168,7 +168,7 @@ class VulkanContext final : public IContext
     void                DestroyShader(const ShaderId shader) override;
     uint32_t            CreateSampler(uint32_t minLod, uint32_t maxLod) override;
 
-    uint32_t CreatePipeline(const ShaderId shader, uint32_t rootSignatureId, const DFramebufferAttachments& attachments, const PipelineFormat& format) override;
+    uint32_t CreatePipeline(const ShaderId shader, uint32_t rootSignatureId, const DPipelineAttachments& attachments, const PipelineFormat& format) override;
     void     DestroyPipeline(uint32_t pipelineId) override;
     uint32_t CreateRootSignature(const ShaderLayout& layout) override;
     void     DestroyRootSignature(uint32_t rootSignatureId) override;
@@ -331,6 +331,7 @@ class VulkanContext final : public IContext
     uint32_t               _createFramebuffer(const DFramebufferAttachments& attachments);
     void                   _destroyFramebuffer(uint32_t framebufferId);
     DRenderPassAttachments _createGenericRenderPassAttachments(const DFramebufferAttachments& att);
+    DRenderPassAttachments _createGenericRenderPassAttachmentsFromPipelineAttachments(const DPipelineAttachments& att);
     void                   _createSwapchain(DSwapchainVulkan& swapchain, const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat);
     uint32_t               _createImageFromVkImage(VkImage vkimage, VkFormat format, uint32_t width, uint32_t height);
     void                   _createVertexBuffer(uint32_t size, DBufferVulkan& buffer);

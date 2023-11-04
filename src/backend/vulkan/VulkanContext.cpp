@@ -148,6 +148,44 @@ VulkanContext::_createGenericRenderPassAttachments(const DFramebufferAttachments
     return rp;
 }
 
+DRenderPassAttachments
+VulkanContext::_createGenericRenderPassAttachmentsFromPipelineAttachments(const DPipelineAttachments& att)
+{
+    DRenderPassAttachments rp;
+
+    const auto attachmentCount = DFramebufferAttachments::MAX_ATTACHMENTS - std::count(att.RenderTargets.begin(), att.RenderTargets.end(), EFormat::INVALID);
+    for (size_t i = 0; i < attachmentCount; i++)
+        {
+            DRenderPassAttachment o(att.RenderTargets[i],
+            ESampleBit::COUNT_1_BIT,
+            ERenderPassLoad::Clear,
+            ERenderPassStore::DontCare,
+            ERenderPassLayout::Undefined,
+            ERenderPassLayout::ShaderReadOnly,
+            EAttachmentReference::COLOR_READ_ONLY);
+
+            if (!VkUtils::isColorFormat(VkUtils::convertFormat(o.Format)))
+                {
+                    o.AttachmentReferenceLayout = EAttachmentReference::DEPTH_STENCIL_READ_ONLY;
+                }
+
+            rp.Attachments.emplace_back(std::move(o));
+        }
+
+    if (att.DepthStencil != EFormat::INVALID)
+        {
+            DRenderPassAttachment depthStencilAttachment(att.DepthStencil,
+            ESampleBit::COUNT_1_BIT,
+            ERenderPassLoad::Clear,
+            ERenderPassStore::Store,
+            ERenderPassLayout::AsAttachment,
+            ERenderPassLayout::AsAttachment,
+            EAttachmentReference::DEPTH_STENCIL_ATTACHMENT);
+            rp.Attachments.emplace_back(std::move(depthStencilAttachment));
+        }
+    return rp;
+}
+
 VulkanContext::VulkanContext(const DContextConfig* const config) : _warningOutput(config->warningFunction), _logOutput(config->logOutputFunction)
 {
     _initializeVolk();
@@ -941,7 +979,7 @@ VulkanContext::CreateSampler(uint32_t minLod, uint32_t maxLod)
 }
 
 uint32_t
-VulkanContext::CreatePipeline(const ShaderId shader, uint32_t rootSignatureId, const DFramebufferAttachments& attachments, const PipelineFormat& format)
+VulkanContext::CreatePipeline(const ShaderId shader, uint32_t rootSignatureId, const DPipelineAttachments& attachments, const PipelineFormat& format)
 {
     const auto       index = AllocResource<DPipelineVulkan, MAX_RESOURCES>(_pipelines);
     DPipelineVulkan& pso   = _pipelines.at(index);
@@ -951,7 +989,7 @@ VulkanContext::CreatePipeline(const ShaderId shader, uint32_t rootSignatureId, c
 
     pso.PipelineLayout = &rootSignature.PipelineLayout;
 
-    auto  rpAttachments = _createGenericRenderPassAttachments(attachments);
+    auto  rpAttachments = _createGenericRenderPassAttachmentsFromPipelineAttachments(attachments);
     auto  renderPassVk  = _createRenderPass(rpAttachments);
     auto& vertexLayout  = GetResource<DVertexInputLayoutVulkan, EResourceType::VERTEX_INPUT_LAYOUT, MAX_RESOURCES>(_vertexLayouts, shaderRef.VertexLayout);
     pso.Pipeline        = _createPipeline(rootSignature.PipelineLayout, renderPassVk, shaderRef.ShaderStageCreateInfo, format, vertexLayout, shaderRef.VertexStride);
