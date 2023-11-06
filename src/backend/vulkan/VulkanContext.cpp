@@ -436,12 +436,19 @@ VulkanContext::WaitDeviceIdle()
 }
 
 SwapchainId
-VulkanContext::CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat)
+VulkanContext::CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat, uint32_t* width, uint32_t* height)
 {
     const auto        index     = AllocResource<DSwapchainVulkan, MAX_RESOURCES>(_swapchains);
     DSwapchainVulkan& swapchain = _swapchains.at(index);
 
     _createSwapchain(swapchain, windowData, presentMode, outFormat);
+
+    if (width != nullptr)
+        {
+            check(height != nullptr);
+            *width  = swapchain.Capabilities.currentExtent.width;
+            *height = swapchain.Capabilities.currentExtent.height;
+        }
 
     return *ResourceId(EResourceType::SWAPCHAIN, swapchain.Id, index);
 }

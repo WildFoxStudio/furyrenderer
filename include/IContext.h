@@ -699,11 +699,11 @@ class IContext
 {
   public:
     virtual ~IContext(){};
-    virtual void                  WaitDeviceIdle()                                                                                                                 = 0;
-    virtual uint32_t              CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat)                                     = 0;
-    virtual std::vector<uint32_t> GetSwapchainRenderTargets(uint32_t swapchainId)                                                                                  = 0;
-    virtual bool                  SwapchainAcquireNextImageIndex(uint32_t swapchainId, uint64_t timeoutNanoseconds, uint32_t sempahoreid, uint32_t* outImageIndex) = 0;
-    virtual void                  DestroySwapchain(uint32_t swapchainId)                                                                                           = 0;
+    virtual void                  WaitDeviceIdle()                                                                                                                                    = 0;
+    virtual uint32_t              CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat, uint32_t* width = nullptr, uint32_t* height = nullptr) = 0;
+    virtual std::vector<uint32_t> GetSwapchainRenderTargets(uint32_t swapchainId)                                                                                                     = 0;
+    virtual bool                  SwapchainAcquireNextImageIndex(uint32_t swapchainId, uint64_t timeoutNanoseconds, uint32_t sempahoreid, uint32_t* outImageIndex)                    = 0;
+    virtual void                  DestroySwapchain(uint32_t swapchainId)                                                                                                              = 0;
 
     virtual uint32_t CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usage)                                                                    = 0;
     virtual void*    BeginMapBuffer(uint32_t buffer)                                                                                                        = 0;

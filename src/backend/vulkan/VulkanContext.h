@@ -151,7 +151,7 @@ class VulkanContext final : public IContext
     VulkanContext(const DContextConfig* const config);
     ~VulkanContext();
     void                  WaitDeviceIdle() override;
-    SwapchainId           CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat) override;
+    SwapchainId           CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat, uint32_t* width = nullptr, uint32_t* height = nullptr) override;
     std::vector<uint32_t> GetSwapchainRenderTargets(SwapchainId swapchainId) override;
     bool                  SwapchainAcquireNextImageIndex(SwapchainId swapchainId, uint64_t timeoutNanoseconds, uint32_t sempahoreid, uint32_t* outImageIndex) override;
     void                  DestroySwapchain(SwapchainId swapchainId) override;
