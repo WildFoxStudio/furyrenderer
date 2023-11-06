@@ -674,9 +674,9 @@ typedef struct RenderTargetBarrier
 typedef struct DescriptorData
 {
     const char* pName;
-    uint32_t    Count;
-    uint32_t    ArrayOffset;
-    uint32_t    Index;
+    uint32_t    Count{};
+    uint32_t    ArrayOffset{};
+    uint32_t    Index{};
 
     union
     {
