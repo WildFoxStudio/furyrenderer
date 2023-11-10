@@ -1148,13 +1148,23 @@ VulkanContext::DestroyRootSignature(uint32_t rootSignatureId)
 {
     DRootSignature& rootSignature = GetResource<DRootSignature, EResourceType::ROOT_SIGNATURE, MAX_RESOURCES>(_rootSignatures, rootSignatureId);
 
-    Device.DestroyPipelineLayout(rootSignature.PipelineLayout);
+    // Check if the pipeline layout is not shader among other root signatures
+    const auto usages = std::count_if(_rootSignatures.begin(), _rootSignatures.end(), [layout = rootSignature.PipelineLayout](const DRootSignature& root) {
+        if (root.Id == FREE)
+            return false;
 
-    for (uint32_t i = 0; i < (uint32_t)EDescriptorFrequency::MAX_COUNT; i++)
+        return root.PipelineLayout == layout;
+    });
+    if (usages == 1)
         {
-            if (rootSignature.DescriptorSetLayouts[i] != nullptr)
+            Device.DestroyPipelineLayout(rootSignature.PipelineLayout);
+            // If the pipeline layout is not shader then we can assume that also it's descriptor set layouts are not shared
+            for (uint32_t i = 0; i < (uint32_t)EDescriptorFrequency::MAX_COUNT; i++)
                 {
-                    Device.DestroyDescriptorSetLayout(rootSignature.DescriptorSetLayouts[i]);
+                    if (rootSignature.DescriptorSetLayouts[i] != nullptr)
+                        {
+                            Device.DestroyDescriptorSetLayout(rootSignature.DescriptorSetLayouts[i]);
+                        }
                 }
         }
 
