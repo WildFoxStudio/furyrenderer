@@ -543,14 +543,14 @@ struct DFramebufferAttachmentEqualFn
 
 struct DLoadOpPass
 {
-    ERenderPassLoad  LoadColor[DFramebufferAttachments::MAX_ATTACHMENTS];
-    ERenderPassLoad  LoadDepth;
-    ERenderPassLoad  LoadStencil;
-    DClearValue      ClearColor[DFramebufferAttachments::MAX_ATTACHMENTS];
-    DClearValue      ClearDepthStencil;
-    ERenderPassStore StoreActionsColor[DFramebufferAttachments::MAX_ATTACHMENTS];
-    ERenderPassStore StoreDepth;
-    ERenderPassStore StoreStencil;
+    ERenderPassLoad         LoadColor[DFramebufferAttachments::MAX_ATTACHMENTS];
+    ERenderPassLoad         LoadDepth;
+    ERenderPassLoad         LoadStencil;
+    DClearValue             ClearColor[DFramebufferAttachments::MAX_ATTACHMENTS];
+    DClearDepthStencilValue ClearDepthStencil;
+    ERenderPassStore        StoreActionsColor[DFramebufferAttachments::MAX_ATTACHMENTS];
+    ERenderPassStore        StoreDepth;
+    ERenderPassStore        StoreStencil;
 };
 
 enum class EResourceState

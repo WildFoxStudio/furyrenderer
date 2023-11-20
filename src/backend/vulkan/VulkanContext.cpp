@@ -1636,8 +1636,8 @@ VulkanContext::BindRenderTargets(uint32_t commandBufferId, const DFramebufferAtt
                     if (loadOP.LoadDepth == ERenderPassLoad::Clear)
                         {
                             renderPassAttachments.Attachments.at(i).InitialLayout = ERenderPassLayout::Undefined;
-                            clearValues[clearValueIndex].depthStencil.depth       = loadOP.ClearDepthStencil.depthStencil.depth;
-                            clearValues[clearValueIndex].depthStencil.stencil     = loadOP.ClearDepthStencil.depthStencil.stencil;
+                            clearValues[clearValueIndex].depthStencil.depth       = loadOP.ClearDepthStencil.depth;
+                            clearValues[clearValueIndex].depthStencil.stencil     = loadOP.ClearDepthStencil.stencil;
                             clearValueIndex++;
                         }
                 }
