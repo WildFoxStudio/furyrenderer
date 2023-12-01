@@ -656,7 +656,7 @@ typedef struct TextureBarrier
 
 typedef struct RenderTargetBarrier
 {
-    uint32_t       RenderTarget;
+    uint32_t       RenderTarget{};
     EResourceState mCurrentState;
     EResourceState mNewState;
     uint8_t        mBeginOnly : 1;
@@ -665,10 +665,10 @@ typedef struct RenderTargetBarrier
     uint8_t        mRelease : 1;
     uint8_t        mQueueType : 5;
     /// Specifiy whether following barrier targets particular subresource
-    uint8_t mSubresourceBarrier : 1;
+    uint8_t mSubresourceBarrier : 1 {};
     /// Following values are ignored if mSubresourceBarrier is false
-    uint8_t  mMipLevel : 7;
-    uint16_t mArrayLayer;
+    uint8_t  mMipLevel : 7 {};
+    uint16_t mArrayLayer{};
 } RenderTargetBarrier;
 
 typedef struct DescriptorData
@@ -688,11 +688,11 @@ typedef struct DescriptorData
 
 typedef struct DrawIndexedIndirectCommand
 {
-    uint32_t indexCount;
-    uint32_t instanceCount;
-    uint32_t firstIndex;
-    int32_t  vertexOffset;
-    uint32_t firstInstance;
+    uint32_t indexCount{};
+    uint32_t instanceCount{};
+    uint32_t firstIndex{};
+    int32_t  vertexOffset{};
+    uint32_t firstInstance{};
 } DrawIndexedIndirectCommand;
 
 class IContext
