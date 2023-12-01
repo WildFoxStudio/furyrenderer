@@ -665,9 +665,9 @@ typedef struct RenderTargetBarrier
     uint8_t        mRelease : 1;
     uint8_t        mQueueType : 5;
     /// Specifiy whether following barrier targets particular subresource
-    uint8_t mSubresourceBarrier : 1 {};
+    uint8_t mSubresourceBarrier{};
     /// Following values are ignored if mSubresourceBarrier is false
-    uint8_t  mMipLevel : 7 {};
+    uint8_t  mMipLevel{};
     uint16_t mArrayLayer{};
 } RenderTargetBarrier;
 
