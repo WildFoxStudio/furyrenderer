@@ -639,7 +639,7 @@ typedef struct BufferBarrier
 
 typedef struct TextureBarrier
 {
-    uint32_t       ImageId;
+    uint32_t       ImageId{};
     EResourceState CurrentState;
     EResourceState NewState;
     uint8_t        BeginOnly : 1;
@@ -648,9 +648,9 @@ typedef struct TextureBarrier
     uint8_t        Release : 1;
     uint8_t        QueueType : 5;
     /// Specifiy whether following barrier targets particular subresource
-    uint8_t mSubresourceBarrier : 1;
+    uint8_t mSubresourceBarrier{};
     /// Following values are ignored if mSubresourceBarrier is false
-    uint8_t  mMipLevel : 7;
+    uint8_t  mMipLevel{};
     uint16_t mArrayLayer;
 } TextureBarrier;
 
