@@ -1489,7 +1489,8 @@ VulkanContext::DestroyCommandPool(uint32_t commandPoolId)
 
     Device.DestroyCommandPool2(commandPoolRef.Pool);
 
-    commandPoolRef.Id = FREE;
+    commandPoolRef.Pool = nullptr;
+    commandPoolRef.Id   = FREE;
 }
 
 void
@@ -1507,6 +1508,7 @@ VulkanContext::CreateCommandBuffer(uint32_t commandPoolId)
 
     // Reset internals
     {
+        commandBufferRef.Cmd              = nullptr;
         commandBufferRef.ActiveRenderPass = nullptr;
         commandBufferRef.IsRecording      = false;
     }
