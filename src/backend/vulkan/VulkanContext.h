@@ -85,11 +85,15 @@ struct DPipelineVulkan : public DResource
 struct DCommandPoolVulkan : public DResource
 {
     VkCommandPool Pool{};
+    EQueueType    Type;
+    uint32_t      QueueFamilyIndex{};
 };
 
 struct DCommandBufferVulkan : public DResource
 {
     VkCommandBuffer Cmd{};
+    EQueueType      Type;
+    uint32_t        QueueFamilyIndex{};
     bool            IsRecording{};
     VkRenderPass    ActiveRenderPass{};
 };
@@ -143,6 +147,13 @@ struct DSamplerVulkan : public DResource
     VkSampler Sampler{};
 };
 
+struct DQueueVulkan : public DResource
+{
+    // RIVulkanQueue Queue{};
+    uint32_t QueueFamilyIndex{};
+    VkQueue  QueuePtr{};
+};
+
 class VulkanContext final : public IContext
 {
     inline static constexpr uint32_t NUM_OF_FRAMES_IN_FLIGHT{ 2 };
@@ -155,6 +166,8 @@ class VulkanContext final : public IContext
     std::vector<uint32_t> GetSwapchainRenderTargets(SwapchainId swapchainId) override;
     bool                  SwapchainAcquireNextImageIndex(SwapchainId swapchainId, uint64_t timeoutNanoseconds, uint32_t sempahoreid, uint32_t* outImageIndex) override;
     void                  DestroySwapchain(SwapchainId swapchainId) override;
+
+    uint32_t FindQueue(uint32_t queueTypeFlag) override;
 
     BufferId            CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usage) override;
     void*               BeginMapBuffer(BufferId buffer) override;
@@ -176,7 +189,7 @@ class VulkanContext final : public IContext
     void     DestroyDescriptorSet(uint32_t descriptorSetId) override;
     void     UpdateDescriptorSet(uint32_t descriptorSetId, uint32_t setIndex, uint32_t paramCount, DescriptorData* params) override;
 
-    uint32_t CreateCommandPool() override;
+    uint32_t CreateCommandPool(uint32_t queueId) override;
     void     DestroyCommandPool(uint32_t commandPoolId) override;
     void     ResetCommandPool(uint32_t commandPoolId) override;
 
@@ -263,7 +276,9 @@ class VulkanContext final : public IContext
     std::array<DRenderTargetVulkan, MAX_RESOURCES>      _renderTargets;
     std::array<DRootSignature, MAX_RESOURCES>           _rootSignatures;
     std::array<DDescriptorSet, MAX_RESOURCES>           _descriptorSets;
+    std::array<DQueueVulkan, MAX_RESOURCES>             _queues;
     std::unordered_set<VkRenderPass>                    _renderPasses;
+    std::vector<uint32_t>                               _queueFamilyIndexCreatedCount;
 
     using DeleteFn                 = std::function<void()>;
     using FramesWaitToDeletionList = std::pair<uint32_t, std::vector<DeleteFn>>;

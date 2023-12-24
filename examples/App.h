@@ -34,7 +34,7 @@ class App
     Fox::EFormat      format      = Fox::EFormat::B8G8R8A8_UNORM;
     uint32_t          _swapchain{};
     uint32_t          _swapchainImageIndex{};
-
+    uint32_t          _graphicsQueue{};
     struct PerFrameData
     {
         uint32_t Fence{};

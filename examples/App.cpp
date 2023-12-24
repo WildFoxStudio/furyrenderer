@@ -49,11 +49,17 @@ App::App()
                 throw std::runtime_error("Failed to CreateSwapchain");
             }
     }
+
+    // Create graphics queue
+    {
+        _graphicsQueue = _ctx->FindQueue(Fox::EQueueType::QUEUE_GRAPHICS);
+    }
+
     // Create per frame data
     for (uint32_t i = 0; i < MAX_FRAMES; i++)
         {
             _frameData[i].Fence                   = _ctx->CreateFence(true); // already signaled
-            _frameData[i].CmdPool                 = _ctx->CreateCommandPool();
+            _frameData[i].CmdPool                 = _ctx->CreateCommandPool(_graphicsQueue);
             _frameData[i].Cmd                     = _ctx->CreateCommandBuffer(_frameData[i].CmdPool);
             _frameData[i].ImageAvailableSemaphore = _ctx->CreateGpuSemaphore();
             _frameData[i].WorkFinishedSemaphore   = _ctx->CreateGpuSemaphore();

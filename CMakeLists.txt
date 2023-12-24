@@ -20,13 +20,22 @@ add_library(${PROJECT_NAME} STATIC
    "include/main.cpp"
 )
 
+## Volk
 add_subdirectory("thirdparty/volk")
+## VMA
 add_subdirectory("thirdparty/VulkanMemoryAllocator")
+## GLFW
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "GLFW_BUILD_EXAMPLES" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "GLFW_BUILD_TESTS" FORCE)
 add_subdirectory("thirdparty/glfw")
+# GLM
 add_subdirectory("thirdparty/glm")
+# GLI
+set(GLI_TEST_ENABLED OFF CACHE BOOL "" FORCE)
 add_subdirectory("thirdparty/gli")
-set(TINYGLTF_HEADER_ONLY ON CACHE INTERNAL "" FORCE)
-set(TINYGLTF_INSTALL OFF CACHE INTERNAL "" FORCE)
+# TINYGLTF
+set(TINYGLTF_HEADER_ONLY ON CACHE BOOL "" FORCE)
+set(TINYGLTF_INSTALL OFF CACHE BOOL "" FORCE)
 add_subdirectory("thirdparty/tinygltf")
 
 target_link_libraries(${PROJECT_NAME} PRIVATE volk VulkanMemoryAllocator)
@@ -100,8 +109,8 @@ target_sources(${PROJECT_NAME} PRIVATE
 
 
     
-option(BUILD_TESTS "Build tests" ON)
-option(BUILD_EXAMPLES "Build examples" ON)
+option(BUILD_TESTS "Build tests" OFF)
+option(BUILD_EXAMPLES "Build examples" OFF)
 
 if(BUILD_EXAMPLES)
     set(LIB_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/include")

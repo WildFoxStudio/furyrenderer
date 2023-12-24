@@ -58,7 +58,7 @@ RIVulkanDevice12::CreateCommandPool()
         VkCommandPoolCreateInfo poolInfo{};
         poolInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
         poolInfo.flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; /*Allow command buffers to be rerecorded individually, without this flag they all have to be reset together*/
-        poolInfo.queueFamilyIndex = GetQueueFamilyIndex();
+        poolInfo.queueFamilyIndex = GraphicsQueueInfo.FamilyIndex;
 
         const VkResult result = vkCreateCommandPool(Device, &poolInfo, nullptr, &commandPool);
         if (VKFAILED(result))

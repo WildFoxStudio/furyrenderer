@@ -40,30 +40,81 @@ std::vector<const char*>                       validationLayers)
 
     PhysicalDevice = hardwareDevice;
 
-    _queueFamilyIndex = _queryGraphicsAndTransferQueueIndex();
-
     // Get it's physical properties
     vkGetPhysicalDeviceProperties(PhysicalDevice, &DeviceProperties);
 
     // It's memory properties
     vkGetPhysicalDeviceMemoryProperties(PhysicalDevice, &DeviceMemory);
 
-    const float queuePriority = 1.f;
+    std::array<float, 255> queuePriorities;
+    std::fill(queuePriorities.begin(), queuePriorities.end(), 1.f);
 
-    VkDeviceQueueCreateInfo queueCreateInfo{};
-    queueCreateInfo.sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    queueCreateInfo.queueFamilyIndex = _queueFamilyIndex;
-    queueCreateInfo.queueCount       = 1;
-    queueCreateInfo.flags            = 0;
-    queueCreateInfo.pNext            = NULL;
-    queueCreateInfo.pQueuePriorities = &queuePriority;
+    uint32_t queueFamiliesCount{};
+    vkGetPhysicalDeviceQueueFamilyProperties(PhysicalDevice, &queueFamiliesCount, NULL);
+    QueueFamilies.resize(queueFamiliesCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(PhysicalDevice, &queueFamiliesCount, QueueFamilies.data());
+
+    // Find graphics queue
+    for (uint32_t i = 0; i < queueFamiliesCount; i++)
+        {
+            VkQueueFamilyProperties* queue = &QueueFamilies[i];
+            if (queue->queueFlags & VK_QUEUE_GRAPHICS_BIT)
+                {
+                    GraphicsQueueInfo.Flags       = queue->queueFlags;
+                    GraphicsQueueInfo.FamilyIndex = i;
+                    if (queue->queueFlags & VK_QUEUE_TRANSFER_BIT)
+                        {
+                            TransferQueueInfo = GraphicsQueueInfo;
+                        }
+                    break;
+                }
+        }
+    // Find transfer only queue
+    for (uint32_t i = 0; i < queueFamiliesCount; i++)
+        {
+            VkQueueFamilyProperties* queue = &QueueFamilies[i];
+            if (queue->queueFlags & VK_QUEUE_TRANSFER_BIT && (queue->queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0)
+                {
+                    TransferQueueInfo.FamilyIndex = i;
+                    break;
+                }
+        }
+
+    if (GraphicsQueueInfo.FamilyIndex < 0)
+        {
+            throw std::runtime_error("No vulkan graphics queue available!");
+        }
+
+    // Create all queues up front
+    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+    for (uint32_t i = 0; i < queueFamiliesCount; i++)
+        {
+            VkDeviceQueueCreateInfo queueCreateInfo{};
+            queueCreateInfo.sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+            queueCreateInfo.queueFamilyIndex = i;
+            queueCreateInfo.queueCount       = QueueFamilies[i].queueCount;
+            queueCreateInfo.flags            = 0;
+            queueCreateInfo.pNext            = NULL;
+            queueCreateInfo.pQueuePriorities = queuePriorities.data(); // must be a valid pointer to an array of queueCount float values
+            queueCreateInfos.emplace_back(std::move(queueCreateInfo));
+        }
+    // if (GraphicsQueueInfo.FamilyIndex != TransferQueueInfo.FamilyIndex)
+    //     {
+    //         VkDeviceQueueCreateInfo queueCreateInfo{};
+    //         queueCreateInfo.sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    //         queueCreateInfo.queueFamilyIndex = TransferQueueInfo.FamilyIndex;
+    //         queueCreateInfo.queueCount       = 1;
+    //         queueCreateInfo.flags            = 0;
+    //         queueCreateInfo.pNext            = NULL;
+    //         queueCreateInfo.pQueuePriorities = &queuePriority;
+    //         queueCreateInfos.emplace_back(std::move(queueCreateInfo));
+    //     }
 
     VkDeviceCreateInfo deviceInfo{};
     deviceInfo.sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     deviceInfo.pNext                   = pNext;
-    deviceInfo.enabledExtensionCount   = 0;
-    deviceInfo.pQueueCreateInfos       = &queueCreateInfo;
-    deviceInfo.queueCreateInfoCount    = 1;
+    deviceInfo.pQueueCreateInfos       = queueCreateInfos.data();
+    deviceInfo.queueCreateInfoCount    = (uint32_t)queueCreateInfos.size();
     deviceInfo.pEnabledFeatures        = pNext ? nullptr : (optDeviceFeatures ? optDeviceFeatures : nullptr);
     deviceInfo.enabledExtensionCount   = (uint32_t)extensions.size();
     deviceInfo.ppEnabledExtensionNames = extensions.data();
@@ -129,7 +180,8 @@ std::vector<const char*>                       validationLayers)
         }
     }
 
-    vkGetDeviceQueue(Device, _queueFamilyIndex, 0, &MainQueue);
+    vkGetDeviceQueue(Device, GraphicsQueueInfo.FamilyIndex, 0, &MainQueue);
+    vkGetDeviceQueue(Device, TransferQueueInfo.FamilyIndex, 0, &TransferQueue);
 
     return VK_SUCCESS;
 }

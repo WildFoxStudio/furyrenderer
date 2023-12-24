@@ -20,11 +20,11 @@ TEST_F(WindowFixture, ShouldCreateAndDestroySwapchain)
     windowData._window;
 #endif
 
-    Fox::DSwapchain swapchain;
-    auto            presentMode = Fox::EPresentMode::IMMEDIATE_KHR;
-    auto            format      = Fox::EFormat::B8G8R8A8_UNORM;
-    ASSERT_EQ(context->CreateSwapchain(&windowData, presentMode, format, &swapchain), true);
-    ASSERT_NE(swapchain, nullptr);
+    uint32_t swapchain{};
+    auto     presentMode = Fox::EPresentMode::IMMEDIATE_KHR;
+    auto     format      = Fox::EFormat::B8G8R8A8_UNORM;
+    swapchain            = context->CreateSwapchain(&windowData, presentMode, format);
+    ASSERT_NE(swapchain, 0);
 
     context->DestroySwapchain(swapchain);
 

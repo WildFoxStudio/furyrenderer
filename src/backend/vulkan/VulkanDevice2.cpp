@@ -17,7 +17,7 @@ RIVulkanDevice2::SurfaceSupportPresentationOnCurrentQueueFamily(VkSurfaceKHR sur
 {
     uint32_t supportPresentation = VK_FALSE;
     // To determine whether a queue family of a physical device supports presentation to a given surface
-    const VkResult result = vkGetPhysicalDeviceSurfaceSupportKHR(PhysicalDevice, GetQueueFamilyIndex(), surface, &supportPresentation);
+    const VkResult result = vkGetPhysicalDeviceSurfaceSupportKHR(PhysicalDevice, GraphicsQueueInfo.FamilyIndex, surface, &supportPresentation);
     if (VKFAILED(result))
         {
             throw std::runtime_error(VkUtils::VkErrorString(result));
@@ -93,7 +93,7 @@ const VkSurfaceCapabilitiesKHR&                          capabilities,
 VkSwapchainKHR*                                          outSwapchain,
 VkSwapchainKHR                                           oldSwapchain)
 {
-    uint32_t queueFamilyIndices[] = { (uint32_t)GetQueueFamilyIndex() };
+    uint32_t queueFamilyIndices[] = { (uint32_t)GraphicsQueueInfo.FamilyIndex };
     critical(capabilities.minImageCount >= MAX_IMAGE_COUNT);
 
     VkSwapchainCreateInfoKHR swapchainInfo = {};

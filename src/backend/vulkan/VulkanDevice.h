@@ -17,6 +17,13 @@
 namespace Fox
 {
 
+struct RIVulkanQueue
+{
+    uint32_t Flags{};
+    uint32_t FamilyIndex{};
+    uint32_t QueueIndex{};
+};
+
 class RIVulkanDevice
 {
   public:
@@ -29,7 +36,9 @@ class RIVulkanDevice
     std::vector<const char*>                validationLayers);
     void     Deinit();
 
-    inline int32_t GetQueueFamilyIndex() const { return _queueFamilyIndex; };
+    RIVulkanQueue GraphicsQueueInfo{};
+    RIVulkanQueue TransferQueueInfo{};
+    std::vector<VkQueueFamilyProperties> QueueFamilies;
 
     inline int32_t GetMaxImageAllocations() const { return 4096; }
 
@@ -39,8 +48,10 @@ class RIVulkanDevice
     VkPhysicalDeviceProperties       DeviceProperties{}; /*Properties of the physical device*/
     VkPhysicalDeviceMemoryProperties DeviceMemory{}; /*Properties about the physical device memory*/
     VkQueue                          MainQueue{}; /* Graphics and Transfer queue*/
+    VkQueue                          TransferQueue{}; /* Transfer queue*/
+
   private:
-    uint32_t _queueFamilyIndex;
+
     uint32_t _queryGraphicsAndTransferQueueIndex() const;
 };
 

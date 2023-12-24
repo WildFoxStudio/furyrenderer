@@ -42,6 +42,7 @@ enum EResourceType : uint8_t
     DESCRIPTOR_SET        = 15,
     SAMPLER               = 16,
     INDIRECT_DRAW_COMMAND = 17,
+    QUEUE                 = 18,
 };
 // SHOULD BE PRIVATE
 
@@ -576,12 +577,11 @@ enum class EResourceState
     SHADING_RATE_SOURCE               = 0x8000,
 };
 
-enum class EQueueType
+enum EQueueType
 {
-    GRAPHICS = 0,
-    TRANSFER,
-    COMPUTE,
-    MAX_QUEUE_TYPE
+    QUEUE_GRAPHICS = 0x1,
+    QUEUE_TRANSFER = 0x2,
+    QUEUE_COMPUTE  = 0x4,
 };
 
 enum class EPipelineType
@@ -656,7 +656,7 @@ typedef struct TextureBarrier
 
 typedef struct RenderTargetBarrier
 {
-    uint32_t       RenderTarget;
+    uint32_t       RenderTarget{};
     EResourceState mCurrentState;
     EResourceState mNewState;
     uint8_t        mBeginOnly : 1;
@@ -665,10 +665,10 @@ typedef struct RenderTargetBarrier
     uint8_t        mRelease : 1;
     uint8_t        mQueueType : 5;
     /// Specifiy whether following barrier targets particular subresource
-    uint8_t mSubresourceBarrier : 1;
+    uint8_t mSubresourceBarrier : 1 {};
     /// Following values are ignored if mSubresourceBarrier is false
-    uint8_t  mMipLevel : 7;
-    uint16_t mArrayLayer;
+    uint8_t  mMipLevel : 7 {};
+    uint16_t mArrayLayer{};
 } RenderTargetBarrier;
 
 typedef struct DescriptorData
@@ -705,6 +705,8 @@ class IContext
     virtual bool                  SwapchainAcquireNextImageIndex(uint32_t swapchainId, uint64_t timeoutNanoseconds, uint32_t sempahoreid, uint32_t* outImageIndex)                    = 0;
     virtual void                  DestroySwapchain(uint32_t swapchainId)                                                                                                              = 0;
 
+    virtual uint32_t FindQueue(uint32_t queueTypeFlag) = 0;
+
     virtual uint32_t CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usage)                                                                    = 0;
     virtual void*    BeginMapBuffer(uint32_t buffer)                                                                                                        = 0;
     virtual void     EndMapBuffer(uint32_t buffer)                                                                                                          = 0;
@@ -724,7 +726,7 @@ class IContext
     virtual void     UpdateDescriptorSet(uint32_t descriptorSetId, uint32_t setIndex, uint32_t paramCount, DescriptorData* params)                          = 0;
     virtual uint32_t CreateSampler(uint32_t minLod, uint32_t maxLod)                                                                                        = 0;
 
-    virtual uint32_t CreateCommandPool()                                                                                                                                            = 0;
+    virtual uint32_t CreateCommandPool(uint32_t queueId)                                                                                                                            = 0;
     virtual void     DestroyCommandPool(uint32_t commandPoolId)                                                                                                                     = 0;
     virtual void     ResetCommandPool(uint32_t commandPoolId)                                                                                                                       = 0;
     virtual uint32_t CreateCommandBuffer(uint32_t commandPoolId)                                                                                                                    = 0;

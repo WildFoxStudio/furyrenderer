@@ -630,7 +630,7 @@ determinePipelineStageFlags(VkAccessFlags accessFlags, Fox::EQueueType queueType
 
     switch (queueType)
         {
-            case Fox::EQueueType::GRAPHICS:
+            case Fox::EQueueType::QUEUE_GRAPHICS:
                 {
                     if ((accessFlags & (VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT)) != 0)
                         flags |= VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
@@ -672,7 +672,7 @@ determinePipelineStageFlags(VkAccessFlags accessFlags, Fox::EQueueType queueType
 #endif
                     break;
                 }
-            case Fox::EQueueType::COMPUTE:
+            case Fox::EQueueType::QUEUE_COMPUTE:
                 {
                     if ((accessFlags & (VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT)) != 0 || (accessFlags & VK_ACCESS_INPUT_ATTACHMENT_READ_BIT) != 0 ||
                     (accessFlags & (VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT)) != 0 ||
@@ -684,7 +684,7 @@ determinePipelineStageFlags(VkAccessFlags accessFlags, Fox::EQueueType queueType
 
                     break;
                 }
-            case Fox::EQueueType::TRANSFER:
+            case Fox::EQueueType::QUEUE_TRANSFER:
                 return VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
             default:
                 break;
@@ -852,6 +852,104 @@ convertResourceStateToImageLayout(Fox::EResourceState state, bool isDepth)
 
     check(0);
     return VK_IMAGE_LAYOUT_UNDEFINED;
+}
+
+inline VkFlags
+convertQueueTypeToVkFlags(uint32_t queueTypeFlag)
+{
+    using namespace Fox;
+    uint32_t vkFlags{};
+    if (queueTypeFlag & EQueueType::QUEUE_GRAPHICS)
+        {
+            vkFlags |= VK_QUEUE_GRAPHICS_BIT;
+        }
+    if (queueTypeFlag & EQueueType::QUEUE_COMPUTE)
+        {
+            vkFlags |= VK_QUEUE_COMPUTE_BIT;
+        }
+    if (queueTypeFlag & EQueueType::QUEUE_TRANSFER)
+        {
+            vkFlags |= VK_QUEUE_TRANSFER_BIT;
+        }
+
+    return vkFlags;
+}
+
+/**
+ * @brief Return a graphics flagged queue if requestedFlags is only graphics. If requested flags is only transfer or only compute it returns a dedicated queue with that flag only if available on
+ * hardware otherwise will return a non dedicated queue with also other flags. If no dedicated queue is found it will return the first queue that supports the requested flags;
+ * @param device The vulkan device
+ * @param outFamilyIndex out the family index found
+ * @param outQueueIndex out the queue index to use
+ * @param requestedFlags the queue flags requested
+ * @param queueFamilyPropertiesPtr a pointer to an array of VkQueueFamilyProperties
+ * @param queueFamilyPropertiesCount number of elements in queueFamilyPropertiesPtr
+ * @param queueFamilyIndexCreatedCount Array of int32 to count how many queues are used for each family. Length must be at least queueFamilyPropertiesCount
+ * @return The queue family index the has at least the requestedFlags.
+ */
+inline bool
+findQueueWithFlags(uint32_t*         outFamilyIndex,
+uint32_t*                            outQueueIndex,
+VkFlags                              requestedFlags,
+const VkQueueFamilyProperties* const queueFamilyPropertiesPtr,
+uint32_t                             queueFamilyPropertiesCount,
+uint32_t*                            queueFamilyIndexCreatedCount)
+{
+    using namespace Fox;
+
+    bool found{ false };
+    *outFamilyIndex = 0;
+    *outQueueIndex  = 0;
+
+    for (uint32_t i = 0; i < queueFamilyPropertiesCount; i++)
+        {
+            const VkQueueFamilyProperties* const queueFamily = queueFamilyPropertiesPtr + i;
+            const bool                           isGraphics  = (queueFamily->queueFlags & VK_QUEUE_GRAPHICS_BIT) ? true : false;
+            // If has the required flags but is also graphics and has unused queues
+            if (requestedFlags & VK_QUEUE_GRAPHICS_BIT && isGraphics)
+                {
+                    found           = true;
+                    *outFamilyIndex = i;
+                    // User can query as many graphics queue as it can, we will return always the same since there is no benefit of using multiple ones
+                    break;
+                }
+            // if requested is specialized queue with only the flag requested
+            if (queueFamily->queueFlags & requestedFlags && (queueFamily->queueFlags & ~requestedFlags) == 0 && queueFamilyIndexCreatedCount[i] < queueFamily->queueCount)
+                {
+                    found           = true;
+                    *outFamilyIndex = i;
+                    *outQueueIndex  = queueFamilyIndexCreatedCount[i]++;
+
+                    break;
+                }
+            uint32_t orRequestedFlags = (queueFamily->queueFlags & requestedFlags);
+            // Should return a queue with requestedFlag but is not general purpose nor specialized
+            if (queueFamily->queueFlags & orRequestedFlags && !isGraphics && queueFamilyIndexCreatedCount[i] < queueFamily->queueCount)
+                {
+                    found           = true;
+                    *outFamilyIndex = i;
+                    *outQueueIndex  = queueFamilyIndexCreatedCount[i]++;
+                    break;
+                }
+        }
+
+    // Find a any queue with the requested queueTypeFlags
+    if (!found)
+        {
+            for (uint32_t i = 0; i < queueFamilyPropertiesCount; i++)
+                {
+                    const VkQueueFamilyProperties* const queueFamily = queueFamilyPropertiesPtr + i;
+                    if (queueFamily->queueFlags & requestedFlags)
+                        {
+                            found           = true;
+                            *outFamilyIndex = i;
+                            break;
+                        }
+                }
+        }
+
+    check(found == true);
+    return found;
 }
 
 }
