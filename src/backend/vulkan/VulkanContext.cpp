@@ -2152,8 +2152,68 @@ RenderTargetBarrier*                    p_rt_barriers)
     imageBarriers.resize(rt_barrier_count + texture_barrier_count);
     uint32_t imageBarrierCount{};
 
+    std::vector<VkBufferMemoryBarrier> bufferBarriers;
+    bufferBarriers.resize(buffer_barrier_count);
+    uint32_t bufferBarrierCount{};
+
     VkAccessFlags srcAccessFlags = 0;
     VkAccessFlags dstAccessFlags = 0;
+
+    for (uint32_t i = 0; i < buffer_barrier_count; ++i)
+        {
+            BufferBarrier*         pTrans         = &p_buffer_barriers[i];
+            const DBufferVulkan&   bufferRef      = GetResource<DBufferVulkan, EResourceType::UNIFORM_BUFFER, MAX_RESOURCES>(_vertexBuffers, pTrans->BufferId);
+            VkBuffer               pBuffer        = bufferRef.Buffer.Buffer;
+            VkBufferMemoryBarrier* pBufferBarrier = NULL;
+
+            if (EResourceState::UNORDERED_ACCESS == pTrans->CurrentState && EResourceState::UNORDERED_ACCESS == pTrans->NewState)
+                {
+                    pBufferBarrier        = &bufferBarriers[bufferBarrierCount++]; //-V522
+                    pBufferBarrier->sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER; //-V522
+                    pBufferBarrier->pNext = NULL;
+
+                    pBufferBarrier->srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                    pBufferBarrier->dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+                }
+            else
+                {
+                    pBufferBarrier        = &bufferBarriers[bufferBarrierCount++];
+                    pBufferBarrier->sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+                    pBufferBarrier->pNext = NULL;
+
+                    pBufferBarrier->srcAccessMask = VkUtils::resourceStateToAccessFlag(pTrans->CurrentState);
+                    pBufferBarrier->dstAccessMask = VkUtils::resourceStateToAccessFlag(pTrans->NewState);
+                }
+
+            if (pBufferBarrier)
+                {
+                    pBufferBarrier->buffer = pBuffer;
+                    pBufferBarrier->size   = VK_WHOLE_SIZE;
+                    pBufferBarrier->offset = 0;
+
+                    switch (pTrans->TransferOwnership)
+                        {
+                            default:
+                            case ETransferOwnership::NONE:
+                                pBufferBarrier->srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                                pBufferBarrier->dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                                break;
+                            case ETransferOwnership::ACQUIRE:
+                            case ETransferOwnership::RELEASE:
+                                {
+                                    check(pTrans->SrcQueue > 0);
+                                    const auto& srcQueueRef             = GetResource<DQueueVulkan, EResourceType::QUEUE, MAX_RESOURCES>(_queues, pTrans->SrcQueue);
+                                    pBufferBarrier->srcQueueFamilyIndex = srcQueueRef.QueueFamilyIndex;
+                                    const auto& dstQueueRef             = GetResource<DQueueVulkan, EResourceType::QUEUE, MAX_RESOURCES>(_queues, pTrans->DstQueue);
+                                    pBufferBarrier->dstQueueFamilyIndex = dstQueueRef.QueueFamilyIndex;
+                                    break;
+                                }
+                        }
+
+                    srcAccessFlags |= pBufferBarrier->srcAccessMask;
+                    dstAccessFlags |= pBufferBarrier->dstAccessMask;
+                }
+        }
 
     for (uint32_t i = 0; i < texture_barrier_count; ++i)
         {
@@ -2193,21 +2253,24 @@ RenderTargetBarrier*                    p_rt_barriers)
                     pImageBarrier->subresourceRange.baseArrayLayer = pTrans->mSubresourceBarrier ? pTrans->mArrayLayer : 0;
                     pImageBarrier->subresourceRange.layerCount     = pTrans->mSubresourceBarrier ? 1 : VK_REMAINING_ARRAY_LAYERS;
 
-                    // if (pTrans->mAcquire && pTrans->mCurrentState != RESOURCE_STATE_UNDEFINED)
-                    //     {
-                    //         pImageBarrier->srcQueueFamilyIndex = pCmd->pRenderer->mVulkan.mQueueFamilyIndices[pTrans->mQueueType];
-                    //         pImageBarrier->dstQueueFamilyIndex = pCmd->pQueue->mVulkan.mVkQueueFamilyIndex;
-                    //     }
-                    // else if (pTrans->mRelease && pTrans->mCurrentState != RESOURCE_STATE_UNDEFINED)
-                    //     {
-                    //         pImageBarrier->srcQueueFamilyIndex = pCmd->pQueue->mVulkan.mVkQueueFamilyIndex;
-                    //         pImageBarrier->dstQueueFamilyIndex = pCmd->pRenderer->mVulkan.mQueueFamilyIndices[pTrans->mQueueType];
-                    //     }
-                    // else
-                    {
-                        pImageBarrier->srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                        pImageBarrier->dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                    }
+                    switch (pTrans->TransferOwnership)
+                        {
+                            default:
+                            case ETransferOwnership::NONE:
+                                pImageBarrier->srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                                pImageBarrier->dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                                break;
+                            case ETransferOwnership::ACQUIRE:
+                            case ETransferOwnership::RELEASE:
+                                {
+                                    check(pTrans->SrcQueue > 0);
+                                    const auto& srcQueueRef            = GetResource<DQueueVulkan, EResourceType::QUEUE, MAX_RESOURCES>(_queues, pTrans->SrcQueue);
+                                    pImageBarrier->srcQueueFamilyIndex = srcQueueRef.QueueFamilyIndex;
+                                    const auto& dstQueueRef            = GetResource<DQueueVulkan, EResourceType::QUEUE, MAX_RESOURCES>(_queues, pTrans->DstQueue);
+                                    pImageBarrier->dstQueueFamilyIndex = dstQueueRef.QueueFamilyIndex;
+                                    break;
+                                }
+                        }
 
                     srcAccessFlags |= pImageBarrier->srcAccessMask;
                     dstAccessFlags |= pImageBarrier->dstAccessMask;
@@ -2252,21 +2315,24 @@ RenderTargetBarrier*                    p_rt_barriers)
                     pImageBarrier->subresourceRange.baseArrayLayer = pTrans->mSubresourceBarrier ? pTrans->mArrayLayer : 0;
                     pImageBarrier->subresourceRange.layerCount     = pTrans->mSubresourceBarrier ? 1 : VK_REMAINING_ARRAY_LAYERS;
 
-                    // if (pTrans->mAcquire && pTrans->mCurrentState != EResourceState::UNDEFINED)
-                    //     {
-                    //         pImageBarrier->srcQueueFamilyIndex = pCmd->pRenderer->mVulkan.mQueueFamilyIndices[pTrans->mQueueType];
-                    //         pImageBarrier->dstQueueFamilyIndex = pCmd->pQueue->mVulkan.mVkQueueFamilyIndex;
-                    //     }
-                    // else if (pTrans->mRelease && pTrans->mCurrentState != EResourceState::UNDEFINED)
-                    //     {
-                    //         pImageBarrier->srcQueueFamilyIndex = pCmd->pQueue->mVulkan.mVkQueueFamilyIndex;
-                    //         pImageBarrier->dstQueueFamilyIndex = pCmd->pRenderer->mVulkan.mQueueFamilyIndices[pTrans->mQueueType];
-                    //     }
-                    // else
-                    {
-                        pImageBarrier->srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                        pImageBarrier->dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                    }
+                    switch (pTrans->TransferOwnership)
+                        {
+                            default:
+                            case ETransferOwnership::NONE:
+                                pImageBarrier->srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                                pImageBarrier->dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                                break;
+                            case ETransferOwnership::ACQUIRE:
+                            case ETransferOwnership::RELEASE:
+                                {
+                                    check(pTrans->SrcQueue > 0);
+                                    const auto& srcQueueRef            = GetResource<DQueueVulkan, EResourceType::QUEUE, MAX_RESOURCES>(_queues, pTrans->SrcQueue);
+                                    pImageBarrier->srcQueueFamilyIndex = srcQueueRef.QueueFamilyIndex;
+                                    const auto& dstQueueRef            = GetResource<DQueueVulkan, EResourceType::QUEUE, MAX_RESOURCES>(_queues, pTrans->DstQueue);
+                                    pImageBarrier->dstQueueFamilyIndex = dstQueueRef.QueueFamilyIndex;
+                                    break;
+                                }
+                        }
 
                     srcAccessFlags |= pImageBarrier->srcAccessMask;
                     dstAccessFlags |= pImageBarrier->dstAccessMask;
