@@ -13,11 +13,11 @@ namespace Fox
 RIVulkanDevice2::~RIVulkanDevice2() { check(_swapchains.size() == 0); }
 
 bool
-RIVulkanDevice2::SurfaceSupportPresentationOnCurrentQueueFamily(VkSurfaceKHR surface)
+RIVulkanDevice2::SurfaceSupportPresentationOnQueueFamilyIndex(VkSurfaceKHR surface, uint32_t queueFamilyIndex)
 {
     uint32_t supportPresentation = VK_FALSE;
     // To determine whether a queue family of a physical device supports presentation to a given surface
-    const VkResult result = vkGetPhysicalDeviceSurfaceSupportKHR(PhysicalDevice, GraphicsQueueInfo.FamilyIndex, surface, &supportPresentation);
+    const VkResult result = vkGetPhysicalDeviceSurfaceSupportKHR(PhysicalDevice, queueFamilyIndex, surface, &supportPresentation);
     if (VKFAILED(result))
         {
             throw std::runtime_error(VkUtils::VkErrorString(result));
@@ -90,10 +90,12 @@ RIVulkanDevice2::CreateSwapchainFromSurface(VkSurfaceKHR surface,
 const VkSurfaceFormatKHR&                                format,
 const VkPresentModeKHR&                                  presentMode,
 const VkSurfaceCapabilitiesKHR&                          capabilities,
+uint32_t*                                                queueFamilyIndices,
+uint32_t                                                 queueFamilyIndicesCount,
 VkSwapchainKHR*                                          outSwapchain,
 VkSwapchainKHR                                           oldSwapchain)
 {
-    uint32_t queueFamilyIndices[] = { (uint32_t)GraphicsQueueInfo.FamilyIndex };
+    check(queueFamilyIndices != nullptr);
     critical(capabilities.minImageCount >= MAX_IMAGE_COUNT);
 
     VkSwapchainCreateInfoKHR swapchainInfo = {};
@@ -182,7 +184,7 @@ RIVulkanDevice2::AcquireNextImage(VkSwapchainKHR swapchain, uint64_t timeoutNano
 }
 
 std::vector<VkResult>
-RIVulkanDevice2::Present(std::vector<std::pair<VkSwapchainKHR, uint32_t>> swapchainImageIndex, std::vector<VkSemaphore> waitSemaphores)
+RIVulkanDevice2::Present(VkQueue queue, std::vector<std::pair<VkSwapchainKHR, uint32_t>> swapchainImageIndex, std::vector<VkSemaphore> waitSemaphores)
 {
 
     std::vector<VkResult> results(swapchainImageIndex.size(), VK_SUCCESS);
@@ -207,7 +209,7 @@ RIVulkanDevice2::Present(std::vector<std::pair<VkSwapchainKHR, uint32_t>> swapch
     presentInfo.pResults           = results.data();
 
     {
-        [[maybe_unused]] const VkResult result = vkQueuePresentKHR(MainQueue, &presentInfo);
+        [[maybe_unused]] const VkResult result = vkQueuePresentKHR(queue, &presentInfo);
     }
     return results;
 }

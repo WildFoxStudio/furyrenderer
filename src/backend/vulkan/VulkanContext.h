@@ -149,8 +149,8 @@ struct DSamplerVulkan : public DResource
 
 struct DQueueVulkan : public DResource
 {
-    // RIVulkanQueue Queue{};
     uint32_t QueueFamilyIndex{};
+    uint32_t QueueIndex{};
     VkQueue  QueuePtr{};
 };
 
@@ -167,7 +167,7 @@ class VulkanContext final : public IContext
     bool                  SwapchainAcquireNextImageIndex(SwapchainId swapchainId, uint64_t timeoutNanoseconds, uint32_t sempahoreid, uint32_t* outImageIndex) override;
     void                  DestroySwapchain(SwapchainId swapchainId) override;
 
-    uint32_t FindQueue(uint32_t queueTypeFlag) override;
+    uint32_t FindQueue(EQueueType queueType) override;
 
     BufferId            CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usage) override;
     void*               BeginMapBuffer(BufferId buffer) override;
@@ -233,8 +233,8 @@ class VulkanContext final : public IContext
 
     void FlushDeletedBuffers() override;
 
-    void QueueSubmit(const std::vector<uint32_t>& waitSemaphore, const std::vector<uint32_t>& finishSemaphore, const std::vector<uint32_t>& cmdIds, uint32_t fenceId) override;
-    void QueuePresent(uint32_t swapchainId, uint32_t imageIndex, const std::vector<uint32_t>& waitSemaphore) override;
+    void QueueSubmit(uint32_t queueId, const std::vector<uint32_t>& waitSemaphore, const std::vector<uint32_t>& finishSemaphore, const std::vector<uint32_t>& cmdIds, uint32_t fenceId) override;
+    void QueuePresent(uint32_t queueId, uint32_t swapchainId, uint32_t imageIndex, const std::vector<uint32_t>& waitSemaphore) override;
 
     unsigned char* GetAdapterDescription() const override;
     size_t         GetAdapterDedicatedVideoMemory() const override;
@@ -276,9 +276,12 @@ class VulkanContext final : public IContext
     std::array<DRenderTargetVulkan, MAX_RESOURCES>      _renderTargets;
     std::array<DRootSignature, MAX_RESOURCES>           _rootSignatures;
     std::array<DDescriptorSet, MAX_RESOURCES>           _descriptorSets;
-    std::array<DQueueVulkan, MAX_RESOURCES>             _queues;
-    std::unordered_set<VkRenderPass>                    _renderPasses;
-    std::vector<uint32_t>                               _queueFamilyIndexCreatedCount;
+    /*Since queues are never deallocated, we are sure that there is no fragmentation*/
+    std::array<DQueueVulkan, MAX_RESOURCES> _queues;
+    /*No gpu can have more than 16 queue families*/
+    std::array<uint32_t, 16> _queueFamilyIndexCreatedCount;
+
+    std::unordered_set<VkRenderPass> _renderPasses;
 
     using DeleteFn                 = std::function<void()>;
     using FramesWaitToDeletionList = std::pair<uint32_t, std::vector<DeleteFn>>;

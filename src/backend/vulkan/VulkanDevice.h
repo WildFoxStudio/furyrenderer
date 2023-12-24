@@ -36,8 +36,6 @@ class RIVulkanDevice
     std::vector<const char*>                validationLayers);
     void     Deinit();
 
-    RIVulkanQueue GraphicsQueueInfo{};
-    RIVulkanQueue TransferQueueInfo{};
     std::vector<VkQueueFamilyProperties> QueueFamilies;
 
     inline int32_t GetMaxImageAllocations() const { return 4096; }
@@ -47,8 +45,6 @@ class RIVulkanDevice
     VmaAllocator                     VmaAllocator;
     VkPhysicalDeviceProperties       DeviceProperties{}; /*Properties of the physical device*/
     VkPhysicalDeviceMemoryProperties DeviceMemory{}; /*Properties about the physical device memory*/
-    VkQueue                          MainQueue{}; /* Graphics and Transfer queue*/
-    VkQueue                          TransferQueue{}; /* Transfer queue*/
 
   private:
 

@@ -219,7 +219,7 @@ VulkanContext::VulkanContext(const DContextConfig* const config) : _warningOutpu
         EndCommandBuffer(cmd);
 
         const auto fence = CreateFence(false);
-        QueueSubmit({}, {}, { cmd }, fence);
+        QueueSubmit(graphicsQueue, {}, {}, { cmd }, fence);
         WaitForFence(fence, 0xFFFFFFFF);
         DestroyFence(fence);
         DestroyCommandBuffer(cmd);
@@ -372,8 +372,7 @@ VulkanContext::_initializeDevice()
     // replacing global function pointers with functions retrieved with vkGetDeviceProcAddr
     volkLoadDevice(Device.Device);
 
-    // track count of queue instantiated from each family
-    _queueFamilyIndexCreatedCount.resize(Device.QueueFamilies.size());
+    // track count of queue instantiated from each family;
     std::fill(_queueFamilyIndexCreatedCount.begin(), _queueFamilyIndexCreatedCount.end(), 0);
 }
 
@@ -478,6 +477,19 @@ VulkanContext::_createSwapchain(DSwapchainVulkan& swapchain, const WindowData* w
             }
     }
 
+    uint32_t queueFamilyIndex{};
+    {
+        uint32_t   queueIndex{};
+        uint32_t   queueIndexCount[16]{};
+        const auto foundGraphicsQueueId{ VkUtils::findQueueWithFlags(
+        &queueFamilyIndex, &queueIndex, VK_QUEUE_GRAPHICS_BIT, Device.QueueFamilies.data(), Device.QueueFamilies.size(), queueIndexCount) };
+        const bool supportPresentation{ Device.SurfaceSupportPresentationOnQueueFamilyIndex(surface, queueFamilyIndex) };
+        if (!supportPresentation)
+            {
+                throw std::runtime_error("Vulkan graphics queue does not support presentation to this surface!");
+            }
+    }
+
     // Query formats present mode and capabilities
     const auto formats           = Device.GetSurfaceFormats(surface);
     outFormat                    = VkUtils::convertVkFormat(formats.front().format);
@@ -496,7 +508,7 @@ VulkanContext::_createSwapchain(DSwapchainVulkan& swapchain, const WindowData* w
     // Create swapchain object
     VkSwapchainKHR vkSwapchain{};
     {
-        const auto result = Device.CreateSwapchainFromSurface(surface, formats.at(0), vkPresentMode, capabilities, &vkSwapchain);
+        const auto result = Device.CreateSwapchainFromSurface(surface, formats.at(0), vkPresentMode, capabilities, &queueFamilyIndex, 1, &vkSwapchain);
         if (VKFAILED(result))
             {
                 throw std::runtime_error("Failed to create swapchain " + std::string(VkUtils::VkErrorString(result)));
@@ -693,86 +705,45 @@ VulkanContext::DestroySwapchain(SwapchainId swapchainId)
 }
 
 uint32_t
-VulkanContext::FindQueue(uint32_t queueTypeFlag)
+VulkanContext::FindQueue(EQueueType queueType)
 {
-    bool     found{ false };
     uint32_t familyIndex{};
     uint32_t queueIndex{};
 
-    uint32_t vkFlags{};
-    if (queueTypeFlag & EQueueType::QUEUE_GRAPHICS)
-        {
-            vkFlags |= VK_QUEUE_GRAPHICS_BIT;
-        }
-    if (queueTypeFlag & EQueueType::QUEUE_COMPUTE)
-        {
-            vkFlags |= VK_QUEUE_COMPUTE_BIT;
-        }
-    if (queueTypeFlag & EQueueType::QUEUE_TRANSFER)
-        {
-            vkFlags |= VK_QUEUE_TRANSFER_BIT;
-        }
+    const uint32_t vkFlags{ VkUtils::convertQueueTypeToVkFlags(queueType) };
+    const bool     found{ VkUtils::findQueueWithFlags(&familyIndex, &queueIndex, vkFlags, Device.QueueFamilies.data(), Device.QueueFamilies.size(), _queueFamilyIndexCreatedCount.data()) };
 
-    for (uint32_t i = 0; i < Device.QueueFamilies.size(); i++)
-        {
-            VkQueueFamilyProperties& queueFamily = Device.QueueFamilies[i];
-            const bool               isGraphics  = (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) ? true : false;
-            // If has the required flags but is also graphics and has unused queues
-            if (vkFlags & VK_QUEUE_GRAPHICS_BIT && isGraphics)
-                {
-                    found       = true;
-                    familyIndex = i;
-                    // User can query as many graphics queue as it can, we will return always the same since there is no benefit of using multiple ones
-                    break;
-                }
-            // if requested is specialized queue with only the flag requested
-            if (queueFamily.queueFlags & vkFlags && (queueFamily.queueFlags & ~vkFlags) == 0 && _queueFamilyIndexCreatedCount[i] < queueFamily.queueCount)
-                {
-                    found       = true;
-                    familyIndex = i;
-                    queueIndex  = _queueFamilyIndexCreatedCount[i]++;
-
-                    break;
-                }
-            uint32_t orRequestedFlags = (queueFamily.queueFlags & vkFlags);
-            ;
-            if (queueFamily.queueFlags & orRequestedFlags && (queueFamily.queueFlags - orRequestedFlags) < UINT32_MAX == 0 && _queueFamilyIndexCreatedCount[i] < queueFamily.queueCount)
-                {
-                    found       = true;
-                    familyIndex = i;
-                    queueIndex  = _queueFamilyIndexCreatedCount[i]++;
-                    break;
-                }
-        }
-
-    // Find a queue with the requested queueTypeFlags
     if (!found)
         {
-            for (uint32_t i = 0; i < Device.QueueFamilies.size(); i++)
+            // No queue family has this flag.
+            return 0;
+        }
+
+    // Find already allocated queue object
+    for (uint32_t i = 0; i < MAX_RESOURCES; i++)
+        {
+            const auto& queueRef = _queues.at(i);
+            if (queueRef.Id == FREE)
                 {
-                    VkQueueFamilyProperties& queueFamily = Device.QueueFamilies[i];
-                    if (queueFamily.queueFlags & vkFlags)
-                        {
-                            found       = true;
-                            familyIndex = i;
-                            queueIndex  = _queueFamilyIndexCreatedCount[i]++;
-                            break;
-                        }
+                    break;
+                }
+
+            if (queueRef.QueueFamilyIndex == familyIndex && queueRef.QueueIndex == queueIndex)
+                {
+                    return *ResourceId(EResourceType::QUEUE, queueRef.Id, i);
                 }
         }
 
-    check(found == true);
+    // Allocate new queue object
     {
         const auto index          = AllocResource<DQueueVulkan, MAX_RESOURCES>(_queues);
         auto&      queueRef       = _queues.at(index);
         queueRef.QueueFamilyIndex = familyIndex;
+        queueRef.QueueIndex       = queueIndex;
         vkGetDeviceQueue(Device.Device, familyIndex, queueIndex, &queueRef.QueuePtr);
 
         return *ResourceId(EResourceType::QUEUE, queueRef.Id, index);
     }
-
-    throw std::runtime_error("No vulkan queue available!");
-    return 0;
 }
 
 BufferId
@@ -1544,12 +1515,11 @@ VulkanContext::CreateCommandPool(uint32_t queueId)
     const auto index          = AllocResource<DCommandPoolVulkan, MAX_RESOURCES>(_commandPools);
     auto&      commandPoolRef = _commandPools.at(index);
 
-    commandPoolRef.Pool = Device.CreateCommandPool2(Device.GraphicsQueueInfo.FamilyIndex);
-
-    const auto queueRef             = GetResource<DQueueVulkan, EResourceType::QUEUE, MAX_RESOURCES>(_queues, queueId);
-    commandPoolRef.QueueFamilyIndex = queueRef.QueueFamilyIndex;
-
-    // commandPoolRef.Type = queueType;
+    {
+        const auto& queueRef            = GetResource<DQueueVulkan, EResourceType::QUEUE, MAX_RESOURCES>(_queues, queueId);
+        commandPoolRef.Pool             = Device.CreateCommandPool2(queueRef.QueueFamilyIndex);
+        commandPoolRef.QueueFamilyIndex = queueRef.QueueFamilyIndex;
+    }
 
     return *ResourceId(EResourceType::COMMAND_POOL, commandPoolRef.Id, index);
 }
@@ -1877,7 +1847,7 @@ VulkanContext::CopyImage(uint32_t commandId, uint32_t imageId, uint32_t width, u
 }
 
 void
-VulkanContext::QueueSubmit(const std::vector<uint32_t>& waitSemaphore, const std::vector<uint32_t>& finishSemaphore, const std::vector<uint32_t>& cmdIds, uint32_t fenceId)
+VulkanContext::QueueSubmit(uint32_t queueId, const std::vector<uint32_t>& waitSemaphore, const std::vector<uint32_t>& finishSemaphore, const std::vector<uint32_t>& cmdIds, uint32_t fenceId)
 {
     std::vector<VkCommandBuffer> commandBuffers;
     for (auto cmdId : cmdIds)
@@ -1919,7 +1889,9 @@ VulkanContext::QueueSubmit(const std::vector<uint32_t>& waitSemaphore, const std
     submitInfo.signalSemaphoreCount = (uint32_t)finishSemaphores.size();
     submitInfo.pSignalSemaphores    = finishSemaphores.data();
 
-    const VkResult result = vkQueueSubmit(Device.MainQueue, 1, &submitInfo, fenceRef != nullptr ? fenceRef->Fence : VK_NULL_HANDLE);
+    const auto& queueRef = GetResource<DQueueVulkan, EResourceType ::QUEUE, MAX_RESOURCES>(_queues, queueId);
+
+    const VkResult result = vkQueueSubmit(queueRef.QueuePtr, 1, &submitInfo, fenceRef != nullptr ? fenceRef->Fence : VK_NULL_HANDLE);
     if (VKFAILED(result))
         {
             throw std::runtime_error(VkUtils::VkErrorString(result));
@@ -1927,7 +1899,7 @@ VulkanContext::QueueSubmit(const std::vector<uint32_t>& waitSemaphore, const std
 }
 
 void
-VulkanContext::QueuePresent(uint32_t swapchainId, uint32_t imageIndex, const std::vector<uint32_t>& waitSemaphore)
+VulkanContext::QueuePresent(uint32_t queueId, uint32_t swapchainId, uint32_t imageIndex, const std::vector<uint32_t>& waitSemaphore)
 {
     std::vector<VkSemaphore> waitSemaphores;
     for (auto semaphoreId : waitSemaphore)
@@ -1947,7 +1919,9 @@ VulkanContext::QueuePresent(uint32_t swapchainId, uint32_t imageIndex, const std
     presentInfo.pImageIndices      = &imageIndex;
     presentInfo.pResults           = nullptr;
 
-    const VkResult result = vkQueuePresentKHR(Device.MainQueue, &presentInfo);
+    const auto& queueRef = GetResource<DQueueVulkan, EResourceType ::QUEUE, MAX_RESOURCES>(_queues, queueId);
+
+    const VkResult result = vkQueuePresentKHR(queueRef.QueuePtr, &presentInfo);
     if (result == VK_SUCCESS || VK_SUBOPTIMAL_KHR)
         {
             return;

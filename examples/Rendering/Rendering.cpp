@@ -250,6 +250,10 @@ class TriangleApp : public App
   public:
     TriangleApp()
     {
+        // Find graphics queue
+        _graphicsQueue = _ctx->FindQueue(Fox::EQueueType::QUEUE_GRAPHICS);
+        assert(_graphicsQueue > 0);
+
         // Create vertex layout
         Fox::VertexLayoutInfo position("SV_POSITION", Fox::EFormat::R32G32B32_FLOAT, 0, Fox::EVertexInputClassification::PER_VERTEX_DATA);
         Fox::VertexLayoutInfo color("Color0", Fox::EFormat::R32G32B32A32_FLOAT, 4 * sizeof(float), Fox::EVertexInputClassification::PER_VERTEX_DATA);
@@ -749,6 +753,7 @@ class TriangleApp : public App
     };
 
   protected:
+    uint32_t                                                       _graphicsQueue{};
     uint32_t                                                       _depthRt{};
     uint32_t                                                       _shader{};
     uint32_t                                                       _pipeline{};
@@ -822,7 +827,7 @@ class TriangleApp : public App
 
         _ctx->EndCommandBuffer(cmd);
 
-        _ctx->QueueSubmit({}, {}, { cmd }, NULL);
+        _ctx->QueueSubmit(_graphicsQueue, {}, {}, { cmd }, NULL);
         _ctx->WaitDeviceIdle();
         _ctx->DestroyBuffer(tmpBuf);
 

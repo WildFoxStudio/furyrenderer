@@ -18,7 +18,7 @@ class RIVulkanDevice2 : public RIVulkanDevice
   public:
     virtual ~RIVulkanDevice2();
 
-    bool                            SurfaceSupportPresentationOnCurrentQueueFamily(VkSurfaceKHR surface);
+    bool                            SurfaceSupportPresentationOnQueueFamilyIndex(VkSurfaceKHR surface, uint32_t queueFamilyIndex);
     std::vector<VkSurfaceFormatKHR> GetSurfaceFormats(VkSurfaceKHR surface);
     VkSurfaceCapabilitiesKHR        GetSurfaceCapabilities(VkSurfaceKHR surface);
     std::vector<VkPresentModeKHR>   GetSurfacePresentModes(VkSurfaceKHR surface);
@@ -32,11 +32,13 @@ class RIVulkanDevice2 : public RIVulkanDevice
      * @return
      */
     VkResult CreateSwapchainFromSurface(VkSurfaceKHR surface,
-    const VkSurfaceFormatKHR&                              format,
-    const VkPresentModeKHR&                                presentMode,
-    const VkSurfaceCapabilitiesKHR&                        capabilities,
-    VkSwapchainKHR* outSwapchain,
-    VkSwapchainKHR                                         oldSwapchain = nullptr);
+    const VkSurfaceFormatKHR&                        format,
+    const VkPresentModeKHR&                          presentMode,
+    const VkSurfaceCapabilitiesKHR&                  capabilities,
+    uint32_t*                                        queueFamilyIndices,
+    uint32_t                                         queueFamilyIndicesCount,
+    VkSwapchainKHR*                                  outSwapchain,
+    VkSwapchainKHR                                   oldSwapchain = nullptr);
     /**
      * @brief Must be externally synchronized
      * @param swapchain Swapchain to destroy
@@ -47,7 +49,7 @@ class RIVulkanDevice2 : public RIVulkanDevice
 
     VkResult AcquireNextImage(VkSwapchainKHR swapchain, uint64_t timeoutNanoseconds, uint32_t* imageIndex, VkSemaphore imageAvailableSempahore, VkFence fence = VK_NULL_HANDLE);
 
-    std::vector<VkResult> Present(std::vector<std::pair<VkSwapchainKHR, uint32_t>> swapchainImageIndex, std::vector<VkSemaphore> waitSemaphores);
+    std::vector<VkResult> Present(VkQueue queue, std::vector<std::pair<VkSwapchainKHR, uint32_t>> swapchainImageIndex, std::vector<VkSemaphore> waitSemaphores);
 
   private:
     std::unordered_set<VkSwapchainKHR> _swapchains;

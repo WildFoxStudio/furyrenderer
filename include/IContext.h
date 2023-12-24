@@ -705,7 +705,14 @@ class IContext
     virtual bool                  SwapchainAcquireNextImageIndex(uint32_t swapchainId, uint64_t timeoutNanoseconds, uint32_t sempahoreid, uint32_t* outImageIndex)                    = 0;
     virtual void                  DestroySwapchain(uint32_t swapchainId)                                                                                                              = 0;
 
-    virtual uint32_t FindQueue(uint32_t queueTypeFlag) = 0;
+    /**
+     * \brief If exists will return a specialized queue, otherwise if exists will return a queue with that feature, otherwise it will return a general purpose queue that supports that feature. If no
+     * queue with requested feature are available it will return 0. It will return as many queues as there are available, after it will return always a general purpose queue with same id. Don't loose
+     * the queue id because specialized queues return only once.
+     * \param queueTypeFlag
+     * \return A queue with the requested feature
+     */
+    virtual uint32_t FindQueue(EQueueType queueType) = 0;
 
     virtual uint32_t CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usage)                                                                    = 0;
     virtual void*    BeginMapBuffer(uint32_t buffer)                                                                                                        = 0;
@@ -761,8 +768,15 @@ class IContext
     virtual void     WaitForFence(uint32_t fenceId, uint64_t timeoutNanoseconds) = 0;
     virtual void     ResetFence(uint32_t fenceId)                                = 0;
 
-    virtual void QueueSubmit(const std::vector<uint32_t>& waitSemaphore, const std::vector<uint32_t>& finishSemaphore, const std::vector<uint32_t>& cmdIds, uint32_t fenceId) = 0;
-    virtual void QueuePresent(uint32_t swapchainId, uint32_t imageIndex, const std::vector<uint32_t>& waitSemaphore)                                                          = 0;
+    /**
+     * \brief Must be externally synchronized if called from multiple threads
+     * \param waitSemaphore
+     * \param finishSemaphore
+     * \param cmdIds
+     * \param fenceId
+     */
+    virtual void QueueSubmit(uint32_t queueId, const std::vector<uint32_t>& waitSemaphore, const std::vector<uint32_t>& finishSemaphore, const std::vector<uint32_t>& cmdIds, uint32_t fenceId) = 0;
+    virtual void QueuePresent(uint32_t queueId, uint32_t swapchainId, uint32_t imageIndex, const std::vector<uint32_t>& waitSemaphore)                                                          = 0;
 
     virtual uint32_t CreateGpuSemaphore()                      = 0;
     virtual void     DestroyGpuSemaphore(uint32_t semaphoreId) = 0;

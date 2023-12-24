@@ -130,8 +130,8 @@ App::Run()
             Draw(data.Cmd, w, h);
 
             _ctx->ResetFence(data.Fence);
-            _ctx->QueueSubmit({ data.ImageAvailableSemaphore }, { data.WorkFinishedSemaphore }, { data.Cmd }, data.Fence);
+            _ctx->QueueSubmit(_graphicsQueue, { data.ImageAvailableSemaphore }, { data.WorkFinishedSemaphore }, { data.Cmd }, data.Fence);
 
-            _ctx->QueuePresent(_swapchain, _swapchainImageIndex, { data.WorkFinishedSemaphore });
+            _ctx->QueuePresent(_graphicsQueue, _swapchain, _swapchainImageIndex, { data.WorkFinishedSemaphore });
         }
 }

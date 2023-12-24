@@ -91,16 +91,16 @@ class RIVulkanDevice12 : public RIVulkanDevice11
 {
   public:
     /*don't delete pointer, is managed by a pool*/
-    RICommandPool* CreateCommandPool();
+    RICommandPool* CreateCommandPool(uint32_t queueFamilyIndex);
     /*This is explicit deletion, will be deleted in destructor automatically*/
     void DestroyCommandPool(RICommandPool*);
 
-    void SubmitToMainQueue(const std::vector<RICommandBuffer*>& cmds, const std::vector<VkSemaphore>& waitSemaphore, VkSemaphore finishSemaphore, VkFence fence);
-
+    void SubmitToMainQueue(VkQueue queue, const std::vector<RICommandBuffer*>& cmds, const std::vector<VkSemaphore>& waitSemaphore, VkSemaphore finishSemaphore, VkFence fence);
 
     VkCommandPool CreateCommandPool2(uint32_t queueFamilyIndex);
     void          DestroyCommandPool2(VkCommandPool commandPool);
     void          ResetCommandPool2(VkCommandPool commandPool);
+
   public:
     virtual ~RIVulkanDevice12();
 

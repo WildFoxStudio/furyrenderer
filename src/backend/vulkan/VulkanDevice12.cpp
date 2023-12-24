@@ -51,14 +51,14 @@ RICommandPool::Reset()
 }
 
 RICommandPool*
-RIVulkanDevice12::CreateCommandPool()
+RIVulkanDevice12::CreateCommandPool(uint32_t queueFamilyIndex)
 {
     VkCommandPool commandPool{};
     {
         VkCommandPoolCreateInfo poolInfo{};
         poolInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
         poolInfo.flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; /*Allow command buffers to be rerecorded individually, without this flag they all have to be reset together*/
-        poolInfo.queueFamilyIndex = GraphicsQueueInfo.FamilyIndex;
+        poolInfo.queueFamilyIndex = queueFamilyIndex;
 
         const VkResult result = vkCreateCommandPool(Device, &poolInfo, nullptr, &commandPool);
         if (VKFAILED(result))
@@ -133,7 +133,7 @@ RIVulkanDevice12::DestroyCommandPool2(VkCommandPool commandPool)
 }
 
 void
-RIVulkanDevice12::SubmitToMainQueue(const std::vector<RICommandBuffer*>& cmds, const std::vector<VkSemaphore>& waitSemaphore, VkSemaphore finishSemaphore, VkFence fence)
+RIVulkanDevice12::SubmitToMainQueue(VkQueue queue, const std::vector<RICommandBuffer*>& cmds, const std::vector<VkSemaphore>& waitSemaphore, VkSemaphore finishSemaphore, VkFence fence)
 {
 
     std::for_each(cmds.begin(), cmds.end(), [](RICommandBuffer* cmd) { cmd->IncreaseCounter(); });
@@ -156,7 +156,7 @@ RIVulkanDevice12::SubmitToMainQueue(const std::vector<RICommandBuffer*>& cmds, c
     submitInfo.signalSemaphoreCount = finishSemaphore ? 1 : 0;
     submitInfo.pSignalSemaphores    = finishSemaphore ? &finishSemaphore : nullptr;
 
-    const VkResult result = vkQueueSubmit(MainQueue, 1, &submitInfo, fence);
+    const VkResult result = vkQueueSubmit(queue, 1, &submitInfo, fence);
     if (VKFAILED(result))
         {
             throw std::runtime_error(VkUtils::VkErrorString(result));
