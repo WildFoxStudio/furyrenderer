@@ -741,6 +741,7 @@ VulkanContext::FindQueue(EQueueType queueType)
         queueRef.QueueFamilyIndex = familyIndex;
         queueRef.QueueIndex       = queueIndex;
         vkGetDeviceQueue(Device.Device, familyIndex, queueIndex, &queueRef.QueuePtr);
+        queueRef.Type = queueType;
 
         return *ResourceId(EResourceType::QUEUE, queueRef.Id, index);
     }
@@ -1519,6 +1520,7 @@ VulkanContext::CreateCommandPool(uint32_t queueId)
         const auto& queueRef            = GetResource<DQueueVulkan, EResourceType::QUEUE, MAX_RESOURCES>(_queues, queueId);
         commandPoolRef.Pool             = Device.CreateCommandPool2(queueRef.QueueFamilyIndex);
         commandPoolRef.QueueFamilyIndex = queueRef.QueueFamilyIndex;
+        commandPoolRef.Type             = queueRef.Type;
     }
 
     return *ResourceId(EResourceType::COMMAND_POOL, commandPoolRef.Id, index);
@@ -1554,6 +1556,8 @@ VulkanContext::CreateCommandBuffer(uint32_t commandPoolId)
     }
 
     auto& commandPoolRef = GetResource<DCommandPoolVulkan, EResourceType::COMMAND_POOL, MAX_RESOURCES>(_commandPools, commandPoolId);
+
+    commandBufferRef.Type = commandPoolRef.Type;
 
     VkCommandBufferAllocateInfo info{};
     info.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -2161,9 +2165,27 @@ RenderTargetBarrier*                    p_rt_barriers)
 
     for (uint32_t i = 0; i < buffer_barrier_count; ++i)
         {
-            BufferBarrier*         pTrans         = &p_buffer_barriers[i];
-            const DBufferVulkan&   bufferRef      = GetResource<DBufferVulkan, EResourceType::UNIFORM_BUFFER, MAX_RESOURCES>(_vertexBuffers, pTrans->BufferId);
-            VkBuffer               pBuffer        = bufferRef.Buffer.Buffer;
+            BufferBarrier* pTrans = &p_buffer_barriers[i];
+
+            const auto     resourceType = ResourceId(pTrans->BufferId).First();
+            const auto     index        = ResourceId(pTrans->BufferId).Value();
+            DBufferVulkan* bufferPtr{};
+            switch (resourceType)
+                {
+                    case EResourceType::UNIFORM_BUFFER:
+                        bufferPtr = &_uniformBuffers.at(index);
+                        break;
+                    case EResourceType::VERTEX_INDEX_BUFFER:
+                        bufferPtr = &_vertexBuffers.at(index);
+                        break;
+                    case EResourceType::TRANSFER:
+                        bufferPtr = &_transferBuffers.at(index);
+                        break;
+                    default:
+                        check(0); // Invalid type
+                        break;
+                }
+            VkBuffer               pBuffer        = bufferPtr->Buffer.Buffer;
             VkBufferMemoryBarrier* pBufferBarrier = NULL;
 
             if (EResourceState::UNORDERED_ACCESS == pTrans->CurrentState && EResourceState::UNORDERED_ACCESS == pTrans->NewState)
@@ -2339,11 +2361,11 @@ RenderTargetBarrier*                    p_rt_barriers)
                 }
         }
 
-    VkPipelineStageFlags srcStageMask = VkUtils::determinePipelineStageFlags(srcAccessFlags, EQueueType::QUEUE_GRAPHICS);
-    VkPipelineStageFlags dstStageMask = VkUtils::determinePipelineStageFlags(dstAccessFlags, EQueueType::QUEUE_GRAPHICS);
+    auto&                commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
+    VkPipelineStageFlags srcStageMask     = VkUtils::determinePipelineStageFlags(srcAccessFlags, commandBufferRef.Type);
+    VkPipelineStageFlags dstStageMask     = VkUtils::determinePipelineStageFlags(dstAccessFlags, commandBufferRef.Type);
 
     {
-        auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
         check(commandBufferRef.IsRecording); // Must be in recording state
         // If previous active render pass end it
         if (commandBufferRef.ActiveRenderPass)

@@ -640,8 +640,8 @@ typedef struct BufferBarrier
     uint8_t            BeginOnly : 1;
     uint8_t            EndOnly : 1;
     ETransferOwnership TransferOwnership{ ETransferOwnership::NONE };
-    uint8_t            SrcQueue{};
-    uint8_t            DstQueue{};
+    uint32_t           SrcQueue{};
+    uint32_t           DstQueue{};
 } BufferBarrier;
 
 typedef struct TextureBarrier
@@ -652,8 +652,8 @@ typedef struct TextureBarrier
     uint8_t            BeginOnly : 1;
     uint8_t            EndOnly : 1;
     ETransferOwnership TransferOwnership{ ETransferOwnership::NONE };
-    uint8_t            SrcQueue{};
-    uint8_t            DstQueue{};
+    uint32_t           SrcQueue{};
+    uint32_t           DstQueue{};
     /// Specifiy whether following barrier targets particular subresource
     uint8_t mSubresourceBarrier : 1;
     /// Following values are ignored if mSubresourceBarrier is false
@@ -669,8 +669,8 @@ typedef struct RenderTargetBarrier
     uint8_t            mBeginOnly : 1;
     uint8_t            mEndOnly : 1;
     ETransferOwnership TransferOwnership{ ETransferOwnership::NONE };
-    uint8_t            SrcQueue{};
-    uint8_t            DstQueue{};
+    uint32_t           SrcQueue{};
+    uint32_t           DstQueue{};
     /// Specifiy whether following barrier targets particular subresource
     uint8_t mSubresourceBarrier : 1 {};
     /// Following values are ignored if mSubresourceBarrier is false
