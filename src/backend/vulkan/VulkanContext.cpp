@@ -1415,11 +1415,31 @@ VulkanContext::UpdateDescriptorSet(uint32_t descriptorSetId, uint32_t setIndex, 
 
                             for (uint32_t i = 0; i < descriptorCount; i++)
                                 {
-                                    VkDescriptorImageInfo& img      = imageInfo[imageInfoCount++];
-                                    const DImageVulkan&    imageRef = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, param->Textures[i]);
-                                    img.imageView                   = imageRef.View;
-                                    img.imageLayout                 = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                                    img.sampler                     = NULL;
+                                    VkDescriptorImageInfo& img = imageInfo[imageInfoCount++];
+                                    const auto             resourceType{ static_cast<EResourceType>(ResourceId(param->Textures[i]).First()) };
+                                    switch (resourceType)
+                                        {
+                                            case EResourceType::IMAGE:
+                                                {
+                                                    const DImageVulkan& imageRef = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, param->Textures[i]);
+                                                    img.imageView                = imageRef.View;
+                                                    img.imageLayout              = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                                                    img.sampler                  = NULL;
+                                                }
+                                                break;
+                                            case EResourceType::RENDER_TARGET:
+                                                {
+                                                    const DRenderTargetVulkan& imageRef =
+                                                    GetResource<DRenderTargetVulkan, EResourceType::RENDER_TARGET, MAX_RESOURCES>(_renderTargets, param->Textures[i]);
+                                                    img.imageView   = imageRef.View;
+                                                    img.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                                                    img.sampler     = NULL;
+                                                }
+                                                break;
+                                            default:
+                                                check(0); // Invalid resource type
+                                                break;
+                                        }
                                 }
                         }
                         break;
