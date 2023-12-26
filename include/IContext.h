@@ -625,28 +625,35 @@ struct DescriptorSetDesc
     ERIShaderStage  Stage;
 };
 
+enum ETransferOwnership : uint8_t
+{
+    NONE = 0,
+    ACQUIRE,
+    RELEASE
+};
+
 typedef struct BufferBarrier
 {
-    uint32_t       BufferId;
-    EResourceState CurrentState;
-    EResourceState NewState;
-    uint8_t        BeginOnly : 1;
-    uint8_t        EndOnly : 1;
-    uint8_t        Acquire : 1;
-    uint8_t        Release : 1;
-    uint8_t        QueueType : 5;
+    uint32_t           BufferId;
+    EResourceState     CurrentState;
+    EResourceState     NewState;
+    uint8_t            BeginOnly : 1;
+    uint8_t            EndOnly : 1;
+    ETransferOwnership TransferOwnership{ ETransferOwnership::NONE };
+    uint32_t           SrcQueue{};
+    uint32_t           DstQueue{};
 } BufferBarrier;
 
 typedef struct TextureBarrier
 {
-    uint32_t       ImageId;
-    EResourceState CurrentState;
-    EResourceState NewState;
-    uint8_t        BeginOnly : 1;
-    uint8_t        EndOnly : 1;
-    uint8_t        Acquire : 1;
-    uint8_t        Release : 1;
-    uint8_t        QueueType : 5;
+    uint32_t           ImageId;
+    EResourceState     CurrentState;
+    EResourceState     NewState;
+    uint8_t            BeginOnly : 1;
+    uint8_t            EndOnly : 1;
+    ETransferOwnership TransferOwnership{ ETransferOwnership::NONE };
+    uint32_t           SrcQueue{};
+    uint32_t           DstQueue{};
     /// Specifiy whether following barrier targets particular subresource
     uint8_t mSubresourceBarrier : 1;
     /// Following values are ignored if mSubresourceBarrier is false
@@ -656,14 +663,14 @@ typedef struct TextureBarrier
 
 typedef struct RenderTargetBarrier
 {
-    uint32_t       RenderTarget{};
-    EResourceState mCurrentState;
-    EResourceState mNewState;
-    uint8_t        mBeginOnly : 1;
-    uint8_t        mEndOnly : 1;
-    uint8_t        mAcquire : 1;
-    uint8_t        mRelease : 1;
-    uint8_t        mQueueType : 5;
+    uint32_t           RenderTarget{};
+    EResourceState     mCurrentState;
+    EResourceState     mNewState;
+    uint8_t            mBeginOnly : 1;
+    uint8_t            mEndOnly : 1;
+    ETransferOwnership TransferOwnership{ ETransferOwnership::NONE };
+    uint32_t           SrcQueue{};
+    uint32_t           DstQueue{};
     /// Specifiy whether following barrier targets particular subresource
     uint8_t mSubresourceBarrier : 1;
     /// Following values are ignored if mSubresourceBarrier is false

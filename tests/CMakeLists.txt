@@ -16,6 +16,7 @@ set(SOURCES
   "integration/vulkan/VertexBufferUpload.test.cpp"
   "integration/vulkan/UniformBufferUpload.test.cpp"
   "integration/vulkan/ImageUpload.test.cpp"
+  "integration/vulkan/AcquireAndRelease.test.cpp"
 )
 
 
@@ -36,7 +37,7 @@ add_executable(tests
 
 target_sources(tests PRIVATE ${GTEST_DIR} ${GTEST_DIR_INCLUDE}${SOURCES})
 
-target_link_libraries(tests FoxFury GTest::gtest_main GTest::gmock volk VulkanMemoryAllocator glfw)
+target_link_libraries(tests FoxFury GTest::gtest_main volk VulkanMemoryAllocator glfw)
 
 set_target_properties(tests PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "bin"

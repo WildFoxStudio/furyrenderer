@@ -87,12 +87,13 @@ struct DCommandPoolVulkan : public DResource
     VkCommandPool Pool{};
     EQueueType    Type;
     uint32_t      QueueFamilyIndex{};
+    EQueueType    QueueType{};
 };
 
 struct DCommandBufferVulkan : public DResource
 {
     VkCommandBuffer Cmd{};
-    EQueueType      Type;
+    EQueueType      Type{};
     uint32_t        QueueFamilyIndex{};
     bool            IsRecording{};
     VkRenderPass    ActiveRenderPass{};
@@ -149,9 +150,10 @@ struct DSamplerVulkan : public DResource
 
 struct DQueueVulkan : public DResource
 {
-    uint32_t QueueFamilyIndex{};
-    uint32_t QueueIndex{};
-    VkQueue  QueuePtr{};
+    uint32_t   QueueFamilyIndex{};
+    uint32_t   QueueIndex{};
+    VkQueue    QueuePtr{};
+    EQueueType Type{};
 };
 
 class VulkanContext final : public IContext
