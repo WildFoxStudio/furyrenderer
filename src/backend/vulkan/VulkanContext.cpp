@@ -1092,7 +1092,8 @@ VulkanContext::CreateRootSignature(const ShaderLayout& layout)
     std::map<uint32_t, VkDescriptorSetLayout> setIndexToSetLayout;
     for (const auto& setPair : layout.SetsLayout)
         {
-            const auto descriptorSetBindings                  = VkUtils::convertDescriptorBindings(setPair.second);
+            const auto descriptorSetBindings = VkUtils::convertDescriptorBindings(setPair.second);
+            // Can return already cached DescriptorSet layout if exists
             rootSignature.DescriptorSetLayouts[setPair.first] = Device.CreateDescriptorSetLayout(descriptorSetBindings);
             descriptorSetLayout.push_back(rootSignature.DescriptorSetLayouts[setPair.first]);
 
@@ -1215,13 +1216,35 @@ VulkanContext::DestroyRootSignature(uint32_t rootSignatureId)
 {
     DRootSignature& rootSignature = GetResource<DRootSignature, EResourceType::ROOT_SIGNATURE, MAX_RESOURCES>(_rootSignatures, rootSignatureId);
 
-    Device.DestroyPipelineLayout(rootSignature.PipelineLayout);
-
-    for (uint32_t i = 0; i < (uint32_t)EDescriptorFrequency::MAX_COUNT; i++)
+    // Check if the pipeline layout is not shared among other root signatures
+    const auto count{ std::count_if(_rootSignatures.begin(), _rootSignatures.end(), [rootSignature](const DRootSignature& sig) { return sig.PipelineLayout == rootSignature.PipelineLayout; }) };
+    if (count == 1)
         {
-            if (rootSignature.DescriptorSetLayouts[i] != nullptr)
+            Device.DestroyPipelineLayout(rootSignature.PipelineLayout);
+
+            // Only destroy non shared rootSignatures when pipeline layout can be destroyed
+            for (uint32_t i = 0; i < (uint32_t)EDescriptorFrequency::MAX_COUNT; i++)
                 {
-                    Device.DestroyDescriptorSetLayout(rootSignature.DescriptorSetLayouts[i]);
+                    if (rootSignature.DescriptorSetLayouts[i] != nullptr)
+                        {
+                            // Check if the descriptor set layout is not shared among other root signatures
+                            const auto usageCount{ std::count_if(
+                            _rootSignatures.begin(), _rootSignatures.end(), [descriptorSetLayout = rootSignature.DescriptorSetLayouts[i]](const DRootSignature& sig) {
+                                for (uint32_t i = 0; i < (uint32_t)EDescriptorFrequency::MAX_COUNT; i++)
+                                    {
+                                        if (sig.DescriptorSetLayouts[i] == descriptorSetLayout)
+                                            {
+                                                return true;
+                                            }
+                                    }
+                                return false;
+                            }) };
+                            // If not referenced in other root signatures
+                            if (usageCount == 1)
+                                {
+                                    Device.DestroyDescriptorSetLayout(rootSignature.DescriptorSetLayouts[i]);
+                                }
+                        }
                 }
         }
 
@@ -2626,19 +2649,19 @@ VulkanContext::_getInstanceSupportedExtensions(const std::vector<const char*>& e
     const auto               validExtentionsNames = VkUtils::convertExtensionPropertiesToNames(validExtensions);
     std::vector<const char*> supportedExtensions  = VkUtils::filterInclusive(extentions, validExtentionsNames);
     {
-        const std::string out = "Available extensions requested:" + std::to_string(supportedExtensions.size()) + "/" + std::to_string(extentions.size());
-        Log(out);
+        // const std::string out = "Available extensions requested:" + std::to_string(supportedExtensions.size()) + "/" + std::to_string(extentions.size());
+        // Log(out);
 
         // Print not supported validation layers
-        if (supportedExtensions.size() != extentions.size())
-            {
-                Log("Unsupported instance extensions");
-                std::vector<const char*> unsupportedExtensions = VkUtils::filterExclusive(validExtentionsNames, extentions);
-                for (const char* extensionName : unsupportedExtensions)
-                    {
-                        Log(extensionName);
-                    }
-            }
+        // if (supportedExtensions.size() != extentions.size())
+        //    {
+        //        Log("Unsupported instance extensions");
+        //        std::vector<const char*> unsupportedExtensions = VkUtils::filterExclusive(validExtentionsNames, extentions);
+        //        for (const char* extensionName : unsupportedExtensions)
+        //            {
+        //                Log(extensionName);
+        //            }
+        //    }
     }
     return supportedExtensions;
 }
@@ -2651,19 +2674,19 @@ VulkanContext::_getInstanceSupportedValidationLayers(const std::vector<const cha
     std::vector<const char*>             supportedValidationLayers = VkUtils::filterInclusive(validationLayers, layerNames);
 
     {
-        const std::string out = "Available validation layers requested:" + std::to_string(supportedValidationLayers.size()) + "/" + std::to_string(validationLayers.size());
-        Log(out);
-        // Print not supported validation layers
-        if (supportedValidationLayers.size() != validationLayers.size())
-            {
-                Log("Unsupported instance validation layers:");
+        // const std::string out = "Available validation layers requested:" + std::to_string(supportedValidationLayers.size()) + "/" + std::to_string(validationLayers.size());
+        // Log(out);
+        //  Print not supported validation layers
+        // if (supportedValidationLayers.size() != validationLayers.size())
+        //     {
+        //         Log("Unsupported instance validation layers:");
 
-                std::vector<const char*> unsupportedValidationLayers = VkUtils::filterExclusive(layerNames, validationLayers);
-                for (const char* layerName : unsupportedValidationLayers)
-                    {
-                        Log(layerName);
-                    }
-            }
+        //        std::vector<const char*> unsupportedValidationLayers = VkUtils::filterExclusive(layerNames, validationLayers);
+        //        for (const char* layerName : unsupportedValidationLayers)
+        //            {
+        //                Log(layerName);
+        //            }
+        //    }
     }
 
     return supportedValidationLayers;
@@ -2692,18 +2715,18 @@ VulkanContext::_getDeviceSupportedExtensions(VkPhysicalDevice physicalDevice, co
     const auto               extensionNames            = VkUtils::convertExtensionPropertiesToNames(validExtensions);
     std::vector<const char*> deviceSupportedExtensions = VkUtils::filterInclusive(extentions, extensionNames);
 
-    const std::string out = "Available device extensions requested:" + std::to_string(deviceSupportedExtensions.size()) + "/" + std::to_string(extentions.size());
-    Log(out);
+    // const std::string out = "Available device extensions requested:" + std::to_string(deviceSupportedExtensions.size()) + "/" + std::to_string(extentions.size());
+    // Log(out);
 
     // Print not supported validation layers
     if (deviceSupportedExtensions.size() != extentions.size())
         {
-            Log("Unsupported device extensions:");
-            std::vector<const char*> deviceUnsupportedExtensions = VkUtils::filterExclusive(extensionNames, extentions);
-            for (const char* extensionName : deviceUnsupportedExtensions)
-                {
-                    Log(extensionName);
-                }
+            // Log("Unsupported device extensions:");
+            // std::vector<const char*> deviceUnsupportedExtensions = VkUtils::filterExclusive(extensionNames, extentions);
+            // for (const char* extensionName : deviceUnsupportedExtensions)
+            //     {
+            //         Log(extensionName);
+            //     }
         }
 
     return deviceSupportedExtensions;
@@ -2716,18 +2739,18 @@ VulkanContext::_getDeviceSupportedValidationLayers(VkPhysicalDevice physicalDevi
     const auto               validExtentionsNames            = VkUtils::convertExtensionPropertiesToNames(validExtentions);
     std::vector<const char*> deviceSupportedValidationLayers = VkUtils::filterInclusive(validationLayers, validExtentionsNames);
 
-    const std::string out = "Available device validation layers requested:" + std::to_string(deviceSupportedValidationLayers.size()) + "/" + std::to_string(validationLayers.size());
-    Log(out);
+    // const std::string out = "Available device validation layers requested:" + std::to_string(deviceSupportedValidationLayers.size()) + "/" + std::to_string(validationLayers.size());
+    // Log(out);
 
     // Print not supported validation layers
     if (deviceSupportedValidationLayers.size() != validationLayers.size())
         {
-            Log("Unsupported device validation layers:");
-            std::vector<const char*> deviceUnsupportedValidationLayers = VkUtils::filterExclusive(validExtentionsNames, validationLayers);
-            for (const char* layerName : deviceUnsupportedValidationLayers)
-                {
-                    Log(layerName);
-                }
+            // Log("Unsupported device validation layers:");
+            // std::vector<const char*> deviceUnsupportedValidationLayers = VkUtils::filterExclusive(validExtentionsNames, validationLayers);
+            // for (const char* layerName : deviceUnsupportedValidationLayers)
+            //     {
+            //         Log(layerName);
+            //     }
         }
 
     return deviceSupportedValidationLayers;
