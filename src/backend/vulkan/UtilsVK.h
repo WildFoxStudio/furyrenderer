@@ -81,6 +81,9 @@ VkErrorString(enum VkResult result)
             case VK_ERROR_UNKNOWN:
                 return "VK_ERROR_UNKNOWN";
                 break;
+            case VK_ERROR_SURFACE_LOST_KHR:
+                return "VK_ERROR_SURFACE_LOST_KHR";
+                break;
             default:
                 return "UNKNOWN VK ERROR";
                 break;
