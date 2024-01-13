@@ -20,6 +20,11 @@ add_library(${PROJECT_NAME} STATIC
    "include/main.cpp"
 )
 
+option(BUILD_TESTS "Build tests" OFF)
+option(BUILD_EXAMPLES "Build examples" OFF)
+
+
+
 ## Volk
 add_subdirectory("thirdparty/volk")
 ## VMA
@@ -31,12 +36,23 @@ add_subdirectory("thirdparty/glfw")
 # GLM
 add_subdirectory("thirdparty/glm")
 # GLI
-set(GLI_TEST_ENABLED OFF CACHE BOOL "" FORCE)
-add_subdirectory("thirdparty/gli")
-# TINYGLTF
-set(TINYGLTF_HEADER_ONLY ON CACHE BOOL "" FORCE)
-set(TINYGLTF_INSTALL OFF CACHE BOOL "" FORCE)
-add_subdirectory("thirdparty/tinygltf")
+if(BUILD_EXAMPLES)
+    set(GLI_TEST_ENABLED OFF CACHE BOOL "" FORCE)
+    add_subdirectory("thirdparty/gli")
+    # TINYGLTF
+    set(TINYGLTF_HEADER_ONLY ON CACHE BOOL "" FORCE)
+    set(TINYGLTF_INSTALL OFF CACHE BOOL "" FORCE)
+    # Fetch tinygltf from GitHub
+    include(FetchContent) # once in the project to include the module
+    FetchContent_Declare(
+    tinygltf
+    GIT_REPOSITORY https://github.com/syoyo/tinygltf.git
+    GIT_TAG v2.8.19
+    )
+
+    # Fetch the content and add it to your CMake project
+    FetchContent_MakeAvailable(tinygltf)
+endif()
 
 target_link_libraries(${PROJECT_NAME} PRIVATE volk VulkanMemoryAllocator)
 
@@ -106,11 +122,6 @@ target_sources(${PROJECT_NAME} PRIVATE
     "${SRC_DIR}/backend/vulkan/VulkanDevice13.h"
     "${SRC_DIR}/backend/vulkan/VulkanDevice13.cpp"
     )
-
-
-    
-option(BUILD_TESTS "Build tests" OFF)
-option(BUILD_EXAMPLES "Build examples" OFF)
 
 if(BUILD_EXAMPLES)
     set(LIB_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/include")
