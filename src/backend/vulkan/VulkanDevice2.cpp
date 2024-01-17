@@ -107,6 +107,8 @@ VkSwapchainKHR                                           oldSwapchain)
     swapchainInfo.imageFormat              = format.format;
     swapchainInfo.imageColorSpace          = format.colorSpace;
 
+    check(capabilities.currentExtent.width > 0); // imageExtent members width and height must both be non-zero
+    check(capabilities.currentExtent.height > 0); // imageExtent members width and height must both be non-zero
     check(capabilities.currentExtent.width <= capabilities.maxImageExtent.width);
     check(capabilities.currentExtent.height <= capabilities.maxImageExtent.height);
 

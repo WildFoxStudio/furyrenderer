@@ -451,6 +451,8 @@ VulkanContext::CreateSwapchain(const WindowData* windowData, EPresentMode& prese
 {
     const auto        index     = AllocResource<DSwapchainVulkan, MAX_RESOURCES>(_swapchains);
     DSwapchainVulkan& swapchain = _swapchains.at(index);
+    swapchain.Surface           = nullptr;
+    swapchain.Swapchain         = nullptr;
 
     _createSwapchain(swapchain, windowData, presentMode, outFormat);
 
@@ -477,13 +479,12 @@ VulkanContext::_createSwapchain(DSwapchainVulkan& swapchain, const WindowData* w
             }
     }
 
-    uint32_t queueFamilyIndex{};
+    // Find presentable graphics queue
     {
-        uint32_t   queueIndex{};
         uint32_t   queueIndexCount[16]{};
         const auto foundGraphicsQueueId{ VkUtils::findQueueWithFlags(
-        &queueFamilyIndex, &queueIndex, VK_QUEUE_GRAPHICS_BIT, Device.QueueFamilies.data(), Device.QueueFamilies.size(), queueIndexCount) };
-        const bool supportPresentation{ Device.SurfaceSupportPresentationOnQueueFamilyIndex(surface, queueFamilyIndex) };
+        &swapchain.QueueFamilyIndex, &swapchain.QueueIndex, VK_QUEUE_GRAPHICS_BIT, Device.QueueFamilies.data(), Device.QueueFamilies.size(), queueIndexCount) };
+        const bool supportPresentation{ Device.SurfaceSupportPresentationOnQueueFamilyIndex(surface, swapchain.QueueFamilyIndex) };
         if (!supportPresentation)
             {
                 throw std::runtime_error("Vulkan graphics queue does not support presentation to this surface!");
@@ -506,14 +507,17 @@ VulkanContext::_createSwapchain(DSwapchainVulkan& swapchain, const WindowData* w
     const auto capabilities = Device.GetSurfaceCapabilities(surface);
 
     // Create swapchain object
+    check(swapchain.Swapchain == nullptr);
     VkSwapchainKHR vkSwapchain{};
-    {
-        const auto result = Device.CreateSwapchainFromSurface(surface, formats.at(0), vkPresentMode, capabilities, &queueFamilyIndex, 1, &vkSwapchain);
-        if (VKFAILED(result))
-            {
-                throw std::runtime_error("Failed to create swapchain " + std::string(VkUtils::VkErrorString(result)));
-            }
-    }
+    // Only create swapchain when extent is meaningful as > 0px
+    if (capabilities.currentExtent.width > 0 && capabilities.currentExtent.height > 0)
+        {
+            const auto result = Device.CreateSwapchainFromSurface(surface, formats.at(0), vkPresentMode, capabilities, &swapchain.QueueFamilyIndex, 1, &vkSwapchain);
+            if (VKFAILED(result))
+                {
+                    throw std::runtime_error("Failed to create swapchain " + std::string(VkUtils::VkErrorString(result)));
+                }
+        }
     // Setup new object
     swapchain.Surface      = surface;
     swapchain.Capabilities = capabilities;
@@ -521,30 +525,42 @@ VulkanContext::_createSwapchain(DSwapchainVulkan& swapchain, const WindowData* w
     swapchain.PresentMode  = vkPresentMode;
     swapchain.Swapchain    = vkSwapchain;
 
-    const auto swapchainImages = Device.GetSwapchainImages(vkSwapchain);
-    swapchain.ImagesCount      = swapchainImages.size();
-    for (size_t i = 0; i < swapchainImages.size(); i++)
+    // Reset the images/render targers ids
+    for (size_t i = 0; i < DSwapchainVulkan::MAX_IMAGE_COUNT; i++)
         {
-            swapchain.ImagesId[i] = _createImageFromVkImage(swapchainImages.at(i), swapchain.Format.format, swapchain.Capabilities.currentExtent.width, swapchain.Capabilities.currentExtent.height);
+            swapchain.ImagesId[i]        = 0;
+            swapchain.RenderTargetsId[i] = 0;
         }
 
-    // Create render targets
-    for (size_t i = 0; i < swapchainImages.size(); i++)
+    // Only create image views and render targets when a swapchain was created
+    if (vkSwapchain != NULL)
         {
-            const auto index           = AllocResource<DRenderTargetVulkan, MAX_RESOURCES>(_renderTargets);
-            auto&      renderTargetRef = _renderTargets.at(index);
-
-            const auto& imageRef        = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, swapchain.ImagesId[i]);
-            renderTargetRef.Image       = imageRef.Image;
-            renderTargetRef.ImageAspect = imageRef.ImageAspect;
-
-            const auto result = Device.CreateImageView(imageRef.Image.Format, imageRef.Image.Image, imageRef.ImageAspect, 0, 1, &renderTargetRef.View);
-            if (VKFAILED(result))
+            const auto swapchainImages = Device.GetSwapchainImages(vkSwapchain);
+            swapchain.ImagesCount      = swapchainImages.size();
+            for (size_t i = 0; i < swapchainImages.size(); i++)
                 {
-                    throw std::runtime_error("Failed to create swapchain imageView " + std::string(VkUtils::VkErrorString(result)));
+                    swapchain.ImagesId[i] =
+                    _createImageFromVkImage(swapchainImages.at(i), swapchain.Format.format, swapchain.Capabilities.currentExtent.width, swapchain.Capabilities.currentExtent.height);
                 }
 
-            swapchain.RenderTargetsId[i] = *ResourceId(EResourceType::RENDER_TARGET, renderTargetRef.Id, index);
+            // Create render targets
+            for (size_t i = 0; i < swapchainImages.size(); i++)
+                {
+                    const auto index           = AllocResource<DRenderTargetVulkan, MAX_RESOURCES>(_renderTargets);
+                    auto&      renderTargetRef = _renderTargets.at(index);
+
+                    const auto& imageRef        = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, swapchain.ImagesId[i]);
+                    renderTargetRef.Image       = imageRef.Image;
+                    renderTargetRef.ImageAspect = imageRef.ImageAspect;
+
+                    const auto result = Device.CreateImageView(imageRef.Image.Format, imageRef.Image.Image, imageRef.ImageAspect, 0, 1, &renderTargetRef.View);
+                    if (VKFAILED(result))
+                        {
+                            throw std::runtime_error("Failed to create swapchain imageView " + std::string(VkUtils::VkErrorString(result)));
+                        }
+
+                    swapchain.RenderTargetsId[i] = *ResourceId(EResourceType::RENDER_TARGET, renderTargetRef.Id, index);
+                }
         }
 }
 
@@ -557,15 +573,130 @@ VulkanContext::GetSwapchainRenderTargets(SwapchainId swapchainId)
 
     DSwapchainVulkan& swapchain = GetResource<DSwapchainVulkan, EResourceType::SWAPCHAIN, MAX_RESOURCES>(_swapchains, swapchainId);
 
-    std::vector<uint32_t> images;
-    images.resize(swapchain.ImagesCount);
+    // If has no swapchain return none
+    if (swapchain.Swapchain == NULL)
+        {
+            return {};
+        }
+
+    std::vector<uint32_t> rts;
+    rts.resize(swapchain.ImagesCount);
 
     for (size_t i = 0; i < swapchain.ImagesCount; i++)
         {
-            images[i] = swapchain.RenderTargetsId[i];
+            rts[i] = swapchain.RenderTargetsId[i];
         }
 
-    return images;
+    return rts;
+}
+
+bool
+VulkanContext::SwapchainHasValidSurface(SwapchainId swapchainId)
+{
+    DSwapchainVulkan& swapchain = GetResource<DSwapchainVulkan, EResourceType::SWAPCHAIN, MAX_RESOURCES>(_swapchains, swapchainId);
+    swapchain.Capabilities      = Device.GetSurfaceCapabilities(swapchain.Surface);
+
+    if (swapchain.Capabilities.currentExtent.width == 0 || swapchain.Capabilities.currentExtent.height == 0)
+        {
+            // Destroy swapchain and imaged and RT
+            if (swapchain.Swapchain)
+                {
+                    Device.DestroySwapchain(swapchain.Swapchain);
+                    swapchain.Swapchain = nullptr;
+
+                    for (uint32_t i = 0; i < swapchain.ImagesCount; i++)
+                        {
+                            auto& imageRef = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, swapchain.ImagesId[i]);
+                            Device.DestroyImageView(imageRef.View);
+                            imageRef.Id = FREE;
+
+                            const auto renderTargetId{ swapchain.RenderTargetsId[i] };
+                            auto&      renderTargetRef = GetResource<DRenderTargetVulkan, EResourceType::RENDER_TARGET, MAX_RESOURCES>(_renderTargets, renderTargetId);
+
+                            Device.DestroyImageView(renderTargetRef.View);
+                            renderTargetRef.Id = FREE;
+
+                            // Must destroy all framebuffers that reference this render target @TODO find a better algorithm without iterating over the array multiple times
+                            const auto referenceCount = std::count_if(_framebuffers.begin(), _framebuffers.end(), [renderTargetId](const DFramebufferVulkan& fbo) {
+                                for (size_t i = 0; i < DFramebufferAttachments::MAX_ATTACHMENTS; i++)
+                                    {
+                                        if (fbo.Attachments.RenderTargets[i] == renderTargetId)
+                                            {
+                                                return true;
+                                            }
+                                    }
+                                return false;
+                            });
+                            for (uint32_t i = 0; i < referenceCount; i++)
+                                {
+                                    auto foundFbo = std::find_if(_framebuffers.begin(), _framebuffers.end(), [renderTargetId](const DFramebufferVulkan& fbo) {
+                                        for (size_t i = 0; i < DFramebufferAttachments::MAX_ATTACHMENTS; i++)
+                                            {
+                                                if (fbo.Attachments.RenderTargets[i] == renderTargetId)
+                                                    {
+                                                        return true;
+                                                    }
+                                            }
+                                        return false;
+                                    });
+
+                                    Device._destroyFramebuffer(foundFbo->Framebuffer);
+                                    foundFbo->Id = FREE;
+                                }
+                        }
+
+                    std::fill(swapchain.ImagesId.begin(), swapchain.ImagesId.end(), 0);
+                    std::fill(swapchain.RenderTargetsId, swapchain.RenderTargetsId + DSwapchainVulkan::MAX_IMAGE_COUNT, 0);
+                }
+
+            return false;
+        }
+
+    if (swapchain.Swapchain != NULL)
+        {
+            return true;
+        }
+
+    // Create swapchain object
+    {
+        const auto result = Device.CreateSwapchainFromSurface(swapchain.Surface, swapchain.Format, swapchain.PresentMode, swapchain.Capabilities, &swapchain.QueueFamilyIndex, 1, &swapchain.Swapchain);
+        if (VKFAILED(result))
+            {
+                throw std::runtime_error("Failed to create swapchain " + std::string(VkUtils::VkErrorString(result)));
+            }
+    }
+
+    // Recreate images and RTs
+    {
+        const auto swapchainImages = Device.GetSwapchainImages(swapchain.Swapchain);
+        swapchain.ImagesCount      = swapchainImages.size();
+        for (size_t i = 0; i < swapchainImages.size(); i++)
+            {
+                swapchain.ImagesId[i] =
+                _createImageFromVkImage(swapchainImages.at(i), swapchain.Format.format, swapchain.Capabilities.currentExtent.width, swapchain.Capabilities.currentExtent.height);
+            }
+
+        // Create render targets
+        for (size_t i = 0; i < swapchainImages.size(); i++)
+            {
+                const auto index           = AllocResource<DRenderTargetVulkan, MAX_RESOURCES>(_renderTargets);
+                auto&      renderTargetRef = _renderTargets.at(index);
+
+                const auto& imageRef        = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, swapchain.ImagesId[i]);
+                renderTargetRef.Image       = imageRef.Image;
+                renderTargetRef.ImageAspect = imageRef.ImageAspect;
+
+                const auto result = Device.CreateImageView(imageRef.Image.Format, imageRef.Image.Image, imageRef.ImageAspect, 0, 1, &renderTargetRef.View);
+                if (VKFAILED(result))
+                    {
+                        throw std::runtime_error("Failed to create swapchain imageView " + std::string(VkUtils::VkErrorString(result)));
+                    }
+
+                swapchain.RenderTargetsId[i] = *ResourceId(EResourceType::RENDER_TARGET, renderTargetRef.Id, index);
+            }
+    }
+
+    return true;
 }
 
 bool
@@ -573,6 +704,11 @@ VulkanContext::SwapchainAcquireNextImageIndex(SwapchainId swapchainId, uint64_t 
 {
     DSwapchainVulkan& swapchain    = GetResource<DSwapchainVulkan, EResourceType::SWAPCHAIN, MAX_RESOURCES>(_swapchains, swapchainId);
     DSemaphoreVulkan& semaphoreRef = GetResource<DSemaphoreVulkan, EResourceType::SEMAPHORE, MAX_RESOURCES>(_semaphores, sempahoreid);
+
+    if (swapchain.Swapchain == NULL)
+        {
+            return false;
+        }
 
     const VkResult result = Device.AcquireNextImage(swapchain.Swapchain, timeoutNanoseconds, outImageIndex, semaphoreRef.Semaphore, VK_NULL_HANDLE);
     /*Spec: https://www.khronos.org/registry/vulkan/specs/1.3-extensions/man/html/vkQueueSubmit.html*/
@@ -653,38 +789,24 @@ VulkanContext::DestroySwapchain(SwapchainId swapchainId)
     check(resource.First() == EResourceType::SWAPCHAIN);
 
     DSwapchainVulkan& swapchain = GetResource<DSwapchainVulkan, EResourceType::SWAPCHAIN, MAX_RESOURCES>(_swapchains, swapchainId);
-
-    Device.DestroySwapchain(swapchain.Swapchain);
-    Instance.DestroySurface(swapchain.Surface);
-
-    swapchain.Id = FREE;
-
-    for (uint32_t i = 0; i < swapchain.ImagesCount; i++)
+    if (swapchain.Swapchain)
         {
-            auto& imageRef = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, swapchain.ImagesId[i]);
-            Device.DestroyImageView(imageRef.View);
-            imageRef.Id = FREE;
+            Device.DestroySwapchain(swapchain.Swapchain);
 
-            const auto renderTargetId{ swapchain.RenderTargetsId[i] };
-            auto&      renderTargetRef = GetResource<DRenderTargetVulkan, EResourceType::RENDER_TARGET, MAX_RESOURCES>(_renderTargets, renderTargetId);
-
-            Device.DestroyImageView(renderTargetRef.View);
-            renderTargetRef.Id = FREE;
-
-            // Must destroy all framebuffers that reference this render target @TODO find a better algorithm without iterating over the array multiple times
-            const auto referenceCount = std::count_if(_framebuffers.begin(), _framebuffers.end(), [renderTargetId](const DFramebufferVulkan& fbo) {
-                for (size_t i = 0; i < DFramebufferAttachments::MAX_ATTACHMENTS; i++)
-                    {
-                        if (fbo.Attachments.RenderTargets[i] == renderTargetId)
-                            {
-                                return true;
-                            }
-                    }
-                return false;
-            });
-            for (uint32_t i = 0; i < referenceCount; i++)
+            for (uint32_t i = 0; i < swapchain.ImagesCount; i++)
                 {
-                    auto foundFbo = std::find_if(_framebuffers.begin(), _framebuffers.end(), [renderTargetId](const DFramebufferVulkan& fbo) {
+                    auto& imageRef = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, swapchain.ImagesId[i]);
+                    Device.DestroyImageView(imageRef.View);
+                    imageRef.Id = FREE;
+
+                    const auto renderTargetId{ swapchain.RenderTargetsId[i] };
+                    auto&      renderTargetRef = GetResource<DRenderTargetVulkan, EResourceType::RENDER_TARGET, MAX_RESOURCES>(_renderTargets, renderTargetId);
+
+                    Device.DestroyImageView(renderTargetRef.View);
+                    renderTargetRef.Id = FREE;
+
+                    // Must destroy all framebuffers that reference this render target @TODO find a better algorithm without iterating over the array multiple times
+                    const auto referenceCount = std::count_if(_framebuffers.begin(), _framebuffers.end(), [renderTargetId](const DFramebufferVulkan& fbo) {
                         for (size_t i = 0; i < DFramebufferAttachments::MAX_ATTACHMENTS; i++)
                             {
                                 if (fbo.Attachments.RenderTargets[i] == renderTargetId)
@@ -694,11 +816,27 @@ VulkanContext::DestroySwapchain(SwapchainId swapchainId)
                             }
                         return false;
                     });
+                    for (uint32_t i = 0; i < referenceCount; i++)
+                        {
+                            auto foundFbo = std::find_if(_framebuffers.begin(), _framebuffers.end(), [renderTargetId](const DFramebufferVulkan& fbo) {
+                                for (size_t i = 0; i < DFramebufferAttachments::MAX_ATTACHMENTS; i++)
+                                    {
+                                        if (fbo.Attachments.RenderTargets[i] == renderTargetId)
+                                            {
+                                                return true;
+                                            }
+                                    }
+                                return false;
+                            });
 
-                    Device._destroyFramebuffer(foundFbo->Framebuffer);
-                    foundFbo->Id = FREE;
+                            Device._destroyFramebuffer(foundFbo->Framebuffer);
+                            foundFbo->Id = FREE;
+                        }
                 }
         }
+
+    // Destroy surface always after the swapchain
+    Instance.DestroySurface(swapchain.Surface);
     swapchain.ImagesCount = 0;
 
     swapchain.Id = FREE;
@@ -1776,6 +1914,9 @@ VulkanContext::SetScissor(uint32_t commandBufferId, uint32_t x, uint32_t y, uint
     auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
     check(commandBufferRef.IsRecording); // Must be in recording state
     check(commandBufferRef.ActiveRenderPass); // Must be in a render pass
+
+    check(x + width <= std::numeric_limits<int32_t>().max()); // sum must not overflow int32_t
+    check(y + height <= std::numeric_limits<int32_t>().max()); // sum must not overflow int32_t
 
     VkRect2D rect{ x, y, width, height };
     vkCmdSetScissor(commandBufferRef.Cmd, 0, 1, &rect);

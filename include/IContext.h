@@ -706,11 +706,17 @@ class IContext
 {
   public:
     virtual ~IContext(){};
-    virtual void                  WaitDeviceIdle()                                                                                                                                    = 0;
-    virtual uint32_t              CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat, uint32_t* width = nullptr, uint32_t* height = nullptr) = 0;
-    virtual std::vector<uint32_t> GetSwapchainRenderTargets(uint32_t swapchainId)                                                                                                     = 0;
-    virtual bool                  SwapchainAcquireNextImageIndex(uint32_t swapchainId, uint64_t timeoutNanoseconds, uint32_t sempahoreid, uint32_t* outImageIndex)                    = 0;
-    virtual void                  DestroySwapchain(uint32_t swapchainId)                                                                                                              = 0;
+    virtual void     WaitDeviceIdle()                                                                                                                                    = 0;
+    virtual uint32_t CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat, uint32_t* width = nullptr, uint32_t* height = nullptr) = 0;
+    /**
+     * /brief Returns a list of render targers for each frame (1 single buffered, 2 double buffered)
+     * /param swapchainId the swapchain id
+     * /return List of render targer ids if swapchain is in valid state or empty vector otherwise
+     */
+    virtual std::vector<uint32_t> GetSwapchainRenderTargets(uint32_t swapchainId)                                                                                  = 0;
+    virtual bool                  SwapchainAcquireNextImageIndex(uint32_t swapchainId, uint64_t timeoutNanoseconds, uint32_t sempahoreid, uint32_t* outImageIndex) = 0;
+    virtual bool                  SwapchainHasValidSurface(SwapchainId swapchainId)                                                                                = 0;
+    virtual void                  DestroySwapchain(uint32_t swapchainId)                                                                                           = 0;
 
     /**
      * \brief If exists will return a specialized queue, otherwise if exists will return a queue with that feature, otherwise it will return a general purpose queue that supports that feature. If no

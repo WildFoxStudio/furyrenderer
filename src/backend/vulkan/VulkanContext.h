@@ -58,6 +58,8 @@ struct DSwapchainVulkan : public DResource
     VkSurfaceCapabilitiesKHR              Capabilities;
     VkSurfaceFormatKHR                    Format;
     VkPresentModeKHR                      PresentMode;
+    uint32_t                              QueueFamilyIndex{};
+    uint32_t                              QueueIndex{};
     VkSwapchainKHR                        Swapchain{};
     uint32_t                              ImagesCount{};
     std::array<uint32_t, MAX_IMAGE_COUNT> ImagesId;
@@ -166,6 +168,7 @@ class VulkanContext final : public IContext
     void                  WaitDeviceIdle() override;
     SwapchainId           CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat, uint32_t* width = nullptr, uint32_t* height = nullptr) override;
     std::vector<uint32_t> GetSwapchainRenderTargets(SwapchainId swapchainId) override;
+    bool                  SwapchainHasValidSurface(SwapchainId swapchainId) override;
     bool                  SwapchainAcquireNextImageIndex(SwapchainId swapchainId, uint64_t timeoutNanoseconds, uint32_t sempahoreid, uint32_t* outImageIndex) override;
     void                  DestroySwapchain(SwapchainId swapchainId) override;
 
