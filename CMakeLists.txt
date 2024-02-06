@@ -24,8 +24,10 @@ option(BUILD_TESTS "Build tests" OFF)
 option(BUILD_EXAMPLES "Build examples" OFF)
 
 
-
+## Vulkan headers
+add_subdirectory("thirdparty/Vulkan-Headers")
 ## Volk
+include_directories("thirdparty/Vulkan-Headers/include")
 add_subdirectory("thirdparty/volk")
 ## VMA
 add_subdirectory("thirdparty/VulkanMemoryAllocator")
@@ -54,7 +56,7 @@ if(BUILD_EXAMPLES)
     FetchContent_MakeAvailable(tinygltf)
 endif()
 
-target_link_libraries(${PROJECT_NAME} PRIVATE volk VulkanMemoryAllocator)
+target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan-Headers volk VulkanMemoryAllocator)
 
 # Set custom output directories - to have same behaviour accross different compilers
 # On linux with make it doesn't work, no debug or release folders
