@@ -1185,7 +1185,7 @@ VulkanContext::CreateSampler(uint32_t minLod, uint32_t maxLod)
     const auto      index      = AllocResource<DSamplerVulkan, MAX_RESOURCES>(_samplers);
     DSamplerVulkan& samplerRef = _samplers.at(index);
 
-    samplerRef.Sampler = Device.CreateSampler(VkFilter::VK_FILTER_NEAREST, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT, minLod, maxLod, VK_SAMPLER_MIPMAP_MODE_LINEAR, true, 16);
+    samplerRef.Sampler = Device.CreateSampler(VkFilter::VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT, minLod, maxLod, VK_SAMPLER_MIPMAP_MODE_LINEAR, true, 16);
 
     return *ResourceId(EResourceType::SAMPLER, samplerRef.Id, index);
 }
