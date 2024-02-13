@@ -1121,7 +1121,6 @@ VulkanContext::CreateShader(const ShaderSource& source)
 
     const auto     index  = AllocResource<DShaderVulkan, MAX_RESOURCES>(_shaders);
     DShaderVulkan& shader = _shaders.at(index);
-    shader.Id             = GenIdentifier();
 
     _createShader(source, _shaders.at(index));
 
