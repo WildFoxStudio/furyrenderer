@@ -764,6 +764,7 @@ class IContext
     virtual void     DrawIndexedIndirect(uint32_t commandBufferId, uint32_t buffer, uint32_t offset, uint32_t drawCount, uint32_t stride)                                           = 0;
     virtual void     BindDescriptorSet(uint32_t commandBufferId, uint32_t setIndex, uint32_t descriptorSetId)                                                                       = 0;
     virtual void     CopyImage(uint32_t commandId, uint32_t imageId, uint32_t width, uint32_t height, uint32_t mipMapIndex, uint32_t stagingBufferId, uint32_t stagingBufferOffset) = 0;
+    virtual void     CopyBuffer(uint32_t commandId, uint32_t bufferId, uint32_t offset, uint32_t bytes, uint32_t stagingBufferId, uint32_t stagingBufferOffset)                     = 0;
 
     virtual uint32_t CreateRenderTarget(EFormat format, ESampleBit samples, bool isDepth, uint32_t width, uint32_t height, uint32_t arrayLength, uint32_t mipMapCount, EResourceState initialState) = 0;
     virtual void     DestroyRenderTarget(uint32_t renderTargetId)                                                                                                                                   = 0;

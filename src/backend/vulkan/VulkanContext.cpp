@@ -2034,6 +2034,24 @@ VulkanContext::CopyImage(uint32_t commandId, uint32_t imageId, uint32_t width, u
 }
 
 void
+VulkanContext::CopyBuffer(uint32_t commandId, uint32_t bufferId, uint32_t offset, uint32_t bytes, uint32_t stagingBufferId, uint32_t stagingBufferOffset)
+{
+    auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandId);
+    check(commandBufferRef.IsRecording); // Must be in recording state
+    check(!commandBufferRef.ActiveRenderPass); // Must be in a render pass
+
+    auto& vertexRef = GetResource<DBufferVulkan, EResourceType::VERTEX_INDEX_BUFFER, MAX_RESOURCES>(_vertexBuffers, bufferId);
+    auto& buffRef   = GetResource<DBufferVulkan, EResourceType::TRANSFER, MAX_RESOURCES>(_transferBuffers, stagingBufferId);
+
+    VkBufferCopy copy{};
+    copy.dstOffset = offset;
+    copy.size      = bytes;
+    copy.srcOffset = stagingBufferOffset;
+
+    vkCmdCopyBuffer(commandBufferRef.Cmd, buffRef.Buffer.Buffer, vertexRef.Buffer.Buffer, 1, &copy);
+}
+
+void
 VulkanContext::QueueSubmit(uint32_t queueId, const std::vector<uint32_t>& waitSemaphore, const std::vector<uint32_t>& finishSemaphore, const std::vector<uint32_t>& cmdIds, uint32_t fenceId)
 {
     std::vector<VkCommandBuffer> commandBuffers;

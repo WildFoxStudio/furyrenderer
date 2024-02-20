@@ -214,6 +214,7 @@ class VulkanContext final : public IContext
     void DrawIndexedIndirect(uint32_t commandBufferId, uint32_t buffer, uint32_t offset, uint32_t drawCount, uint32_t stride) override;
     void BindDescriptorSet(uint32_t commandBufferId, uint32_t setIndex, uint32_t descriptorSetId) override;
     void CopyImage(uint32_t commandId, uint32_t imageId, uint32_t width, uint32_t height, uint32_t mipMapIndex, uint32_t stagingBufferId, uint32_t stagingBufferOffset) override;
+    void CopyBuffer(uint32_t commandId, uint32_t bufferId, uint32_t offset, uint32_t bytes, uint32_t stagingBufferId, uint32_t stagingBufferOffset) override;
 
     uint32_t CreateFence(bool signaled) override;
     void     DestroyFence(uint32_t fenceId) override;
@@ -262,6 +263,7 @@ class VulkanContext final : public IContext
     DImageVulkan*                               _emptyImage;
     DSamplerVulkan                              _emptySampler;
     std::array<DSwapchainVulkan, MAX_RESOURCES> _swapchains;
+    /*Vertex and index buffers pool*/
     std::array<DBufferVulkan, MAX_RESOURCES>    _vertexBuffers;
     std::array<DBufferVulkan, MAX_RESOURCES>    _transferBuffers;
     std::array<DBufferVulkan, MAX_RESOURCES>    _uniformBuffers;
