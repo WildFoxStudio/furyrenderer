@@ -684,6 +684,8 @@ typedef struct DescriptorData
     uint32_t    Count{};
     uint32_t    ArrayOffset{};
     uint32_t    Index{};
+    uint32_t    BufferOffset{};
+    uint32_t    BufferRange{};
 
     union
     {

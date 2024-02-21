@@ -30,7 +30,7 @@ RIVulkanDevice7::_createFramebuffer(const std::vector<VkImageView>& imageViews, 
             throw std::runtime_error(VkUtils::VkErrorString(result));
         }
 
-    _framebuffers_DEPRECATED.insert(framebuffer);
+    //_framebuffers_DEPRECATED.insert(framebuffer);
 
     return framebuffer;
 }
@@ -39,7 +39,7 @@ void
 RIVulkanDevice7::_destroyFramebuffer(VkFramebuffer framebuffer)
 {
     vkDestroyFramebuffer(Device, framebuffer, nullptr);
-    _framebuffers_DEPRECATED.erase(_framebuffers_DEPRECATED.find(framebuffer));
+    //_framebuffers_DEPRECATED.erase(_framebuffers_DEPRECATED.find(framebuffer));
 }
 
 }

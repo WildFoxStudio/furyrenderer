@@ -1564,8 +1564,8 @@ VulkanContext::UpdateDescriptorSet(uint32_t descriptorSetId, uint32_t setIndex, 
                                     VkDescriptorBufferInfo& buf    = bufferInfo[bufferInfoCount++];
                                     const DBufferVulkan&    bufRef = GetResource<DBufferVulkan, EResourceType::UNIFORM_BUFFER, MAX_RESOURCES>(_uniformBuffers, param->Buffers[j]);
                                     buf.buffer                     = bufRef.Buffer.Buffer;
-                                    buf.offset                     = 0;
-                                    buf.range                      = VK_WHOLE_SIZE;
+                                    buf.offset                     = param->BufferOffset;
+                                    buf.range                      = param->BufferRange;
                                 }
                         }
                         break;
@@ -2335,6 +2335,34 @@ void
 VulkanContext::DestroyRenderTarget(uint32_t renderTargetId)
 {
     auto& renderTargetRef = GetResource<DRenderTargetVulkan, EResourceType::RENDER_TARGET, MAX_RESOURCES>(_renderTargets, renderTargetId);
+
+    // Must destroy all framebuffers that reference this render target @TODO find a better algorithm without iterating over the array multiple times
+    const auto referenceCount = std::count_if(_framebuffers.begin(), _framebuffers.end(), [renderTargetId](const DFramebufferVulkan& fbo) {
+        for (size_t i = 0; i < DFramebufferAttachments::MAX_ATTACHMENTS; i++)
+            {
+                if (fbo.Attachments.RenderTargets[i] == renderTargetId)
+                    {
+                        return true;
+                    }
+            }
+        return false;
+    });
+    for (uint32_t i = 0; i < referenceCount; i++)
+        {
+            auto foundFbo = std::find_if(_framebuffers.begin(), _framebuffers.end(), [renderTargetId](const DFramebufferVulkan& fbo) {
+                for (size_t i = 0; i < DFramebufferAttachments::MAX_ATTACHMENTS; i++)
+                    {
+                        if (fbo.Attachments.RenderTargets[i] == renderTargetId)
+                            {
+                                return true;
+                            }
+                    }
+                return false;
+            });
+
+            Device._destroyFramebuffer(foundFbo->Framebuffer);
+            foundFbo->Id = FREE;
+        }
 
     Device.DestroyImageView(renderTargetRef.View);
     Device.DestroyImage(renderTargetRef.Image);
