@@ -2001,6 +2001,8 @@ VulkanContext::BindDescriptorSet(uint32_t commandBufferId, uint32_t setIndex, ui
 
     const DDescriptorSet& descriptorSetRef = GetResource<DDescriptorSet, EResourceType::DESCRIPTOR_SET, MAX_RESOURCES>(_descriptorSets, descriptorSetId);
 
+    check(setIndex < descriptorSetRef.Sets.size());
+
     vkCmdBindDescriptorSets(
     commandBufferRef.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, descriptorSetRef.RootSignature->PipelineLayout, (uint32_t)descriptorSetRef.Frequency, 1, &descriptorSetRef.Sets[setIndex], 0, nullptr);
 }
