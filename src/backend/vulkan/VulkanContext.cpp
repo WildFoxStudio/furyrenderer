@@ -211,7 +211,7 @@ VulkanContext::VulkanContext(const DContextConfig* const config) : _warningOutpu
         const auto pool = CreateCommandPool(graphicsQueue);
         const auto cmd  = CreateCommandBuffer(pool);
         BeginCommandBuffer(cmd);
-        TextureBarrier barrier;
+        TextureBarrier barrier{};
         barrier.ImageId      = _emptyImageId;
         barrier.CurrentState = EResourceState::UNDEFINED;
         barrier.NewState     = EResourceState::SHADER_RESOURCE;
@@ -2385,10 +2385,12 @@ RenderTargetBarrier*                    p_rt_barriers)
 
     std::vector<VkImageMemoryBarrier> imageBarriers;
     imageBarriers.resize(rt_barrier_count + texture_barrier_count);
+    memset(imageBarriers.data(), 0, sizeof(VkImageMemoryBarrier) * imageBarriers.size());
     uint32_t imageBarrierCount{};
 
     std::vector<VkBufferMemoryBarrier> bufferBarriers;
     bufferBarriers.resize(buffer_barrier_count);
+    memset(bufferBarriers.data(), 0, sizeof(VkBufferMemoryBarrier) * bufferBarriers.size());
     uint32_t bufferBarrierCount{};
 
     VkAccessFlags srcAccessFlags = 0;
@@ -2491,10 +2493,11 @@ RenderTargetBarrier*                    p_rt_barriers)
                     pImageBarrier->sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
                     pImageBarrier->pNext = NULL;
 
-                    pImageBarrier->srcAccessMask = VkUtils::resourceStateToAccessFlag(pTrans->CurrentState);
-                    pImageBarrier->dstAccessMask = VkUtils::resourceStateToAccessFlag(pTrans->NewState);
-                    pImageBarrier->oldLayout     = VkUtils::resourceStateToImageLayout(pTrans->CurrentState);
-                    pImageBarrier->newLayout     = VkUtils::resourceStateToImageLayout(pTrans->NewState);
+                    pImageBarrier->subresourceRange.aspectMask = (VkImageAspectFlags)imageRef.ImageAspect;
+                    pImageBarrier->srcAccessMask               = VkUtils::resourceStateToAccessFlag(pTrans->CurrentState);
+                    pImageBarrier->dstAccessMask               = VkUtils::resourceStateToAccessFlag(pTrans->NewState);
+                    pImageBarrier->oldLayout                   = VkUtils::resourceStateToImageLayout(pTrans->CurrentState);
+                    pImageBarrier->newLayout                   = VkUtils::resourceStateToImageLayout(pTrans->NewState);
                 }
 
             if (pImageBarrier)
