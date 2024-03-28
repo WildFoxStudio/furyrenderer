@@ -8,7 +8,7 @@ namespace Fox
 {
 CResourceTransfer::CResourceTransfer(VkCommandBuffer command) : _command(command)
 {
-    check(_command);
+    furyassert(_command);
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -23,7 +23,7 @@ CResourceTransfer::CResourceTransfer(VkCommandBuffer command) : _command(command
 //     std::vector<VkImageMemoryBarrier> barriersTransfer;
 //     std::vector<VkImageMemoryBarrier> barriersSampler;
 //
-//     check(beginOffset < std::numeric_limits<uint32_t>::max());
+//     furyassert(beginOffset < std::numeric_limits<uint32_t>::max());
 //     uint32_t offset    = (uint32_t)beginOffset;
 //     uint32_t mipWidth  = image.Width;
 //     uint32_t mipHeight = image.Height;

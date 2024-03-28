@@ -9,7 +9,7 @@
 namespace Fox
 {
 
-RIVulkanDevice7::~RIVulkanDevice7() { check(_framebuffers_DEPRECATED.size() == 0); }
+RIVulkanDevice7::~RIVulkanDevice7() { furyassert(_framebuffers_DEPRECATED.size() == 0); }
 
 VkFramebuffer
 RIVulkanDevice7::_createFramebuffer(const std::vector<VkImageView>& imageViews, uint32_t width, uint32_t height, VkRenderPass renderpass)

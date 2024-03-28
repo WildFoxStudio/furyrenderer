@@ -9,7 +9,7 @@
 namespace Fox
 {
 
-RIVulkanDevice13::~RIVulkanDevice13(){ check(_renderPassMap.Size() == 0) }
+RIVulkanDevice13::~RIVulkanDevice13(){ furyassert(_renderPassMap.Size() == 0) }
 
 VkResult RIVulkanDevice13::CreateRenderPass(const RIVkRenderPassInfo& info, VkRenderPass* renderPass)
 {

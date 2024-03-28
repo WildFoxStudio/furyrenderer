@@ -31,6 +31,10 @@ include_directories("thirdparty/Vulkan-Headers/include")
 add_subdirectory("thirdparty/volk")
 ## VMA
 add_subdirectory("thirdparty/VulkanMemoryAllocator")
+## Glsl lang
+set(ENABLE_OPT 0)#disable optimizations for HLSL
+set(BUILD_SHARED_LIBS 0)
+add_subdirectory("thirdparty/glslang")
 ## GLFW
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "GLFW_BUILD_EXAMPLES" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "GLFW_BUILD_TESTS" FORCE)
@@ -56,7 +60,7 @@ if(BUILD_EXAMPLES)
     FetchContent_MakeAvailable(tinygltf)
 endif()
 
-target_link_libraries(${PROJECT_NAME} PRIVATE Vulkan-Headers volk VulkanMemoryAllocator)
+target_link_libraries(${PROJECT_NAME} Vulkan-Headers volk VulkanMemoryAllocator GenericCodeGen OSDependent MachineIndependent glslang glslang-default-resource-limits)
 
 # Set custom output directories - to have same behaviour accross different compilers
 # On linux with make it doesn't work, no debug or release folders

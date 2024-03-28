@@ -245,7 +245,7 @@ RIVulkanPipelineBuilder::_fillViewportState()
     PipelineViewportState.pScissors     = Scissors.data();
 }
 
-RIVulkanDevice10::~RIVulkanDevice10(){ check(_pipelines.size() == 0) }
+RIVulkanDevice10::~RIVulkanDevice10(){ furyassert(_pipelines.size() == 0) }
 
 VkPipeline RIVulkanDevice10::CreatePipeline(const VkGraphicsPipelineCreateInfo* info)
 {
@@ -264,8 +264,8 @@ VkPipeline RIVulkanDevice10::CreatePipeline(const VkGraphicsPipelineCreateInfo* 
 void
 RIVulkanDevice10::DestroyPipeline(VkPipeline pipeline)
 {
-    check(pipeline);
-    check(_pipelines.size() > 0);
+    furyassert(pipeline);
+    furyassert(_pipelines.size() > 0);
     vkDestroyPipeline(Device, pipeline, nullptr);
 
     _pipelines.erase(_pipelines.find(pipeline));
@@ -323,7 +323,7 @@ RIVulkanDevice10::DestroyPipeline(VkPipeline pipeline)
 // VkViewport
 // RIVulkanDevice10::CreateViewport(uint32_t width, uint32_t height, float znear, float zfar)
 //{
-//    check(zfar < 1.1f); // range 0 - 1
+//    furyassert(zfar < 1.1f); // range 0 - 1
 //
 //    VkViewport v{};
 //    v.width    = width;

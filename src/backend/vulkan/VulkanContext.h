@@ -165,6 +165,9 @@ class VulkanContext final : public IContext
   public:
     VulkanContext(const DContextConfig* const config);
     ~VulkanContext();
+
+    bool CompileNativeShader(const std::vector<unsigned char>& blob, std::vector<unsigned int>& outShader, EShaderStage shaderStage, std::string& errorMgs) override;
+
     void                  WaitDeviceIdle() override;
     SwapchainId           CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat, uint32_t* width = nullptr, uint32_t* height = nullptr) override;
     std::vector<uint32_t> GetSwapchainRenderTargets(SwapchainId swapchainId) override;
@@ -264,10 +267,10 @@ class VulkanContext final : public IContext
     DSamplerVulkan                              _emptySampler;
     std::array<DSwapchainVulkan, MAX_RESOURCES> _swapchains;
     /*Vertex and index buffers pool*/
-    std::array<DBufferVulkan, MAX_RESOURCES>    _vertexBuffers;
-    std::array<DBufferVulkan, MAX_RESOURCES>    _transferBuffers;
-    std::array<DBufferVulkan, MAX_RESOURCES>    _uniformBuffers;
-    std::array<DBufferVulkan, MAX_RESOURCES>    _indirectBuffers;
+    std::array<DBufferVulkan, MAX_RESOURCES> _vertexBuffers;
+    std::array<DBufferVulkan, MAX_RESOURCES> _transferBuffers;
+    std::array<DBufferVulkan, MAX_RESOURCES> _uniformBuffers;
+    std::array<DBufferVulkan, MAX_RESOURCES> _indirectBuffers;
     /*Whenever a render target gets deleted remove also framebuffers that have that image id as attachment*/
     std::array<DFramebufferVulkan, MAX_RESOURCES>       _framebuffers;
     std::array<DShaderVulkan, MAX_RESOURCES>            _shaders;

@@ -23,8 +23,8 @@ namespace Fox
 
 RIVulkanDevice::~RIVulkanDevice()
 {
-    check(PhysicalDevice == nullptr);
-    check(Device == nullptr);
+    furyassert(PhysicalDevice == nullptr);
+    furyassert(Device == nullptr);
 };
 
 VkResult
@@ -35,8 +35,8 @@ std::vector<const char*>                       extensions,
 VkPhysicalDeviceFeatures*                      optDeviceFeatures,
 std::vector<const char*>                       validationLayers)
 {
-    check(PhysicalDevice == nullptr);
-    check(Device == nullptr);
+    furyassert(PhysicalDevice == nullptr);
+    furyassert(Device == nullptr);
 
     PhysicalDevice = hardwareDevice;
 
@@ -134,11 +134,11 @@ std::vector<const char*>                       validationLayers)
         vma_vulkan_func.vkBindBufferMemory2KHR                  = vkBindBufferMemory2KHR;
         vma_vulkan_func.vkBindImageMemory2KHR                   = vkBindImageMemory2KHR;
 
-        check(vma_vulkan_func.vkGetPhysicalDeviceMemoryProperties2KHR);
-        check(vma_vulkan_func.vkGetBufferMemoryRequirements2KHR);
-        check(vma_vulkan_func.vkGetImageMemoryRequirements2KHR);
-        check(vma_vulkan_func.vkBindBufferMemory2KHR);
-        check(vma_vulkan_func.vkBindImageMemory2KHR);
+        furyassert(vma_vulkan_func.vkGetPhysicalDeviceMemoryProperties2KHR);
+        furyassert(vma_vulkan_func.vkGetBufferMemoryRequirements2KHR);
+        furyassert(vma_vulkan_func.vkGetImageMemoryRequirements2KHR);
+        furyassert(vma_vulkan_func.vkBindBufferMemory2KHR);
+        furyassert(vma_vulkan_func.vkBindImageMemory2KHR);
 
         VmaAllocatorCreateInfo allocatorCreateInfo = {};
         allocatorCreateInfo.vulkanApiVersion       = VK_API_VERSION_1_1;
@@ -163,8 +163,8 @@ std::vector<const char*>                       validationLayers)
 void
 RIVulkanDevice::Deinit()
 {
-    check(PhysicalDevice != nullptr);
-    check(Device != nullptr);
+    furyassert(PhysicalDevice != nullptr);
+    furyassert(Device != nullptr);
 
     vmaDestroyAllocator(VmaAllocator);
 

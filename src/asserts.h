@@ -45,16 +45,16 @@
 inline void
 _fprint(const char* _condition, const char* file, const int line)
 {
-    std::cerr << "check(" << _condition << ") IN FILE " << file << " LINE " << line << "\n" << std::flush;
+    std::cerr << "furyassert(" << _condition << ") IN FILE " << file << " LINE " << line << "\n" << std::flush;
 };
 
 #define ERRORLOG(msg) std::cerr << "Error:" << msg << " IN FILE " << __FILE__ << " LINE " << __LINE__ << "\n" << std::flush;
 
-// Use check only to trigger an exception in debug mode
+// Use furyassert only to trigger an exception in debug mode
 // if condition = false then the debugger will stop
 // clang-format off
 #if defined(_DEBUG)
-#define check(condition) \
+#define furyassert(condition) \
         { \
             if (!(condition)) \
                 { \
@@ -63,7 +63,7 @@ _fprint(const char* _condition, const char* file, const int line)
                 } \
         };
 #else
-#define check(condition) 
+#define furyassert(condition) 
 #endif
 
 // Use critical it will throw a runtime error if the condition is false even in release builds

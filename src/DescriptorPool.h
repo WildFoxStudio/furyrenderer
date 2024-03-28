@@ -43,7 +43,7 @@ namespace Fox
 //
 //     void BindCombinedImageSamplerArray(uint32_t bindingIndex, const std::vector<std::pair<VkImageView, VkSampler>>& imageToSamplerArray)
 //     {
-//         check(imageToSamplerArray.size() > 0);
+//         furyassert(imageToSamplerArray.size() > 0);
 //
 //         _imageInfo.push_back({});
 //

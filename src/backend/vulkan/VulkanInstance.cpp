@@ -14,7 +14,7 @@ namespace Fox
 VkResult
 RIVulkanInstance::Init(const char* applicationName, std::vector<const char*> validationLayers, std::vector<const char*> extensions)
 {
-    check(Instance == nullptr);
+    furyassert(Instance == nullptr);
 
     VkApplicationInfo applicationInfo  = {};
     applicationInfo.pNext              = NULL;
@@ -54,7 +54,7 @@ RIVulkanInstance::Deinit()
             _destroyDebugUtilsMessenger();
         }
 #endif
-    check(Instance != nullptr);
+    furyassert(Instance != nullptr);
     vkDestroyInstance(Instance, nullptr);
 }
 
@@ -78,7 +78,7 @@ RIVulkanInstance::CreateSurfaceFromWindow(const WindowData& windowData, VkSurfac
 #elif defined(__linux__)
     {
         Fox::WindowPlatformLinuxSDL* win = static_cast<Fox::WindowPlatformLinuxSDL*>(window);
-        check(win);
+        furyassert(win);
 
         VkXlibSurfaceCreateInfoKHR createInfo = {};
         createInfo.sType                      = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
@@ -116,7 +116,7 @@ RIVulkanInstance::CreateDebugUtilsMessenger(PFN_vkDebugUtilsMessengerCallbackEXT
     dbgInfo.pUserData       = userData; // Optional
 
     auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(Instance, "vkCreateDebugUtilsMessengerEXT");
-    check(func);
+    furyassert(func);
     if (func != nullptr)
         {
             const VkResult result = func(Instance, &dbgInfo, nullptr, &_debugMessenger);
@@ -130,7 +130,7 @@ void
 RIVulkanInstance::_destroyDebugUtilsMessenger()
 {
     auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(Instance, "vkDestroyDebugUtilsMessengerEXT");
-    check(func);
+    furyassert(func);
     if (func != nullptr)
         {
             func(Instance, _debugMessenger, nullptr);

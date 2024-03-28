@@ -9,7 +9,7 @@
 namespace Fox
 {
 
-RIVulkanDevice9::~RIVulkanDevice9() { check(_pipelineLayoutCache.Size() == 0); }
+RIVulkanDevice9::~RIVulkanDevice9() { furyassert(_pipelineLayoutCache.Size() == 0); }
 
 VkPipelineLayout
 RIVulkanDevice9::CreatePipelineLayout(const std::vector<VkDescriptorSetLayout>& descriptorSetLayout, const std::vector<VkPushConstantRange>& pushConstantRange)

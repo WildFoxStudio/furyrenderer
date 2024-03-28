@@ -11,6 +11,14 @@
 #include <math.h>
 #include <string>
 
+// Thirdparty
+#pragma warning(push, 0)
+#include "glslang/Include/glslang_c_interface.h"
+#include <glslang/Public/ResourceLimits.h>
+#include <glslang/Public/ShaderLang.h>
+#include <glslang/SPIRV/GlslangToSpv.h>
+#pragma warning(pop)
+
 namespace Fox
 {
 
@@ -27,13 +35,13 @@ template<class T, EResourceType type, size_t maxSize>
 inline T&
 GetResource(std::array<T, maxSize>& container, uint32_t id)
 {
-    check(id != NULL); // Uninitialized ID
+    furyassert(id != NULL); // Uninitialized ID
     const auto resourceId = ResourceId(id);
-    check(resourceId.First() == type); // Invalid resource id
-    check(resourceId.Value() < maxSize); // Must be less than array size
+    furyassert(resourceId.First() == type); // Invalid resource id
+    furyassert(resourceId.Value() < maxSize); // Must be less than array size
     T& element = container.at(resourceId.Value());
-    check(IsValidId(element.Id)); // The object must be in valid state
-    check(element.Id == resourceId.Second()); // The object must have not been destroyed previously and reallocated
+    furyassert(IsValidId(element.Id)); // The object must be in valid state
+    furyassert(element.Id == resourceId.Second()); // The object must have not been destroyed previously and reallocated
     return element;
 };
 
@@ -42,11 +50,11 @@ inline const T&
 GetResource(const std::array<T, maxSize>& container, uint32_t id)
 {
     const auto resourceId = ResourceId(id);
-    check(resourceId.First() == type); // Invalid resource id
-    check(resourceId.Value() < maxSize); // Must be less than array size
+    furyassert(resourceId.First() == type); // Invalid resource id
+    furyassert(resourceId.Value() < maxSize); // Must be less than array size
     const T& element = container.at(resourceId.Value());
-    check(IsValidId(element.Id)); // The object must be in valid state
-    check(element.Id == resourceId.Second()); // The object must have not been destroyed previously and reallocated
+    furyassert(IsValidId(element.Id)); // The object must be in valid state
+    furyassert(element.Id == resourceId.Second()); // The object must have not been destroyed previously and reallocated
     return element;
 };
 
@@ -55,8 +63,8 @@ inline T&
 GetResourceUnsafe(std::array<T, maxSize>& container, uint32_t id)
 {
     const auto resourceId = ResourceId(id);
-    check(resourceId.First() == type); // Invalid resource id
-    check(resourceId.Value() < maxSize); // Must be less than array size
+    furyassert(resourceId.First() == type); // Invalid resource id
+    furyassert(resourceId.Value() < maxSize); // Must be less than array size
     T& element = container.at(resourceId.Value());
     return element;
 };
@@ -78,7 +86,7 @@ GenIdentifier()
     };
     static size_t counter = 0;
     const auto    value   = hash(counter++);
-    check(value != 0); // must not be 0
+    furyassert(value != 0); // must not be 0
     return (uint8_t)value;
 }
 
@@ -96,8 +104,8 @@ AllocResource(std::array<T, maxSize>& container)
                         {
                             element.Id = GenIdentifier();
                         } // Messy but makes sure that id is never NULL
-                    check(element.Id != FREE);
-                    check(element.Id != PENDING_DESTROY);
+                    furyassert(element.Id != FREE);
+                    furyassert(element.Id != PENDING_DESTROY);
                     return i;
                 }
         }
@@ -262,7 +270,7 @@ const VkDebugUtilsMessengerCallbackDataEXT*                                pCall
 void*                                                                      pUserData)
 {
     VulkanContext* context = static_cast<VulkanContext*>(pUserData);
-    check(context);
+    furyassert(context);
 
     if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
         {
@@ -281,7 +289,7 @@ void*                                                                      pUser
             context->Log("Validation layer[INFO]: " + std::string(pCallbackData->pMessage));
         }
 
-    // check(false);
+    // furyassert(false);
     return VK_FALSE;
 }
 
@@ -412,15 +420,15 @@ VulkanContext::~VulkanContext()
 
 #if _DEBUG
     const auto validSwapchainsCount = std::count_if(_swapchains.begin(), _swapchains.end(), [](const DSwapchainVulkan& swapchain) { return IsValidId(swapchain.Id); });
-    check(validSwapchainsCount == 0);
+    furyassert(validSwapchainsCount == 0);
     const auto validVertexBufferCount = std::count_if(_vertexBuffers.begin(), _vertexBuffers.end(), [](const DBufferVulkan& buffer) { return IsValidId(buffer.Id); });
-    check(validVertexBufferCount == 0);
+    furyassert(validVertexBufferCount == 0);
     const auto validUniformBufferCount = std::count_if(_uniformBuffers.begin(), _uniformBuffers.end(), [](const DBufferVulkan& buffer) { return IsValidId(buffer.Id); });
-    check(validUniformBufferCount == 0);
+    furyassert(validUniformBufferCount == 0);
     const auto validFramebufferCount = std::count_if(_framebuffers.begin(), _framebuffers.end(), [](const DFramebufferVulkan& buffer) { return IsValidId(buffer.Id); });
-    check(validFramebufferCount == 0);
+    furyassert(validFramebufferCount == 0);
     const auto validShaderCount = std::count_if(_shaders.begin(), _shaders.end(), [](const DShaderVulkan& shader) { return IsValidId(shader.Id); });
-    check(validShaderCount == 0);
+    furyassert(validShaderCount == 0);
 #endif
 
     // Destroy all descriptor pools managers
@@ -438,6 +446,135 @@ VulkanContext::~VulkanContext()
 
     Device.Deinit();
     Instance.Deinit();
+}
+
+bool
+VulkanContext::CompileNativeShader(const std::vector<unsigned char>& blob, std::vector<unsigned int>& outShader, EShaderStage shaderStage, std::string& errorMgs)
+{
+    // spirv_cross::CompilerGLSL compilerGLSL(reinterpret_cast<const uint32_t*>(blob.data()), blob.size() / sizeof(uint32_t));
+
+    //// Compile the GLSL code into SPIR-V
+    // spirv_cross::CompilerGLSL::Options options;
+    // options.version = 450; // Set GLSL version (e.g., 450 for GLSL 4.50)
+    // compilerGLSL.set_common_options(options);
+    // auto spirv = compilerGLSL.compile();
+
+    // Initialize glslang
+    glslang::InitializeProcess();
+
+    EShLanguage language{ EShLangVertex };
+    switch (shaderStage)
+        {
+            case EShaderStage::VERTEX:
+                language = EShLangVertex;
+                break;
+            case EShaderStage::FRAGMENT:
+                language = EShLangFragment;
+                break;
+            default:
+                furyassert(0); // Invalid shader stage choice
+                break;
+        }
+
+    // Create glslang compiler
+    const char*       shaderSource{ reinterpret_cast<const char*>(blob.data()) };
+    const int         l{ (int)blob.size() };
+    const EShMessages controls = EShMsgDefault;
+    glslang::TShader* shader(new glslang::TShader(language));
+
+    shader->setStringsWithLengths(&shaderSource, &l, 1);
+    shader->setEntryPoint("main");
+    furyassert(shader->parse(GetDefaultResources(), 100, false, (EShMessages)(EShMsgSpvRules | EShMsgVulkanRules)));
+
+    glslang::TProgram* program{ new glslang::TProgram() };
+    program->addShader(shader);
+
+    furyassert(program->link((EShMessages)(EShMsgSpvRules | EShMsgVulkanRules)));
+
+    glslang::GlslangToSpv(*program->getIntermediate(EShLanguage::EShLangVertex), outShader);
+
+    delete program;
+    delete shader;
+    glslang::FinalizeProcess();
+    //
+    // const glslang_input_t input = {
+    //     .language                          = GLSLANG_SOURCE_GLSL,
+    //     .stage                             = GLSLANG_STAGE_VERTEX,
+    //     .client                            = GLSLANG_CLIENT_VULKAN,
+    //     .client_version                    = GLSLANG_TARGET_VULKAN_1_2,
+    //     .target_language                   = GLSLANG_TARGET_SPV,
+    //     .target_language_version           = GLSLANG_TARGET_SPV_1_3,
+    //     .code                              = shaderSource,
+    //     .default_version                   = 100,
+    //     .default_profile                   = GLSLANG_NO_PROFILE,
+    //     .force_default_version_and_profile = false,
+    //     .forward_compatible                = false,
+    //     .messages                          = GLSLANG_MSG_DEFAULT_BIT,
+    //     .resource                          = GetDefaultResources();
+    // };
+
+    //// Set up shader options
+    // TBuiltInResource resources             = {};
+    // resources.maxLights                    = 32;
+    // resources.maxClipPlanes                = 6;
+    // resources.maxTextureUnits              = 32;
+    // resources.maxTextureCoords             = 32;
+    // resources.maxVertexAttribs             = 64;
+    // resources.maxVertexUniformComponents   = 4096;
+    // resources.maxVaryingFloats             = 64;
+    // resources.maxVertexTextureImageUnits   = 32;
+    // resources.maxCombinedTextureImageUnits = 80;
+    // resources.maxTextureImageUnits         = 32;
+    // resources.maxFragmentUniformComponents = 4096;
+    // resources.maxDrawBuffers               = 32;
+    // resources.maxVertexUniformVectors      = 128;
+    // resources.maxVaryingVectors            = 8;
+    // resources.maxFragmentUniformVectors    = 16;
+    // resources.maxVertexOutputVectors       = 16;
+    // resources.maxFragmentInputVectors      = 15;
+
+    //// Compile the shader
+    // shader.setEnvInput(glslang::EShSourceGlsl, language, glslang::EShClientVulkan, 110);
+    // shader.setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_2);
+    // shader.setEnvTarget(glslang::EShTargetSpv, glslang::EShTargetSpv_1_0);
+
+    //// if (!shader.preprocess(&resources, 110, EProfile::ECompatibilityProfile, false, true, EsHM, &input))
+    ////     {
+    ////         // use glslang_shader_get_info_log() and glslang_shader_get_info_debug_log()
+    ////     }
+
+    // if (!shader.parse(&resources, 110, false, EShMsgDefault))
+    //     {
+    //         errorMgs = shader.getInfoLog();
+    //         // std::cerr << "Failed to parse shader:\n" << shader.getInfoLog() << std::endl;
+    //         glslang::FinalizeProcess();
+    //         return false;
+    //     }
+
+    // glslang::TProgram program;
+    // program.addShader(&shader);
+
+    // if (!program.link(EShMsgDefault))
+    //     {
+    //         errorMgs = program.getInfoLog();
+    //         glslang::FinalizeProcess();
+    //         return false;
+    //     }
+
+    // std::vector<unsigned int> outSpirv;
+    ///*glslang::GlslangToSpv(program.getIntermediate(language), outSpirv);*/
+
+    // spv::SpvBuildLogger     logger;
+    // glslang::TIntermediate* intermediate{ program.getIntermediate(language) };
+    // glslang::GlslangToSpv(*intermediate, outSpirv, &logger, nullptr);
+
+    //// Clean up
+    // glslang::FinalizeProcess();
+
+    // outShader.resize(outSpirv.size());
+    // memcpy(outShader.data(), outSpirv.data(), outSpirv.size() * sizeof(unsigned int));
+
+    return true;
 }
 
 void
@@ -458,7 +595,7 @@ VulkanContext::CreateSwapchain(const WindowData* windowData, EPresentMode& prese
 
     if (width != nullptr)
         {
-            check(height != nullptr);
+            furyassert(height != nullptr);
             *width  = swapchain.Capabilities.currentExtent.width;
             *height = swapchain.Capabilities.currentExtent.height;
         }
@@ -507,7 +644,7 @@ VulkanContext::_createSwapchain(DSwapchainVulkan& swapchain, const WindowData* w
     const auto capabilities = Device.GetSurfaceCapabilities(surface);
 
     // Create swapchain object
-    check(swapchain.Swapchain == nullptr);
+    furyassert(swapchain.Swapchain == nullptr);
     VkSwapchainKHR vkSwapchain{};
     // Only create swapchain when extent is meaningful as > 0px
     if (capabilities.currentExtent.width > 0 && capabilities.currentExtent.height > 0)
@@ -569,7 +706,7 @@ VulkanContext::GetSwapchainRenderTargets(SwapchainId swapchainId)
 {
     ResourceId resource(swapchainId);
 
-    check(resource.First() == EResourceType::SWAPCHAIN);
+    furyassert(resource.First() == EResourceType::SWAPCHAIN);
 
     DSwapchainVulkan& swapchain = GetResource<DSwapchainVulkan, EResourceType::SWAPCHAIN, MAX_RESOURCES>(_swapchains, swapchainId);
 
@@ -786,7 +923,7 @@ VulkanContext::DestroySwapchain(SwapchainId swapchainId)
 {
     ResourceId resource(swapchainId);
 
-    check(resource.First() == EResourceType::SWAPCHAIN);
+    furyassert(resource.First() == EResourceType::SWAPCHAIN);
 
     DSwapchainVulkan& swapchain = GetResource<DSwapchainVulkan, EResourceType::SWAPCHAIN, MAX_RESOURCES>(_swapchains, swapchainId);
     if (swapchain.Swapchain)
@@ -914,7 +1051,7 @@ VulkanContext::CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usag
                 buffer     = &_indirectBuffers.at(index);
                 break;
             default:
-                check(0); // Invalid type
+                furyassert(0); // Invalid type
                 break;
         }
 
@@ -938,7 +1075,7 @@ VulkanContext::CreateBuffer(uint32_t size, EResourceType type, EMemoryUsage usag
                 }
                 break;
             default:
-                check(0); // invalid usage
+                furyassert(0); // invalid usage
                 break;
         }
 
@@ -967,11 +1104,11 @@ VulkanContext::BeginMapBuffer(BufferId buffer)
                 bufferPtr = &_indirectBuffers.at(index);
                 break;
             default:
-                check(0); // Invalid type
+                furyassert(0); // Invalid type
                 break;
         }
 
-    check(bufferPtr->Buffer.IsMappable); // Must be mappable flag
+    furyassert(bufferPtr->Buffer.IsMappable); // Must be mappable flag
     return Device.MapBuffer(bufferPtr->Buffer);
 }
 
@@ -997,11 +1134,11 @@ VulkanContext::EndMapBuffer(BufferId buffer)
                 bufferPtr = &_indirectBuffers.at(index);
                 break;
             default:
-                check(0); // Invalid type
+                furyassert(0); // Invalid type
                 break;
         }
 
-    check(bufferPtr->Buffer.IsMappable); // Must be mappable flag
+    furyassert(bufferPtr->Buffer.IsMappable); // Must be mappable flag
     return Device.UnmapBuffer(bufferPtr->Buffer);
 }
 
@@ -1025,10 +1162,10 @@ VulkanContext::DestroyBuffer(BufferId buffer)
                 bufferPtr = &_transferBuffers.at(index);
                 break;
             default:
-                check(0); // Invalid type
+                furyassert(0); // Invalid type
                 break;
         }
-    check(IsValidId(bufferPtr->Id));
+    furyassert(IsValidId(bufferPtr->Id));
     bufferPtr->Id = FREE;
     Device.DestroyBuffer(bufferPtr->Buffer);
 }
@@ -1077,7 +1214,7 @@ void
 VulkanContext::DestroyImage(ImageId imageId)
 {
     auto& resource = GetResourceUnsafe<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, imageId);
-    check(IsValidId(resource.Id));
+    furyassert(IsValidId(resource.Id));
     resource.Id = PENDING_DESTROY;
 
     _deferDestruction([this, imageId]() {
@@ -1117,7 +1254,7 @@ VulkanContext::CreateVertexLayout(const std::vector<VertexLayoutInfo>& info)
 ShaderId
 VulkanContext::CreateShader(const ShaderSource& source)
 {
-    check(source.ColorAttachments > 0);
+    furyassert(source.ColorAttachments > 0);
 
     const auto     index  = AllocResource<DShaderVulkan, MAX_RESOURCES>(_shaders);
     DShaderVulkan& shader = _shaders.at(index);
@@ -1164,9 +1301,9 @@ VulkanContext::_createShader(const ShaderSource& source, DShaderVulkan& shader)
 void
 VulkanContext::DestroyShader(const ShaderId shader)
 {
-    check(ResourceId(shader).First() == EResourceType::SHADER);
+    furyassert(ResourceId(shader).First() == EResourceType::SHADER);
     const auto index = ResourceId(shader).Value();
-    check(IsValidId(_shaders.at(index).Id));
+    furyassert(IsValidId(_shaders.at(index).Id));
     _shaders.at(index).Id = PENDING_DESTROY;
 
     _deferDestruction([this, index]() {
@@ -1220,7 +1357,7 @@ VulkanContext::DestroyPipeline(uint32_t pipelineId)
 uint32_t
 VulkanContext::CreateRootSignature(const ShaderLayout& layout)
 {
-    check(layout.SetsLayout.size() < (uint32_t)EDescriptorFrequency::MAX_COUNT);
+    furyassert(layout.SetsLayout.size() < (uint32_t)EDescriptorFrequency::MAX_COUNT);
 
     const auto      index         = AllocResource<DRootSignature, MAX_RESOURCES>(_rootSignatures);
     DRootSignature& rootSignature = _rootSignatures.at(index);
@@ -1276,7 +1413,7 @@ VulkanContext::CreateRootSignature(const ShaderLayout& layout)
 
                 for (const auto index : rootSignature.SetsBindings[i])
                     {
-                        check(index.second.Count < 8196);
+                        furyassert(index.second.Count < 8196);
 
                         const uint32_t descriptorCount = std::max(1u, index.second.Count);
 
@@ -1291,7 +1428,7 @@ VulkanContext::CreateRootSignature(const ShaderLayout& layout)
                                 case EBindingType::STORAGE_BUFFER_OBJECT:
                                     {
                                         writeSet->descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-                                        check(0); // UNSUPPORTED YET
+                                        furyassert(0); // UNSUPPORTED YET
                                     }
                                     break;
                                 case EBindingType::UNIFORM_BUFFER_OBJECT:
@@ -1409,7 +1546,7 @@ VulkanContext::CreateDescriptorSets(uint32_t rootSignatureId, EDescriptorFrequen
     descriptorSetRef.Sets.resize(count);
     descriptorSetRef.Frequency = frequency;
 
-    check(count < 8196);
+    furyassert(count < 8196);
     std::array<VkDescriptorSetLayout, 8196> descriptorSetLayouts;
     std::fill(descriptorSetLayouts.begin(), descriptorSetLayouts.begin() + count, rootSignature.DescriptorSetLayouts[(uint32_t)frequency]);
     {
@@ -1440,7 +1577,7 @@ VulkanContext::CreateDescriptorSets(uint32_t rootSignatureId, EDescriptorFrequen
 
             for (const auto index : setBinding)
                 {
-                    check(index.second.Count < 8196);
+                    furyassert(index.second.Count < 8196);
 
                     const uint32_t descriptorCount = std::max(1u, index.second.Count);
 
@@ -1455,7 +1592,7 @@ VulkanContext::CreateDescriptorSets(uint32_t rootSignatureId, EDescriptorFrequen
                             case EBindingType::STORAGE_BUFFER_OBJECT:
                                 {
                                     writeSet->descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-                                    check(0); // UNSUPPORTED YET
+                                    furyassert(0); // UNSUPPORTED YET
                                 }
                                 break;
                             case EBindingType::UNIFORM_BUFFER_OBJECT:
@@ -1527,7 +1664,7 @@ VulkanContext::UpdateDescriptorSet(uint32_t descriptorSetId, uint32_t setIndex, 
 {
     const DDescriptorSet& descriptorSetRef = GetResource<DDescriptorSet, EResourceType::DESCRIPTOR_SET, MAX_RESOURCES>(_descriptorSets, descriptorSetId);
 
-    check(paramCount < 8196);
+    furyassert(paramCount < 8196);
     std::array<VkWriteDescriptorSet, 8196>   write;
     std::array<VkDescriptorImageInfo, 8196>  imageInfo;
     std::array<VkDescriptorBufferInfo, 8196> bufferInfo;
@@ -1550,7 +1687,7 @@ VulkanContext::UpdateDescriptorSet(uint32_t descriptorSetId, uint32_t setIndex, 
                     case EBindingType::STORAGE_BUFFER_OBJECT:
                         {
                             writeSet->descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-                            check(0); // UNSUPPORTED YET
+                            furyassert(0); // UNSUPPORTED YET
                         }
                         break;
                     case EBindingType::UNIFORM_BUFFER_OBJECT:
@@ -1598,7 +1735,7 @@ VulkanContext::UpdateDescriptorSet(uint32_t descriptorSetId, uint32_t setIndex, 
                                                 }
                                                 break;
                                             default:
-                                                check(0); // Invalid resource type
+                                                furyassert(0); // Invalid resource type
                                                 break;
                                         }
                                 }
@@ -1641,7 +1778,7 @@ VulkanContext::_createFramebuffer(const DFramebufferAttachments& attachments)
     // Extrapolate all the renderTargetRef views
     const auto depthAttachmentCount = (uint32_t)(attachments.DepthStencil != 0);
     const auto attachmentCount      = DFramebufferAttachments::MAX_ATTACHMENTS - std::count(attachments.RenderTargets.begin(), attachments.RenderTargets.end(), NULL) + depthAttachmentCount;
-    check(attachmentCount > 0); // Must have at least one attachment
+    furyassert(attachmentCount > 0); // Must have at least one attachment
 
     std::vector<VkImageView> imageViewsAttachments;
     imageViewsAttachments.resize(attachmentCount);
@@ -1655,13 +1792,13 @@ VulkanContext::_createFramebuffer(const DFramebufferAttachments& attachments)
 
     for (size_t i = 0; i < attachmentCount - depthAttachmentCount; i++)
         {
-            check(attachments.RenderTargets[i] != NULL);
+            furyassert(attachments.RenderTargets[i] != NULL);
             const auto& renderTargetRef = GetResource<DRenderTargetVulkan, EResourceType::RENDER_TARGET, MAX_RESOURCES>(_renderTargets, attachments.RenderTargets[i]);
             imageViewsAttachments[i]    = renderTargetRef.View;
 
-            check(renderTargetRef.Image.Width == framebufferRef.Width); // All images must have the same width
-            check(renderTargetRef.Image.Height == framebufferRef.Height); // All images must have the same height
-            check(renderTargetRef.Image.MipLevels == 1); // Must have only 1 layer
+            furyassert(renderTargetRef.Image.Width == framebufferRef.Width); // All images must have the same width
+            furyassert(renderTargetRef.Image.Height == framebufferRef.Height); // All images must have the same height
+            furyassert(renderTargetRef.Image.MipLevels == 1); // Must have only 1 layer
         }
 
     if (depthAttachmentCount)
@@ -1669,9 +1806,9 @@ VulkanContext::_createFramebuffer(const DFramebufferAttachments& attachments)
             const auto& renderTargetRef  = GetResource<DRenderTargetVulkan, EResourceType::RENDER_TARGET, MAX_RESOURCES>(_renderTargets, attachments.DepthStencil);
             imageViewsAttachments.back() = renderTargetRef.View;
 
-            check(renderTargetRef.Image.Width == framebufferRef.Width); // All images must have the same width
-            check(renderTargetRef.Image.Height == framebufferRef.Height); // All images must have the same height
-            check(renderTargetRef.Image.MipLevels == 1); // Must have only 1 layer
+            furyassert(renderTargetRef.Image.Width == framebufferRef.Width); // All images must have the same width
+            furyassert(renderTargetRef.Image.Height == framebufferRef.Height); // All images must have the same height
+            furyassert(renderTargetRef.Image.MipLevels == 1); // Must have only 1 layer
         }
 
     framebufferRef.Framebuffer = Device._createFramebuffer(imageViewsAttachments, framebufferRef.Width, framebufferRef.Height, vkRenderPass);
@@ -1760,7 +1897,7 @@ void
 VulkanContext::DestroyCommandBuffer(uint32_t commandBufferId)
 {
     auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
-    check(!commandBufferRef.IsRecording); // Must not be in recording state
+    furyassert(!commandBufferRef.IsRecording); // Must not be in recording state
     commandBufferRef.Id = FREE;
 }
 
@@ -1768,7 +1905,7 @@ void
 VulkanContext::BeginCommandBuffer(uint32_t commandBufferId)
 {
     auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
-    check(!commandBufferRef.IsRecording); // Must not be in recording state
+    furyassert(!commandBufferRef.IsRecording); // Must not be in recording state
     commandBufferRef.IsRecording = true;
 
     VkCommandBufferBeginInfo beginInfo{};
@@ -1782,7 +1919,7 @@ VulkanContext::EndCommandBuffer(uint32_t commandBufferId)
 {
     auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
 
-    check(commandBufferRef.IsRecording); // Must be in recording state
+    furyassert(commandBufferRef.IsRecording); // Must be in recording state
     commandBufferRef.IsRecording = false;
 
     // If previous active render pass end it
@@ -1881,7 +2018,7 @@ VulkanContext::BindRenderTargets(uint32_t commandBufferId, const DFramebufferAtt
     renderPassInfo.pClearValues      = clearValues;
 
     auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
-    check(commandBufferRef.IsRecording); // Must be in recording state
+    furyassert(commandBufferRef.IsRecording); // Must be in recording state
     // If previous active render pass end it
     if (commandBufferRef.ActiveRenderPass)
         {
@@ -1898,8 +2035,8 @@ void
 VulkanContext::SetViewport(uint32_t commandBufferId, uint32_t x, uint32_t y, uint32_t width, uint32_t height, float znear, float zfar)
 {
     auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
-    check(commandBufferRef.IsRecording); // Must be in recording state
-    check(commandBufferRef.ActiveRenderPass); // Must be in a render pass
+    furyassert(commandBufferRef.IsRecording); // Must be in recording state
+    furyassert(commandBufferRef.ActiveRenderPass); // Must be in a render pass
 
     // Invert viewport on Y
     VkViewport viewport{ static_cast<float>(x), static_cast<float>(y) + static_cast<float>(height), static_cast<float>(width), -static_cast<float>(height), znear, zfar };
@@ -1911,11 +2048,11 @@ void
 VulkanContext::SetScissor(uint32_t commandBufferId, uint32_t x, uint32_t y, uint32_t width, uint32_t height)
 {
     auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
-    check(commandBufferRef.IsRecording); // Must be in recording state
-    check(commandBufferRef.ActiveRenderPass); // Must be in a render pass
+    furyassert(commandBufferRef.IsRecording); // Must be in recording state
+    furyassert(commandBufferRef.ActiveRenderPass); // Must be in a render pass
 
-    check(x + width <= std::numeric_limits<int32_t>().max()); // sum must not overflow int32_t
-    check(y + height <= std::numeric_limits<int32_t>().max()); // sum must not overflow int32_t
+    furyassert(x + width <= std::numeric_limits<int32_t>().max()); // sum must not overflow int32_t
+    furyassert(y + height <= std::numeric_limits<int32_t>().max()); // sum must not overflow int32_t
 
     VkRect2D rect{ x, y, width, height };
     vkCmdSetScissor(commandBufferRef.Cmd, 0, 1, &rect);
@@ -1925,8 +2062,8 @@ void
 VulkanContext::BindPipeline(uint32_t commandBufferId, uint32_t pipeline)
 {
     auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
-    check(commandBufferRef.IsRecording); // Must be in recording state
-    check(commandBufferRef.ActiveRenderPass); // Must be in a render pass
+    furyassert(commandBufferRef.IsRecording); // Must be in recording state
+    furyassert(commandBufferRef.ActiveRenderPass); // Must be in a render pass
 
     auto& pipelineRef = GetResource<DPipelineVulkan, EResourceType::GRAPHICS_PIPELINE, MAX_RESOURCES>(_pipelines, pipeline);
 
@@ -1937,8 +2074,8 @@ void
 VulkanContext::BindVertexBuffer(uint32_t commandBufferId, uint32_t bufferId)
 {
     auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
-    check(commandBufferRef.IsRecording); // Must be in recording state
-    check(commandBufferRef.ActiveRenderPass); // Must be in a render pass
+    furyassert(commandBufferRef.IsRecording); // Must be in recording state
+    furyassert(commandBufferRef.ActiveRenderPass); // Must be in a render pass
 
     auto& vertexBufRef = GetResource<DBufferVulkan, EResourceType::VERTEX_INDEX_BUFFER, MAX_RESOURCES>(_vertexBuffers, bufferId);
 
@@ -1950,8 +2087,8 @@ void
 VulkanContext::BindIndexBuffer(uint32_t commandBufferId, uint32_t bufferId)
 {
     auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
-    check(commandBufferRef.IsRecording); // Must be in recording state
-    check(commandBufferRef.ActiveRenderPass); // Must be in a render pass
+    furyassert(commandBufferRef.IsRecording); // Must be in recording state
+    furyassert(commandBufferRef.ActiveRenderPass); // Must be in a render pass
 
     auto& indexBufRef = GetResource<DBufferVulkan, EResourceType::VERTEX_INDEX_BUFFER, MAX_RESOURCES>(_vertexBuffers, bufferId);
 
@@ -1963,8 +2100,8 @@ void
 VulkanContext::Draw(uint32_t commandBufferId, uint32_t firstVertex, uint32_t count)
 {
     auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
-    check(commandBufferRef.IsRecording); // Must be in recording state
-    check(commandBufferRef.ActiveRenderPass); // Must be in a render pass
+    furyassert(commandBufferRef.IsRecording); // Must be in recording state
+    furyassert(commandBufferRef.ActiveRenderPass); // Must be in a render pass
 
     vkCmdDraw(commandBufferRef.Cmd, count, 1, firstVertex, 0);
 }
@@ -1973,8 +2110,8 @@ void
 VulkanContext::DrawIndexed(uint32_t commandBufferId, uint32_t index_count, uint32_t first_index, uint32_t first_vertex)
 {
     auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
-    check(commandBufferRef.IsRecording); // Must be in recording state
-    check(commandBufferRef.ActiveRenderPass); // Must be in a render pass
+    furyassert(commandBufferRef.IsRecording); // Must be in recording state
+    furyassert(commandBufferRef.ActiveRenderPass); // Must be in a render pass
 
     vkCmdDrawIndexed(commandBufferRef.Cmd, index_count, 1, first_index, first_vertex, 0);
 }
@@ -1983,8 +2120,8 @@ void
 VulkanContext::DrawIndexedIndirect(uint32_t commandBufferId, uint32_t buffer, uint32_t offset, uint32_t drawCount, uint32_t stride)
 {
     auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
-    check(commandBufferRef.IsRecording); // Must be in recording state
-    check(commandBufferRef.ActiveRenderPass); // Must be in a render pass
+    furyassert(commandBufferRef.IsRecording); // Must be in recording state
+    furyassert(commandBufferRef.ActiveRenderPass); // Must be in a render pass
 
     auto& indirectBufferRef = GetResource<DBufferVulkan, EResourceType::INDIRECT_DRAW_COMMAND, MAX_RESOURCES>(_indirectBuffers, buffer);
 
@@ -1996,12 +2133,12 @@ void
 VulkanContext::BindDescriptorSet(uint32_t commandBufferId, uint32_t setIndex, uint32_t descriptorSetId)
 {
     auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandBufferId);
-    check(commandBufferRef.IsRecording); // Must be in recording state
-    check(commandBufferRef.ActiveRenderPass); // Must be in a render pass
+    furyassert(commandBufferRef.IsRecording); // Must be in recording state
+    furyassert(commandBufferRef.ActiveRenderPass); // Must be in a render pass
 
     const DDescriptorSet& descriptorSetRef = GetResource<DDescriptorSet, EResourceType::DESCRIPTOR_SET, MAX_RESOURCES>(_descriptorSets, descriptorSetId);
 
-    check(setIndex < descriptorSetRef.Sets.size());
+    furyassert(setIndex < descriptorSetRef.Sets.size());
 
     vkCmdBindDescriptorSets(
     commandBufferRef.Cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, descriptorSetRef.RootSignature->PipelineLayout, (uint32_t)descriptorSetRef.Frequency, 1, &descriptorSetRef.Sets[setIndex], 0, nullptr);
@@ -2011,8 +2148,8 @@ void
 VulkanContext::CopyImage(uint32_t commandId, uint32_t imageId, uint32_t width, uint32_t height, uint32_t mipMapIndex, uint32_t stagingBufferId, uint32_t stagingBufferOffset)
 {
     auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandId);
-    check(commandBufferRef.IsRecording); // Must be in recording state
-    check(!commandBufferRef.ActiveRenderPass); // Must be in a render pass
+    furyassert(commandBufferRef.IsRecording); // Must be in recording state
+    furyassert(!commandBufferRef.ActiveRenderPass); // Must be in a render pass
 
     auto& imageRef = GetResource<DImageVulkan, EResourceType::IMAGE, MAX_RESOURCES>(_images, imageId);
     auto& buffRef  = GetResource<DBufferVulkan, EResourceType::TRANSFER, MAX_RESOURCES>(_transferBuffers, stagingBufferId);
@@ -2039,8 +2176,8 @@ void
 VulkanContext::CopyBuffer(uint32_t commandId, uint32_t bufferId, uint32_t offset, uint32_t bytes, uint32_t stagingBufferId, uint32_t stagingBufferOffset)
 {
     auto& commandBufferRef = GetResource<DCommandBufferVulkan, EResourceType::COMMAND_BUFFER, MAX_RESOURCES>(_commandBuffers, commandId);
-    check(commandBufferRef.IsRecording); // Must be in recording state
-    check(!commandBufferRef.ActiveRenderPass); // Must be in a render pass
+    furyassert(commandBufferRef.IsRecording); // Must be in recording state
+    furyassert(!commandBufferRef.ActiveRenderPass); // Must be in a render pass
 
     auto& vertexRef = GetResource<DBufferVulkan, EResourceType::VERTEX_INDEX_BUFFER, MAX_RESOURCES>(_vertexBuffers, bufferId);
     auto& buffRef   = GetResource<DBufferVulkan, EResourceType::TRANSFER, MAX_RESOURCES>(_transferBuffers, stagingBufferId);
@@ -2230,7 +2367,7 @@ VulkanContext::DestroyGpuSemaphore(uint32_t semaphoreId)
 uint32_t
 VulkanContext::CreateRenderTarget(EFormat format, ESampleBit samples, bool isDepth, uint32_t width, uint32_t height, uint32_t arrayLength, uint32_t mipMapCount, EResourceState initialState)
 {
-    check(samples == ESampleBit::COUNT_1_BIT);
+    furyassert(samples == ESampleBit::COUNT_1_BIT);
 
     VkImageUsageFlags usageFlags{};
 
@@ -2266,7 +2403,7 @@ VulkanContext::CreateRenderTarget(EFormat format, ESampleBit samples, bool isDep
                 break;
             case EResourceState::UNORDERED_ACCESS:
                 initialLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL; // Valid?
-                check(0); // Verify is correct
+                furyassert(0); // Verify is correct
                 break;
             case EResourceState::DEPTH_WRITE:
                 initialLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
@@ -2308,7 +2445,7 @@ VulkanContext::CreateRenderTarget(EFormat format, ESampleBit samples, bool isDep
             case EResourceState::RAYTRACING_ACCELERATION_STRUCTURE:
             case EResourceState::SHADING_RATE_SOURCE:
             default:
-                check(0);
+                furyassert(0);
                 break;
         }
 
@@ -2415,7 +2552,7 @@ RenderTargetBarrier*                    p_rt_barriers)
                         bufferPtr = &_transferBuffers.at(index);
                         break;
                     default:
-                        check(0); // Invalid type
+                        furyassert(0); // Invalid type
                         break;
                 }
             VkBuffer               pBuffer        = bufferPtr->Buffer.Buffer;
@@ -2456,7 +2593,7 @@ RenderTargetBarrier*                    p_rt_barriers)
                             case ETransferOwnership::ACQUIRE:
                             case ETransferOwnership::RELEASE:
                                 {
-                                    check(pTrans->SrcQueue > 0);
+                                    furyassert(pTrans->SrcQueue > 0);
                                     const auto& srcQueueRef             = GetResource<DQueueVulkan, EResourceType::QUEUE, MAX_RESOURCES>(_queues, pTrans->SrcQueue);
                                     pBufferBarrier->srcQueueFamilyIndex = srcQueueRef.QueueFamilyIndex;
                                     const auto& dstQueueRef             = GetResource<DQueueVulkan, EResourceType::QUEUE, MAX_RESOURCES>(_queues, pTrans->DstQueue);
@@ -2519,7 +2656,7 @@ RenderTargetBarrier*                    p_rt_barriers)
                             case ETransferOwnership::ACQUIRE:
                             case ETransferOwnership::RELEASE:
                                 {
-                                    check(pTrans->SrcQueue > 0);
+                                    furyassert(pTrans->SrcQueue > 0);
                                     const auto& srcQueueRef            = GetResource<DQueueVulkan, EResourceType::QUEUE, MAX_RESOURCES>(_queues, pTrans->SrcQueue);
                                     pImageBarrier->srcQueueFamilyIndex = srcQueueRef.QueueFamilyIndex;
                                     const auto& dstQueueRef            = GetResource<DQueueVulkan, EResourceType::QUEUE, MAX_RESOURCES>(_queues, pTrans->DstQueue);
@@ -2581,7 +2718,7 @@ RenderTargetBarrier*                    p_rt_barriers)
                             case ETransferOwnership::ACQUIRE:
                             case ETransferOwnership::RELEASE:
                                 {
-                                    check(pTrans->SrcQueue > 0);
+                                    furyassert(pTrans->SrcQueue > 0);
                                     const auto& srcQueueRef            = GetResource<DQueueVulkan, EResourceType::QUEUE, MAX_RESOURCES>(_queues, pTrans->SrcQueue);
                                     pImageBarrier->srcQueueFamilyIndex = srcQueueRef.QueueFamilyIndex;
                                     const auto& dstQueueRef            = GetResource<DQueueVulkan, EResourceType::QUEUE, MAX_RESOURCES>(_queues, pTrans->DstQueue);
@@ -2600,7 +2737,7 @@ RenderTargetBarrier*                    p_rt_barriers)
     VkPipelineStageFlags dstStageMask     = VkUtils::determinePipelineStageFlags(dstAccessFlags, commandBufferRef.Type);
 
     {
-        check(commandBufferRef.IsRecording); // Must be in recording state
+        furyassert(commandBufferRef.IsRecording); // Must be in recording state
         // If previous active render pass end it
         if (commandBufferRef.ActiveRenderPass)
             {
@@ -2662,7 +2799,7 @@ uint32_t                                            stride)
                     pipe.SetPolygonMode(VK_POLYGON_MODE_LINE);
                     break;
                 default:
-                    check(0);
+                    furyassert(0);
                     break;
             }
         switch (format.CullMode)
@@ -2677,7 +2814,7 @@ uint32_t                                            stride)
                     pipe.SetCulling(VK_CULL_MODE_BACK_BIT);
                     break;
                 default:
-                    check(0);
+                    furyassert(0);
                     break;
             }
         switch (format.DepthTestMode)
@@ -2978,7 +3115,7 @@ ConvertRenderPassAttachmentsToRIVkRenderPassInfo(const DRenderPassAttachments& a
                         info.DepthStencilAttachmentReference.emplace_back(ref);
                         break;
                     default:
-                        check(0);
+                        furyassert(0);
                         break;
                 }
 

@@ -14,7 +14,7 @@ class CAtomicCounter
     inline void IncreaseCounter() { _counter.store(_counter.load() + 1); };
     inline void DecreaseCounter()
     {
-        check(_counter.load() > 0); // count can't be negative
+        furyassert(_counter.load() > 0); // count can't be negative
         _counter.store(_counter.load() - 1);
     };
     inline uint32_t Count() const { return _counter.load(); };

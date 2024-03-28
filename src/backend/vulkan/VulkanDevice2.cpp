@@ -10,7 +10,7 @@
 namespace Fox
 {
 
-RIVulkanDevice2::~RIVulkanDevice2() { check(_swapchains.size() == 0); }
+RIVulkanDevice2::~RIVulkanDevice2() { furyassert(_swapchains.size() == 0); }
 
 bool
 RIVulkanDevice2::SurfaceSupportPresentationOnQueueFamilyIndex(VkSurfaceKHR surface, uint32_t queueFamilyIndex)
@@ -45,7 +45,7 @@ RIVulkanDevice2::GetSurfaceFormats(VkSurfaceKHR surface)
                 return formats;
             }
     }
-    check(0);
+    furyassert(0);
     return {};
 }
 
@@ -95,7 +95,7 @@ uint32_t                                                 queueFamilyIndicesCount
 VkSwapchainKHR*                                          outSwapchain,
 VkSwapchainKHR                                           oldSwapchain)
 {
-    check(queueFamilyIndices != nullptr);
+    furyassert(queueFamilyIndices != nullptr);
     critical(capabilities.minImageCount >= MAX_IMAGE_COUNT);
 
     VkSwapchainCreateInfoKHR swapchainInfo = {};
@@ -107,10 +107,10 @@ VkSwapchainKHR                                           oldSwapchain)
     swapchainInfo.imageFormat              = format.format;
     swapchainInfo.imageColorSpace          = format.colorSpace;
 
-    check(capabilities.currentExtent.width > 0); // imageExtent members width and height must both be non-zero
-    check(capabilities.currentExtent.height > 0); // imageExtent members width and height must both be non-zero
-    check(capabilities.currentExtent.width <= capabilities.maxImageExtent.width);
-    check(capabilities.currentExtent.height <= capabilities.maxImageExtent.height);
+    furyassert(capabilities.currentExtent.width > 0); // imageExtent members width and height must both be non-zero
+    furyassert(capabilities.currentExtent.height > 0); // imageExtent members width and height must both be non-zero
+    furyassert(capabilities.currentExtent.width <= capabilities.maxImageExtent.width);
+    furyassert(capabilities.currentExtent.height <= capabilities.maxImageExtent.height);
 
     swapchainInfo.imageExtent           = capabilities.currentExtent;
     swapchainInfo.imageArrayLayers      = capabilities.maxImageArrayLayers;
@@ -148,7 +148,7 @@ RIVulkanDevice2::GetSwapchainImages(VkSwapchainKHR swapchain)
     uint32_t             imageCount = 0;
     vkGetSwapchainImagesKHR(Device, swapchain, &imageCount, nullptr);
 
-    check(imageCount >= MAX_IMAGE_COUNT);
+    furyassert(imageCount >= MAX_IMAGE_COUNT);
 
     images.resize(imageCount);
     vkGetSwapchainImagesKHR(Device, swapchain, &imageCount, images.data());
@@ -190,7 +190,7 @@ RIVulkanDevice2::Present(VkQueue queue, std::vector<std::pair<VkSwapchainKHR, ui
 {
 
     std::vector<VkResult> results(swapchainImageIndex.size(), VK_SUCCESS);
-    check(results.size() == swapchainImageIndex.size());
+    furyassert(results.size() == swapchainImageIndex.size());
 
     std::vector<VkSwapchainKHR> swapchains(swapchainImageIndex.size());
     std::vector<uint32_t>       imageIndices(swapchainImageIndex.size());
@@ -198,8 +198,8 @@ RIVulkanDevice2::Present(VkQueue queue, std::vector<std::pair<VkSwapchainKHR, ui
     std::transform(swapchainImageIndex.begin(), swapchainImageIndex.end(), swapchains.begin(), [](const std::pair<VkSwapchainKHR, uint32_t>& p) { return p.first; });
     std::transform(swapchainImageIndex.begin(), swapchainImageIndex.end(), imageIndices.begin(), [](const std::pair<VkSwapchainKHR, uint32_t>& p) { return p.second; });
 
-    check(swapchains.size() == swapchainImageIndex.size());
-    check(swapchains.size() == imageIndices.size());
+    furyassert(swapchains.size() == swapchainImageIndex.size());
+    furyassert(swapchains.size() == imageIndices.size());
 
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;

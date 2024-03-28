@@ -9,7 +9,7 @@
 namespace Fox
 {
 
-RIVulkanDevice11::~RIVulkanDevice11() { check(_descriptorPools.size() == 0); }
+RIVulkanDevice11::~RIVulkanDevice11() { furyassert(_descriptorPools.size() == 0); }
 
 VkDescriptorSet
 RIDescriptorPoolManager::CreateDescriptorSet(VkDescriptorSetLayout descriptorSetLayout)
@@ -131,7 +131,7 @@ RIDescriptorSetBinder::BindCombinedImageSamplerArray(uint32_t bindingIndex, cons
 void
 RIDescriptorSetBinder::BindDescriptorSet(VkCommandBuffer cmd, VkPipelineLayout pipelineLayout, VkDescriptorSetLayout descriptorSetLayout, uint32_t setIndex)
 {
-    check(_currentUpdate.has_value());
+    furyassert(_currentUpdate.has_value());
     VkDescriptorSet set = QueryOrMakeDescriptorSet(descriptorSetLayout);
 
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, setIndex, 1, &set, (uint32_t)_dynamicOffsets.size(), _dynamicOffsets.data());
@@ -142,7 +142,7 @@ RIDescriptorSetBinder::BindDescriptorSet(VkCommandBuffer cmd, VkPipelineLayout p
 VkDescriptorSet
 RIDescriptorSetBinder::QueryOrMakeDescriptorSet(VkDescriptorSetLayout descriptorSetLayout)
 {
-    check(_currentUpdate.has_value()); // You must bind something first
+    furyassert(_currentUpdate.has_value()); // You must bind something first
     VkDescriptorSet set = _queryDescriptorSet(descriptorSetLayout, _currentUpdate.value());
 
     if (!set)
@@ -154,7 +154,7 @@ RIDescriptorSetBinder::QueryOrMakeDescriptorSet(VkDescriptorSetLayout descriptor
             _cachedDescriptorSets[descriptorSetLayout][_currentUpdate.value()] = set;
         }
 
-    check(set != nullptr);
+    furyassert(set != nullptr);
 
     return set;
 }
@@ -200,9 +200,9 @@ void
 RIVulkanDevice11::DestroyDescriptorPool(VkDescriptorPool pool)
 {
     vkDestroyDescriptorPool(Device, pool, nullptr);
-    check(_descriptorPools.size() > 0);
+    furyassert(_descriptorPools.size() > 0);
     const auto found = _descriptorPools.find(pool);
-    check(found != _descriptorPools.end());
+    furyassert(found != _descriptorPools.end());
     _descriptorPools.erase(found);
 }
 
@@ -227,7 +227,7 @@ RIVulkanDevice11::CreateDescriptorSet(VkDescriptorPool pool, VkDescriptorSetLayo
 RIDescriptorPoolManager*
 RIVulkanDevice11::CreateDescriptorPool2(const std::vector<VkDescriptorPoolSize>& poolDimensions, uint32_t maxSets)
 {
-    check(0);
+    furyassert(0);
     VkDescriptorPool         descriptorPool = CreateDescriptorPool(poolDimensions, maxSets);
     RIDescriptorPoolManager* pool           = new RIDescriptorPoolManager(Device, poolDimensions, maxSets);
     return pool;

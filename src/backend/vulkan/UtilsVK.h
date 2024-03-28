@@ -105,7 +105,7 @@ convertPresentMode(const Fox::EPresentMode mode)
             case Fox::EPresentMode::FIFO_RELAXED:
                 return VkPresentModeKHR::VK_PRESENT_MODE_FIFO_RELAXED_KHR;
         }
-    check(0);
+    furyassert(0);
     return VkPresentModeKHR::VK_PRESENT_MODE_MAX_ENUM_KHR;
 };
 
@@ -152,7 +152,7 @@ convertVkFormat(const VkFormat format)
                 return Fox::EFormat::SINT32;
         }
 
-    check(0);
+    furyassert(0);
     return Fox::EFormat::R8_UNORM;
 };
 
@@ -199,7 +199,7 @@ convertFormat(const Fox::EFormat format)
                 return VK_FORMAT_R32_SINT;
         }
 
-    check(0);
+    furyassert(0);
     return VK_FORMAT_UNDEFINED;
 };
 
@@ -225,7 +225,7 @@ convertVkSampleCount(const Fox::ESampleBit sample)
                 return VK_SAMPLE_COUNT_64_BIT;
         }
 
-    check(0);
+    furyassert(0);
     return VK_SAMPLE_COUNT_1_BIT;
 }
 
@@ -240,7 +240,7 @@ convertAttachmentLoadOp(const Fox::ERenderPassLoad load)
                 return VK_ATTACHMENT_LOAD_OP_LOAD;
         }
 
-    check(0);
+    furyassert(0);
     return VK_ATTACHMENT_LOAD_OP_CLEAR;
 }
 
@@ -255,7 +255,7 @@ convertAttachmentStoreOp(const Fox::ERenderPassStore store)
                 return VK_ATTACHMENT_STORE_OP_STORE;
         }
 
-    check(0);
+    furyassert(0);
     return VK_ATTACHMENT_STORE_OP_STORE;
 }
 
@@ -314,7 +314,7 @@ convertRenderPassLayout(const Fox::ERenderPassLayout layout, bool isColor = true
                 return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
         }
 
-    check(0);
+    furyassert(0);
     return VK_IMAGE_LAYOUT_UNDEFINED;
 }
 
@@ -490,7 +490,7 @@ convertAttachmentReferenceLayout(const Fox::EAttachmentReference& att)
                 return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         }
 
-    check(0);
+    furyassert(0);
     return VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
 }
 
@@ -594,9 +594,9 @@ computeDescriptorSetsPoolSize(const std::map<uint32_t /*Set*/, std::map<uint32_t
 inline VkResult
 createShaderModule(VkDevice device, const std::vector<unsigned char>& byteCode, VkShaderModule* shaderModule)
 {
-    check(device);
-    check(byteCode.size() > 0);
-    check(shaderModule && !*shaderModule);
+    furyassert(device);
+    furyassert(byteCode.size() > 0);
+    furyassert(shaderModule && !*shaderModule);
 
     VkShaderModuleCreateInfo createInfo{};
     createInfo.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -610,8 +610,8 @@ inline VkPipelineShaderStageCreateInfo
 createShaderStageInfo(VkShaderStageFlagBits stage, VkShaderModule shaderModule)
 {
     constexpr const char* PENTRYPOINTNAME{ "main" };
-    check(shaderModule);
-    check(stage == VK_SHADER_STAGE_VERTEX_BIT || stage == VK_SHADER_STAGE_FRAGMENT_BIT);
+    furyassert(shaderModule);
+    furyassert(stage == VK_SHADER_STAGE_VERTEX_BIT || stage == VK_SHADER_STAGE_FRAGMENT_BIT);
 
     VkPipelineShaderStageCreateInfo stageInfo{};
     stageInfo.pNext               = nullptr;
@@ -853,7 +853,7 @@ convertResourceStateToImageLayout(Fox::EResourceState state, bool isDepth)
                 break;
         }
 
-    check(0);
+    furyassert(0);
     return VK_IMAGE_LAYOUT_UNDEFINED;
 }
 
@@ -951,7 +951,7 @@ uint32_t*                            queueFamilyIndexCreatedCount)
                 }
         }
 
-    check(found == true);
+    furyassert(found == true);
     return found;
 }
 

@@ -16,7 +16,7 @@ class RICacheMap
   public:
     void Add(const Key& key, const Value value)
     {
-        check(Find(key) == nullptr); // element is already contained
+        furyassert(Find(key) == nullptr); // element is already contained
         auto pair = std::make_pair(key, value);
         _map.insert(std::move(pair));
     }
@@ -41,7 +41,7 @@ class RICacheMap
                         return;
                     }
             }
-        check(0); // element is not contained
+        furyassert(0); // element is not contained
     }
 
     size_t Size() const { return _map.size(); }

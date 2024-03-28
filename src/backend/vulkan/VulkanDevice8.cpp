@@ -9,7 +9,7 @@
 namespace Fox
 {
 
-RIVulkanDevice8::~RIVulkanDevice8() { check(_descriptorSetLayoutCache.size() == 0); }
+RIVulkanDevice8::~RIVulkanDevice8() { furyassert(_descriptorSetLayoutCache.size() == 0); }
 
 VkDescriptorSetLayoutBinding
 RIVulkanDevice8::CreateDescriptorSetLayoutBindingUniformBufferDynamic(uint32_t binding, uint32_t descriptorCount, VkShaderStageFlags stages)

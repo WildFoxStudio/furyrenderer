@@ -708,6 +708,8 @@ class IContext
 {
   public:
     virtual ~IContext(){};
+    virtual bool CompileNativeShader(const std::vector<unsigned char>& blob, std::vector<unsigned int>& outShader, EShaderStage shaderStage, std::string& errorMgs) = 0;
+
     virtual void     WaitDeviceIdle()                                                                                                                                    = 0;
     virtual uint32_t CreateSwapchain(const WindowData* windowData, EPresentMode& presentMode, EFormat& outFormat, uint32_t* width = nullptr, uint32_t* height = nullptr) = 0;
     /**

@@ -19,13 +19,13 @@ struct RingBufferManager
     // Must receive the same number of pop with the same length as the number of time Push was called
     void Pop(uint32_t length)
     {
-        check(length, MaxSize);
+        furyassert(length, MaxSize);
 #if defined(_DEBUG)
         if (!Full && Tail != Head)
             {
                 if (Tail < Head)
                     {
-                        check(Tail + length <= Head);
+                        furyassert(Tail + length <= Head);
                     }
             }
 #endif
@@ -45,7 +45,7 @@ struct RingBufferManager
                 Tail = 0;
             }
 
-        check(Tail >= 0 && Tail <= MaxSize);
+        furyassert(Tail >= 0 && Tail <= MaxSize);
         Full = false; // When Pop is called it means the we're not full anymore
     }
 
@@ -95,23 +95,23 @@ struct RingBufferManager
     uint32_t Push(void* data, uint32_t length)
     {
         // Must not be full
-        check(!Full);
+        furyassert(!Full);
         // Allocation can be more than max size
-        check(length <= MaxSize);
+        furyassert(length <= MaxSize);
         // Check capacity
-        check(Capacity() >= length);
+        furyassert(Capacity() >= length);
 #if defined(_DEBUG)
         if (Head != Tail)
             {
                 if (Head < Tail)
                     {
                         // If head < tail cannot go beyond tail
-                        check(Head + length <= Tail);
+                        furyassert(Head + length <= Tail);
                     }
                 // else if (_shouldWrapAround(Head + length))
                 //     {
                 //         // If head > tail and wrap arounds can't go beyond tail
-                //         check(length <= Tail);//no Capacity left
+                //         furyassert(length <= Tail);//no Capacity left
                 //     }
             }
 #endif
@@ -133,7 +133,7 @@ struct RingBufferManager
             }
 
         const uint32_t dataStart = Head - length;
-        check(_isInsideRange(dataStart, length));
+        furyassert(_isInsideRange(dataStart, length));
         if (data != nullptr)
             {
                 unsigned char* addressWithOffset = static_cast<unsigned char*>(Mapped) + dataStart;

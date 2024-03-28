@@ -9,7 +9,7 @@
 namespace Fox
 {
 
-RIVulkanDevice4::~RIVulkanDevice4() { check(_buffers.size() == 0); }
+RIVulkanDevice4::~RIVulkanDevice4() { furyassert(_buffers.size() == 0); }
 
 RIVulkanBuffer
 RIVulkanDevice4::CreateBufferHostVisible(uint32_t size, VkBufferUsageFlags usage)

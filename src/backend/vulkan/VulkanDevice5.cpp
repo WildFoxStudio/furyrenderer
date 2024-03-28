@@ -11,8 +11,8 @@ namespace Fox
 
 RIVulkanDevice5::~RIVulkanDevice5()
 {
-    check(_images.size() == 0);
-    check(_imageViews.size() == 0);
+    furyassert(_images.size() == 0);
+    furyassert(_imageViews.size() == 0);
 }
 
 RIVulkanImage
@@ -124,7 +124,7 @@ RIVulkanDevice5::CreateImageView_DEPRECATED(VkFormat format, const RIVulkanImage
                 return nullptr;
             }
     }
-    check(imageView);
+    furyassert(imageView);
 
     _imageViews.insert(imageView);
 
@@ -153,7 +153,7 @@ RIVulkanDevice5::CreateImageView(VkFormat format, VkImage image, VkImageAspectFl
                 return result;
             }
     }
-    check(*outImageView);
+    furyassert(*outImageView);
 
     _imageViews.insert(*outImageView);
 

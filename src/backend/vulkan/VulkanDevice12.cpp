@@ -11,7 +11,7 @@
 namespace Fox
 {
 
-RIVulkanDevice12::~RIVulkanDevice12() { check(_cachedPools.size() == 0); }
+RIVulkanDevice12::~RIVulkanDevice12() { furyassert(_cachedPools.size() == 0); }
 
 RICommandBuffer*
 RICommandPool::Allocate()
@@ -38,7 +38,7 @@ RICommandPool::Allocate()
 void
 RICommandPool::Reset()
 {
-    check(_poolManager); // has beed moved, invalid state
+    furyassert(_poolManager); // has beed moved, invalid state
 
     vkResetCommandPool(_device, _poolManager, VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT);
     std::for_each(_cachedCmds.begin(), _cachedCmds.end(), [](RICommandBuffer& cmd) {
@@ -46,7 +46,7 @@ RICommandPool::Reset()
             {
                 cmd.DecreaseCounter();
             }
-        check(cmd.Count() == 0);
+        furyassert(cmd.Count() == 0);
     });
 }
 
@@ -144,7 +144,7 @@ RIVulkanDevice12::SubmitToMainQueue(VkQueue queue, const std::vector<RICommandBu
 
     std::transform(cmds.begin(), cmds.end(), commandBuffers.begin(), [](const RICommandBuffer* cmd) { return cmd->Cmd; });
 
-    check(commandBuffers.size() == cmds.size());
+    furyassert(commandBuffers.size() == cmds.size());
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;

@@ -11,8 +11,8 @@ namespace Fox
 
 RIVulkanDevice3::~RIVulkanDevice3()
 {
-    check(_fences.size() == 0);
-    check(_semaphores.size() == 0);
+    furyassert(_fences.size() == 0);
+    furyassert(_semaphores.size() == 0);
 }
 
 VkSemaphore

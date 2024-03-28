@@ -9,7 +9,7 @@
 namespace Fox
 {
 
-RIVulkanDevice6::~RIVulkanDevice6() { check(_samplers.size() == 0); }
+RIVulkanDevice6::~RIVulkanDevice6() { furyassert(_samplers.size() == 0); }
 
 VkSampler
 RIVulkanDevice6::CreateSampler(VkFilter minFilter, VkFilter magFilter, VkSamplerAddressMode mode, float minLod, float maxLod, VkSamplerMipmapMode mipmapMode, bool anisotropy, float maxAnisotropy)
